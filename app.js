@@ -7,7 +7,7 @@ const canvas=$('scene'),viewport=$('viewport'),chrome=$('chrome'),restoreUI=$('r
 const buildTools=$('buildTools'),selectionPanel=$('selectionPanel');
 const ringControls=$('ringControls'),strapControls=$('strapControls'),strapAnchorControls=$('strapAnchorControls');
 const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle'),deleteSelectedBtn=$('deleteSelectedBtn');
-const undoBtn=$('undoBtn'),redoBtn=$('redoBtn'),lockSelectedBtn=$('lockSelectedBtn'),hideSelectedBtn=$('hideSelectedBtn'),isolateSelectedBtn=$('isolateSelectedBtn');
+const undoBtn=$('undoBtn'),redoBtn=$('redoBtn'),lockSelectedBtn=$('lockSelectedBtn'),moreBtn=$('moreBtn'),moreMenu=$('moreMenu');
 const widthSlider=$('widthSlider'),widthValue=$('widthValue'),slackSlider=$('slackSlider');
 const ringDiameterSlider=$('ringDiameterSlider'),ringDiameterValue=$('ringDiameterValue');
 const ringThicknessSlider=$('ringThicknessSlider'),ringThicknessValue=$('ringThicknessValue');
@@ -827,19 +827,14 @@ function redo(){
   if(!future.length)return;
   const item=future.pop();history.push(item);applyState(item.state);updateHistoryUI();saveProject();vibrate();
 }
-function updateQuickActions(){
-  if(!selected)return;
-  lockSelectedBtn.classList.toggle('active',!!selected.locked);
-  lockSelectedBtn.textContent=selected.locked?'🔒 Gesperrt':'🔓 Sperren';
-  isolateSelectedBtn.classList.toggle('active',isolatedObject===selected);
-}
+function updateQuickActions(){if(!selected)return;lockSelectedBtn.classList.toggle('active',!!selected.locked);lockSelectedBtn.textContent=selected.locked?'🔒 Gesperrt':'🔓 Sperren';}
 function clearIsolation(){
   isolatedObject=null;document.body.classList.remove('object-isolated');
   for(const n of nodes)setObjectVisibility(n,!n.hiddenByUser);
   for(const c of connections)setObjectVisibility(c,!c.hiddenByUser);
 }
 function selectObject(o){
-  selected=o;refreshSelectionVisuals();showSelection();updateQuickActions();vibrate(5);
+  selected=o;refreshSelectionVisuals();showSelection();updateQuickActions();updateNodeParameterVisibility();vibrate(5);
 }
 function refreshSelectionVisuals(){
   for(const n of nodes)rebuildNodeVisual(n);
@@ -987,16 +982,12 @@ deleteSelectedBtn.addEventListener('click',()=>{
   selected=null;hideSelection();updateAllGeometry();rememberState();
 });
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;updateQuickActions();rememberState();vibrate()});
-hideSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.hiddenByUser=true;setObjectVisibility(selected,false);selected=null;hideSelection();rememberState()});
-isolateSelectedBtn.addEventListener('click',()=>{
-  if(!selected)return;
-  if(isolatedObject===selected){clearIsolation();updateAllGeometry();return}
-  isolatedObject=selected;document.body.classList.add('object-isolated');
-  for(const n of nodes)setObjectVisibility(n,n===selected||(selected.kind==='connection'&&(n===selected.a||n===selected.b)));
-  for(const c of connections)setObjectVisibility(c,c===selected||(selected.kind==='node'&&(c.a===selected||c.b===selected)));
-  updateQuickActions();
-});
+
+
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
+moreBtn?.addEventListener('click',e=>{e.stopPropagation();moreMenu?.classList.toggle('hidden')});
+document.addEventListener('pointerdown',e=>{if(moreMenu&&!moreMenu.classList.contains('hidden')&&!e.target.closest('#moreMenu,#moreBtn'))moreMenu.classList.add('hidden')});
+
 
 
 ringDiameterSlider.addEventListener('input',()=>{
@@ -1034,7 +1025,7 @@ surfaceNodeRingToggle.addEventListener('click',()=>{
   }
 
   updateAllGeometry();
-  showSelection();
+  showSelection();updateNodeParameterVisibility();
 });
 
 function convertCrossingToRing(node){
@@ -1076,7 +1067,7 @@ strapNodeRingToggle.addEventListener('click',()=>{
 
   if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
   updateAllGeometry();
-  showSelection();
+  showSelection();updateNodeParameterVisibility();
 });
 widthSlider.addEventListener('input',()=>{
   if(selected?.kind!=='connection')return;
@@ -1278,19 +1269,13 @@ symmetricEnvelopeToggle?.addEventListener('click',()=>{
 
 function hideAllUI(){chrome.classList.add('ui-hidden');restoreUI.classList.remove('hidden')}
 function installSheetPhysics(el){
-  const grab=el.querySelector?.('.grabber');
-  if(grab){
-    let sy=0,startH=0,tracking=false;
-    grab.addEventListener('pointerdown',e=>{tracking=true;sy=e.clientY;startH=el.getBoundingClientRect().height;grab.setPointerCapture?.(e.pointerId);e.stopPropagation()});
-    grab.addEventListener('pointermove',e=>{if(!tracking)return;const h=THREE.MathUtils.clamp(startH+(sy-e.clientY),118,Math.min(innerHeight*.72,620));el.style.height=h+'px';el.classList.toggle('compact',h<190);e.stopPropagation()});
-    const end=e=>{if(!tracking)return;tracking=false;try{grab.releasePointerCapture?.(e.pointerId)}catch{}};
-    grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
-  }
-  let sy=0,dy=0,tracking=false;
-  el.addEventListener('pointerdown',e=>{if(e.target.closest('input,button,.sheet-scroll,.grabber'))return;tracking=true;sy=e.clientY;dy=0;el.setPointerCapture?.(e.pointerId)});
-  el.addEventListener('pointermove',e=>{if(!tracking)return;dy=Math.max(0,e.clientY-sy);el.style.transform=`translateY(${dy}px)`;el.style.opacity=String(Math.max(.35,1-dy/260))});
-  const end=e=>{if(!tracking)return;tracking=false;el.style.transform='';el.style.opacity='';if(dy>58)hideAllUI();try{el.releasePointerCapture?.(e.pointerId)}catch{}};
-  el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
+  const saved=Number(localStorage.getItem('harnessSheetHeight'));if(saved>110)el.style.height=Math.min(saved,innerHeight*.72)+'px';
+  const grab=el.querySelector?.('.grabber');if(!grab)return;
+  let sy=0,startH=0,tracking=false;
+  grab.addEventListener('pointerdown',e=>{tracking=true;sy=e.clientY;startH=el.getBoundingClientRect().height;grab.setPointerCapture?.(e.pointerId);e.preventDefault();e.stopPropagation()});
+  grab.addEventListener('pointermove',e=>{if(!tracking)return;const h=THREE.MathUtils.clamp(startH+(sy-e.clientY),112,innerHeight*.72);el.style.height=h+'px';e.preventDefault();e.stopPropagation()});
+  const end=e=>{if(!tracking)return;tracking=false;localStorage.setItem('harnessSheetHeight',String(el.getBoundingClientRect().height));try{grab.releasePointerCapture?.(e.pointerId)}catch{}};
+  grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
 }
 [selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
@@ -1308,3 +1293,30 @@ function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)}
 
 document.querySelectorAll('input[type="range"]').forEach(el=>el.addEventListener('change',rememberState));
 document.querySelectorAll('.mini-toggle,.primary-btn').forEach(el=>el.addEventListener('click',()=>setTimeout(rememberState,0)));
+
+function setupContextualNodeControls(){
+  surfaceNodeSizeSlider?.closest('.control,.sheet-row')?.classList.add('point-only');
+  ringDiameterSlider?.closest('.control,.sheet-row')?.classList.add('ring-only');
+  ringThicknessSlider?.closest('.control,.sheet-row')?.classList.add('ring-only');
+}
+function updateNodeParameterVisibility(){
+  selectionPanel?.classList.remove('node-point-only','node-ring-only');
+  if(selected?.kind==='node')selectionPanel?.classList.add(selected.ringVisible?'node-ring-only':'node-point-only');
+}
+const PRESET_DEFAULTS={widthSlider:[10,20,30,40],ringDiameterSlider:[20,30,40,50],ringThicknessSlider:[3,4,6,8],surfaceNodeSizeSlider:[4,6,8,10],strapAnchorSizeSlider:[4,6,8,10]};
+function setupNumericPresets(){
+  document.querySelectorAll('input[type="range"]').forEach(slider=>{
+    if(!slider.id)return;
+    const valueEl=document.getElementById(slider.id.replace('Slider','Value'));if(!valueEl)return;
+    const input=document.createElement('input');input.className='param-value-edit';input.type='number';input.inputMode='decimal';input.min=slider.min;input.max=slider.max;input.step=slider.step||1;input.value=slider.value;
+    valueEl.replaceWith(input);
+    slider.addEventListener('input',()=>input.value=slider.value);
+    input.addEventListener('change',()=>{let v=Number(input.value);if(!Number.isFinite(v))v=Number(slider.value);v=Math.max(Number(slider.min),Math.min(Number(slider.max),v));slider.value=v;slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}))});
+    if(PRESET_DEFAULTS[slider.id]){
+      const key='presets:'+slider.id;let vals;try{vals=JSON.parse(localStorage.getItem(key))}catch{}if(!Array.isArray(vals)||vals.length!==4)vals=[...PRESET_DEFAULTS[slider.id]];
+      const row=document.createElement('div');row.className='preset-row';
+      const render=()=>{row.innerHTML='';vals.forEach((v,i)=>{const b=document.createElement('button');b.className='preset-chip';b.textContent=v;b.addEventListener('click',()=>{slider.value=v;slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}))});let timer;b.addEventListener('pointerdown',()=>timer=setTimeout(()=>{vals[i]=Number(slider.value);localStorage.setItem(key,JSON.stringify(vals));render();vibrate(14);showToast('Preset gespeichert')},550));['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>clearTimeout(timer)));row.appendChild(b)})};render();slider.parentElement?.appendChild(row);
+    }
+  });
+}
+requestAnimationFrame(()=>{setupContextualNodeControls();setupNumericPresets();updateNodeParameterVisibility()});

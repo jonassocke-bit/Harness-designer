@@ -188,3 +188,18 @@ input[type=range]{margin-top:5px}
 .utility-bubbles{top:calc(env(safe-area-inset-top) + 72px)!important}
 .sheet-row{margin-bottom:4px}.panel-group{gap:7px!important}.control{padding:7px 0!important}.sheet-title{font-size:17px!important}
 body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
+
+/* V0.10b UI polish */
+.sheet{background:rgba(18,18,21,.64)!important;max-height:none!important;height:34dvh;min-height:112px;transition:none!important}
+.sheet-scroll{max-height:none!important;height:calc(100% - 88px);overflow-y:auto!important;-webkit-overflow-scrolling:touch}
+.panel-group{gap:2px!important}.control{padding:3px 0!important;margin:0!important}.sheet-row{margin:0!important}
+.quick-actions{margin:3px 0!important}.quick-actions .quick-btn{max-width:170px}
+.history-bubbles{top:calc(env(safe-area-inset-top) + 54px)!important}
+.utility-bubbles{top:calc(env(safe-area-inset-top) + 54px)!important;right:max(12px,env(safe-area-inset-right))!important}
+.mode-switch{top:calc(env(safe-area-inset-top) + 108px)!important;left:50%!important;transform:translateX(-50%)!important}
+.more-bubble{position:absolute;right:max(12px,env(safe-area-inset-right));top:calc(env(safe-area-inset-top) + 8px);z-index:30}
+.more-menu{position:absolute;right:12px;top:calc(env(safe-area-inset-top) + 52px);z-index:31;width:190px;padding:7px;background:rgba(22,22,25,.88);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.12);border-radius:16px}
+.more-menu.hidden{display:none}.menu-action{width:100%;padding:11px 10px;text-align:left;border:0;background:transparent;color:#fff;border-radius:10px}
+.param-value-edit{width:72px;border:0;border-radius:10px;background:rgba(255,255,255,.10);color:#fff;padding:6px 7px;text-align:right;font:inherit}
+.preset-row{display:flex;gap:5px;margin:1px 0 4px}.preset-chip{min-width:40px;padding:5px 7px;border-radius:9px;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.065);color:#fff;font-size:11px}
+.node-point-only .ring-only{display:none!important}.node-ring-only .point-only{display:none!important}
