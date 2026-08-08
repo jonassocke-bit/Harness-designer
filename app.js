@@ -200,31 +200,52 @@ slackSlider.addEventListener('input',()=>{if(strap){strap.userData.slack=+slackS
 // -------- custom iPhone gesture model --------
 const pointers=new Map();
 let single=null;
-let objectDrag=null;
 let twoStart=null;
-const TAP=9, DRAG=7;
+const TAP=9;
 
 function pointerInfo(e){return{x:e.clientX,y:e.clientY,px:e.clientX,py:e.clientY}}
+
 canvas.addEventListener('pointerdown',e=>{
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId,pointerInfo(e));
 
   if(pointers.size===1){
     const ih=mode==='build'?interactiveHit(e.clientX,e.clientY):null;
-    single={id:e.pointerId,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,interactive:ih,rotating:false};
+    single={
+      id:e.pointerId,
+      sx:e.clientX, sy:e.clientY,
+      lx:e.clientX, ly:e.clientY,
+      target:ih,                // anchor / strapHandle / null
+      moved:false
+    };
   }else if(pointers.size===2){
-    single=null;objectDrag=null;
+    single=null;
     const [a,b]=[...pointers.values()];
-    twoStart={dist:Math.hypot(b.x-a.x,b.y-a.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,az:camAz,el:camEl,d:camDist,ty:target.y};
+    twoStart={
+      dist:Math.hypot(b.x-a.x,b.y-a.y),
+      cx:(a.x+b.x)/2,
+      cy:(a.y+b.y)/2,
+      az:camAz,
+      el:camEl,
+      d:camDist,
+      ty:target.y
+    };
   }
 });
-canvas.addEventListener('pointermove',e=>{
-  const p=pointers.get(e.pointerId);if(!p)return;
-  p.px=p.x;p.py=p.y;p.x=e.clientX;p.y=e.clientY;
 
+canvas.addEventListener('pointermove',e=>{
+  const p=pointers.get(e.pointerId);
+  if(!p)return;
+
+  p.px=p.x; p.py=p.y;
+  p.x=e.clientX; p.y=e.clientY;
+
+  // Two-finger gesture: zoom + rotate + vertical pan.
   if(pointers.size===2){
     const [a,b]=[...pointers.values()];
-    const dist=Math.max(20,Math.hypot(b.x-a.x,b.y-a.y)),cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
+    const dist=Math.max(20,Math.hypot(b.x-a.x,b.y-a.y));
+    const cx=(a.x+b.x)/2, cy=(a.y+b.y)/2;
+
     if(twoStart){
       camDist=THREE.MathUtils.clamp(twoStart.d*(twoStart.dist/dist),3.1,7.2);
       camAz=twoStart.az-(cx-twoStart.cx)*.006;
@@ -233,42 +254,79 @@ canvas.addEventListener('pointermove',e=>{
     }
     return;
   }
-  if(pointers.size!==1||!single||single.id!==e.pointerId)return;
 
-  const dx=e.clientX-single.sx,dy=e.clientY-single.sy,dist=Math.hypot(dx,dy);
-  if(!objectDrag && dist>DRAG && single.interactive){
-    objectDrag=single.interactive;
-  }
-  if(objectDrag?.kind==='anchor'){
-    const h=bodyHitXY(e.clientX,e.clientY);if(h){positionAnchor(objectDrag.object,h);if(strap)updateStrap()}
+  if(pointers.size!==1 || !single || single.id!==e.pointerId)return;
+
+  const totalDist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
+  if(totalDist>2)single.moved=true;
+
+  // If touch started on an object, that object owns the gesture.
+  if(single.target?.kind==='anchor'){
+    const h=bodyHitXY(e.clientX,e.clientY);
+    if(h){
+      positionAnchor(single.target.object,h);
+      if(strap)updateStrap();
+    }
+    single.lx=e.clientX; single.ly=e.clientY;
     return;
   }
-  if(objectDrag?.kind==='strapHandle'&&strap){
-    const h=bodyHitXY(e.clientX,e.clientY);if(h){strap.userData.controlPoint=h.point.clone().addScaledVector(worldNormal(h),.06);updateStrap()}
+
+  if(single.target?.kind==='strapHandle' && strap){
+    const h=bodyHitXY(e.clientX,e.clientY);
+    if(h){
+      strap.userData.controlPoint=h.point.clone().addScaledVector(worldNormal(h),.06);
+      updateStrap();
+    }
+    single.lx=e.clientX; single.ly=e.clientY;
     return;
   }
-  if(dist>DRAG){
-    single.rotating=true;
-    const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;
-    camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl-ddy*.006,-.72,.72);updateCamera();
-  }
-  single.lx=e.clientX;single.ly=e.clientY;
+
+  // Otherwise one finger is always camera control.
+  const ddx=e.clientX-single.lx;
+  const ddy=e.clientY-single.ly;
+  camAz-=ddx*.009;
+
+  // Vertical direction inverted compared with V0.3a.
+  camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);
+
+  updateCamera();
+
+  single.lx=e.clientX;
+  single.ly=e.clientY;
 });
+
 canvas.addEventListener('pointerup',e=>{
-  const p=pointers.get(e.pointerId);pointers.delete(e.pointerId);
+  pointers.delete(e.pointerId);
   if(pointers.size<2)twoStart=null;
 
-  if(single&&single.id===e.pointerId){
+  if(single && single.id===e.pointerId){
     const dist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
-    if(!objectDrag&&!single.rotating&&dist<=TAP&&mode==='build'&&!single.interactive&&anchors.length<2){
-      const h=bodyHitXY(e.clientX,e.clientY);if(h){makeAnchor(h);if(anchors.length===2)makeStrap()}
+
+    // Only an intentional, nearly stationary tap on empty mannequin surface
+    // creates a new anchor. Camera gestures never create anchors.
+    if(
+      !single.target &&
+      dist<=TAP &&
+      mode==='build' &&
+      anchors.length<2
+    ){
+      const h=bodyHitXY(e.clientX,e.clientY);
+      if(h){
+        makeAnchor(h);
+        if(anchors.length===2)makeStrap();
+      }
     }
   }
-  objectDrag=null;single=null;
+
+  single=null;
   try{canvas.releasePointerCapture(e.pointerId)}catch{}
 });
-canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);single=null;objectDrag=null;twoStart=null});
 
+canvas.addEventListener('pointercancel',e=>{
+  pointers.delete(e.pointerId);
+  single=null;
+  twoStart=null;
+});
 // -------- modes --------
 function switchMode(next){
   mode=next;modeButtons.forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
