@@ -1,15 +1,25 @@
-# Harness Designer V0.5e
+# Harness Designer V0.5f
 
-Critical UI fix:
-- Ring editor was broken because Three.js ring groups store their type in `userData.kind`, while the UI checked `selected.kind`.
-- Central `kindOf()` now handles both Three.js objects and plain connection objects.
+## Strap anchors
+- Strap anchors are now white spheres.
+- Size can be adjusted from 2–30 mm.
+- Strap anchors are valid connection targets in Connect mode.
+- Connections can therefore run ring -> strap anchor, strap anchor -> ring, or strap anchor -> strap anchor.
+- Strap anchors remain tied to their percentage on the exact rendered strap.
 
-Changes:
-- Ring mode: tap ring => ring menu with diameter/thickness.
-- Connect mode: tap strap => strap menu.
-- Strap midpoint handles are visible and draggable again in Connect mode.
-- Mirror and model-rotation controls are separate circular bubbles in the upper-right.
-- Mirror bubble is a true toggle: white=on, dark=off; it never changes Ring/Connect mode.
-- Instruction banner removed.
-- Floor now shows the world x=0 mirror centreline as a visual alignment guide.
-- Manual X/Y/Z rotation remains available.
+## Size ranges
+- Strap width now allows 0–60 mm.
+- Ring diameter now allows 0–100 mm.
+- Ring material thickness now allows 0–15 mm.
+- Internally a tiny epsilon is used so Three.js geometry remains valid at zero.
+
+## Model distance
+- Manual model menu now includes global "Abstand zum Modell" 0–30 mm.
+- Body-attached rings are repositioned from their stored surface point/normal.
+- Strap paths are rebuilt to use the new offset.
+
+## Existing
+- true Mirror toggle bubble
+- manual X/Y/Z mannequin rotation
+- centre-axis floor guide
+- ring editor / strap editor split

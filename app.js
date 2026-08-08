@@ -10,15 +10,18 @@ const widthSlider=$('widthSlider'),widthValue=$('widthValue'),slackSlider=$('sla
 const ringDiameterSlider=$('ringDiameterSlider'),ringDiameterValue=$('ringDiameterValue');
 const ringThicknessSlider=$('ringThicknessSlider'),ringThicknessValue=$('ringThicknessValue');
 const addStrapAnchorBtn=$('addStrapAnchorBtn'),strapAnchorSlider=$('strapAnchorSlider'),strapAnchorValue=$('strapAnchorValue');
+const strapAnchorSizeSlider=$('strapAnchorSizeSlider'),strapAnchorSizeValue=$('strapAnchorSizeValue');
 const mirrorToggle=$('mirrorToggle');
 const accessoryPanel=$('accessoryPanel'),photoPanel=$('photoPanel'),rotationPanel=$('rotationPanel');
 const rotateModelBtn=$('rotateModelBtn'),closeRotationBtn=$('closeRotationBtn'),rotationResetBtn=$('rotationResetBtn');
 const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider');
 const rotXValue=$('rotXValue'),rotYValue=$('rotYValue'),rotZValue=$('rotZValue');
+const surfaceOffsetSlider=$('surfaceOffsetSlider'),surfaceOffsetValue=$('surfaceOffsetValue');
 const resetBtn=$('resetBtn'),modelBtn=$('modelBtn'),modelInput=$('modelInput'),toast=$('toast'),modeTitle=$('modeTitle');
 const modeButtons=[...document.querySelectorAll('.mode')],toolButtons=[...document.querySelectorAll('.tool')];
 
 let mode='build',buildTool='ring',mirrorMode=false;
+let surfaceOffsetMM=2;
 
 function kindOf(obj){
   if(!obj)return null;
@@ -125,10 +128,10 @@ function bodyHitXY(x,y){setPointerXY(x,y);return raycaster.intersectObjects(body
 function worldNormal(hit){const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);return hit.face.normal.clone().applyMatrix3(nm).normalize()}
 
 function ringMajorRadius(anchor){
-  return Math.max(.02,(anchor.userData.diameterMM*MM_TO_SCENE)/2);
+  return Math.max(.001,(anchor.userData.diameterMM*MM_TO_SCENE)/2);
 }
 function ringTubeRadius(anchor){
-  return Math.max(.004,(anchor.userData.thicknessMM*MM_TO_SCENE)/2);
+  return Math.max(.001,(anchor.userData.thicknessMM*MM_TO_SCENE)/2);
 }
 function rebuildRingGeometry(anchor){
   const ring=anchor.children.find(ch=>ch.userData?.kind==='anchorRing');
@@ -139,6 +142,10 @@ function rebuildRingGeometry(anchor){
   if(disc){
     disc.geometry?.dispose?.();
     disc.geometry=new THREE.CircleGeometry(ringMajorRadius(anchor)*.88,32);
+  }
+  if(anchor.userData.surfacePoint && anchor.userData.normal){
+    anchor.position.copy(anchor.userData.surfacePoint)
+      .addScaledVector(anchor.userData.normal,surfaceOffsetScene()+ringTubeRadius(anchor));
   }
   rebuildRingWraps(anchor);
 }
@@ -161,6 +168,8 @@ anchorSelectedMat.emissiveIntensity=1.15;
 const DEFAULT_RING_DIAMETER_MM=40;
 const DEFAULT_RING_THICKNESS_MM=6;
 const MM_TO_SCENE=.0037;
+
+function surfaceOffsetScene(){return surfaceOffsetMM*MM_TO_SCENE;}
 const anchors=[],connections=[],strapAnchors=[];
 let selected=null,connectStart=null;
 
@@ -179,35 +188,96 @@ function updateStrapAnchor(sa){
   const curve=connectionCurve(sa.connection);
   const t=THREE.MathUtils.clamp(sa.t,0,1);
   const p=curve.getPoint(t);
-  const eps=.004;
-  const tangent=curve.getPoint(Math.min(1,t+eps))
-    .sub(curve.getPoint(Math.max(0,t-eps))).normalize();
-
-  const viewNormal=camera.getWorldDirection(new THREE.Vector3()).negate();
-  let side=new THREE.Vector3().crossVectors(viewNormal,tangent);
-  if(side.lengthSq()<1e-6)side.set(1,0,0);
-  side.normalize();
-  const normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
-
-  sa.group.position.copy(p).addScaledVector(normal,.010);
-  sa.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
+  sa.group.position.copy(p);
+  sa.group.quaternion.identity();
 }
 function makeStrapAnchor(connection,t=.5,mirrorPartner=null){
   const g=new THREE.Group();
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(.038,.010,14,48),anchorMat);
-  ring.userData.kind='strapAnchorRing';
-  g.add(ring);
-  const hitDisc=new THREE.Mesh(new THREE.CircleGeometry(.034,28),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.02,side:THREE.DoubleSide}));
-  hitDisc.userData.kind='strapAnchorHit';g.add(hitDisc);
-  const sa={kind:'strapAnchor',id:`RA${strapAnchors.length+1}`,connection,t,group:g,mirrorPartner};
+
+  const sphere=new THREE.Mesh(
+    new THREE.SphereGeometry(.020,24,18),
+    new THREE.MeshStandardMaterial({
+      color:0xffffff,
+      emissive:0x222222,
+      emissiveIntensity:.35,
+      roughness:.3,
+      metalness:0
+    })
+  );
+  sphere.userData.kind='strapAnchorSphere';
+  g.add(sphere);
+
+  const hitSphere=new THREE.Mesh(
+    new THREE.SphereGeometry(.030,18,14),
+    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.001})
+  );
+  hitSphere.userData.kind='strapAnchorHit';
+  g.add(hitSphere);
+
+  const sa={
+    kind:'strapAnchor',
+    id:`RA${strapAnchors.length+1}`,
+    connection,
+    t,
+    group:g,
+    mirrorPartner,
+    sizeMM:10
+  };
+
   g.userData.owner=sa;
-  scene.add(g);strapAnchors.push(sa);updateStrapAnchor(sa);
+  scene.add(g);
+  strapAnchors.push(sa);
+  updateStrapAnchorGeometry(sa);
+  updateStrapAnchor(sa);
   return sa;
 }
+
+function updateStrapAnchorGeometry(sa){
+  const visual=sa.group.children.find(ch=>ch.userData?.kind==='strapAnchorSphere');
+  const hit=sa.group.children.find(ch=>ch.userData?.kind==='strapAnchorHit');
+  const r=Math.max(.006,(sa.sizeMM*MM_TO_SCENE)/2);
+  if(visual){
+    visual.geometry?.dispose?.();
+    visual.geometry=new THREE.SphereGeometry(r,24,18);
+  }
+  if(hit){
+    hit.geometry?.dispose?.();
+    hit.geometry=new THREE.SphereGeometry(Math.max(r*1.45,.018),18,14);
+  }
+}
 function removeStrapAnchor(sa){
+  connections.filter(c=>c.a===sa||c.b===sa).slice().forEach(removeConnection);
+  if(sa.mirrorPartner)sa.mirrorPartner.mirrorPartner=null;
   scene.remove(sa.group);
   const i=strapAnchors.indexOf(sa);if(i>=0)strapAnchors.splice(i,1);
 }
+
+function isConnectable(obj){
+  const k=kindOf(obj);
+  return k==='anchor' || k==='strapAnchor';
+}
+
+function endpointWorld(obj){
+  const k=kindOf(obj);
+  if(k==='anchor')return obj.position.clone();
+  if(k==='strapAnchor')return obj.group.position.clone();
+  return new THREE.Vector3();
+}
+
+function endpointLabel(obj){
+  const k=kindOf(obj);
+  if(k==='anchor')return obj.userData.id;
+  if(k==='strapAnchor')return obj.id;
+  return '?';
+}
+
+function endpointMirror(obj){
+  const k=kindOf(obj);
+  if(k==='anchor')return obj.userData.mirrorPartner || null;
+  if(k==='strapAnchor')return obj.mirrorPartner || null;
+  return null;
+}
+
 function findMirrorConnection(c){
   if(!c?.a?.userData?.mirrorPartner||!c?.b?.userData?.mirrorPartner)return null;
   return connections.find(x=>
@@ -260,8 +330,11 @@ function makeAnchor(hit,mirrorPartner=null){
   return g;
 }
 function positionAnchor(g,hit){
-  const n=worldNormal(hit);g.position.copy(hit.point).addScaledVector(n,.040);
-  g.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);g.userData.normal.copy(n);
+  const n=worldNormal(hit);
+  g.userData.surfacePoint=hit.point.clone();
+  g.userData.normal.copy(n);
+  g.position.copy(g.userData.surfacePoint).addScaledVector(n,surfaceOffsetScene()+ringTubeRadius(g));
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);
   connections.filter(c=>c.a===g||c.b===g).forEach(updateConnection);
 }
 function ringPlaneDirection(anchor,worldDirection){
@@ -277,7 +350,7 @@ function ringPlaneDirection(anchor,worldDirection){
 function ringEdgePoint(anchor,otherAnchor){
   // Every strap aims at the ring centre; the visible leather ends at the near
   // outside edge of the torus rather than entering the hole.
-  const worldDir=otherAnchor.position.clone().sub(anchor.position).normalize();
+  const worldDir=endpointWorld(otherAnchor).sub(anchor.position).normalize();
   const localDir=ringPlaneDirection(anchor,worldDir);
   const localPoint=localDir.multiplyScalar(ringMajorRadius(anchor)+ringTubeRadius(anchor)*.45);
   return anchor.localToWorld(localPoint.clone());
@@ -286,7 +359,7 @@ function ringEdgePoint(anchor,otherAnchor){
 function wrapArcGeometry(anchor,otherAnchor,widthMM,color=0x171718){
   // Short leather-coloured arc on the metal ring to visually represent
   // the strap wrapping around the ring.
-  const worldDir=otherAnchor.position.clone().sub(anchor.position).normalize();
+  const worldDir=endpointWorld(otherAnchor).sub(anchor.position).normalize();
   const localDir=ringPlaneDirection(anchor,worldDir);
   const centerAngle=Math.atan2(localDir.y,localDir.x);
 
@@ -338,22 +411,41 @@ function rebuildRingWraps(anchor){
 
 function makeConnection(a,b,mirrorPartner=null){
   if(a===b)return;
-  const c={kind:'connection',id:`S${connections.length+1}`,a,b,widthMM:30,slack:8,controlPoint:null,group:new THREE.Group(),mirrorPartner};
-  scene.add(c.group);connections.push(c);updateConnection(c);
+  if(!isConnectable(a)||!isConnectable(b))return;
 
-  if(mirrorMode && !mirrorPartner && a.userData?.mirrorPartner && b.userData?.mirrorPartner){
-    const mc=makeConnection(a.userData.mirrorPartner,b.userData.mirrorPartner,c);
-    c.mirrorPartner=mc;
+  const c={
+    kind:'connection',
+    id:`S${connections.length+1}`,
+    a,b,
+    widthMM:30,
+    slack:8,
+    controlPoint:null,
+    group:new THREE.Group(),
+    mirrorPartner
+  };
+  scene.add(c.group);
+  connections.push(c);
+  updateConnection(c);
+
+  if(mirrorMode && !mirrorPartner){
+    const ma=endpointMirror(a), mb=endpointMirror(b);
+    if(ma && mb){
+      const mc=makeConnection(ma,mb,c);
+      c.mirrorPartner=mc;
+    }
   }
 
-  selectObject(c);showToast(`${a.userData.id} → ${b.userData.id}`);
+  selectObject(c);
+  showToast(`${endpointLabel(a)} → ${endpointLabel(b)}`);
   return c;
 }
 function surfaceMidpoint(c){
-  const p1=ringEdgePoint(c.a,c.b),p2=ringEdgePoint(c.b,c.a),mid=p1.clone().lerp(p2,.5);
+  const p1=kindOf(c.a)==='anchor'?ringEdgePoint(c.a,c.b):endpointWorld(c.a);
+  const p2=kindOf(c.b)==='anchor'?ringEdgePoint(c.b,c.a):endpointWorld(c.b);
+  const mid=p1.clone().lerp(p2,.5);
   const ndc=mid.clone().project(camera);raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
   const h=raycaster.intersectObjects(bodyMeshes,true)[0];
-  return h?h.point.clone().addScaledVector(worldNormal(h),.055):mid;
+  return h?h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008):mid;
 }
 
 function projectPointToBodyFromCamera(point, offset=.045){
@@ -362,12 +454,12 @@ function projectPointToBodyFromCamera(point, offset=.045){
   const hits=raycaster.intersectObjects(bodyMeshes,true);
   if(!hits.length) return point.clone();
   const h=hits[0];
-  return h.point.clone().addScaledVector(worldNormal(h),offset);
+  return h.point.clone().addScaledVector(worldNormal(h),Math.max(.001,surfaceOffsetScene()+offset*.25));
 }
 
 function surfaceSampledPath(c){
-  const p1=ringEdgePoint(c.a,c.b);
-  const p2=ringEdgePoint(c.b,c.a);
+  const p1=kindOf(c.a)==='anchor'?ringEdgePoint(c.a,c.b):endpointWorld(c.a);
+  const p2=kindOf(c.b)==='anchor'?ringEdgePoint(c.b,c.a):endpointWorld(c.b);
 
   if(!c.controlPoint)c.controlPoint=surfaceMidpoint(c);
 
@@ -387,7 +479,7 @@ function surfaceSampledPath(c){
     let p=guide.getPoint(t);
 
     if(i!==0 && i!==SUPPORTS-1 && hug>.08){
-      const snapped=projectPointToBodyFromCamera(p,.047);
+      const snapped=projectPointToBodyFromCamera(p,.010);
 
       // Ignore implausible jumps to another body part/occluding limb.
       if(snapped.distanceTo(p)<.34){
@@ -529,8 +621,8 @@ function updateConnection(c){
   h.userData={kind:'strapHandle',owner:c};
   c.group.add(h);
   c.handle=h;
-  rebuildRingWraps(c.a);
-  rebuildRingWraps(c.b);
+  if(kindOf(c.a)==='anchor')rebuildRingWraps(c.a);
+  if(kindOf(c.b)==='anchor')rebuildRingWraps(c.b);
   strapAnchors.filter(sa=>sa.connection===c).forEach(updateStrapAnchor);
   refreshSelectionVisuals();
 }
@@ -542,8 +634,8 @@ function removeConnection(c){
   scene.remove(c.group);
   const i=connections.indexOf(c);
   if(i>=0)connections.splice(i,1);
-  rebuildRingWraps(a);
-  rebuildRingWraps(b);
+  if(kindOf(a)==='anchor')rebuildRingWraps(a);
+  if(kindOf(b)==='anchor')rebuildRingWraps(b);
 }
 function removeAnchor(a){
   connections.filter(c=>c.a===a||c.b===a).slice().forEach(removeConnection);
@@ -591,6 +683,8 @@ function showSelection(){
     selectionTitle.textContent=selected.id;
     strapAnchorSlider.value=Math.round(selected.t*100);
     strapAnchorValue.textContent=Math.round(selected.t*100);
+    strapAnchorSizeSlider.value=selected.sizeMM;
+    strapAnchorSizeValue.textContent=selected.sizeMM;
   }else{
     selectionPanel.classList.add('hidden');
   }
@@ -724,8 +818,26 @@ addStrapAnchorBtn.addEventListener('click',()=>{
 });
 strapAnchorSlider.addEventListener('input',()=>{
   if(kindOf(selected)==='strapAnchor'){
-    selected.t=+strapAnchorSlider.value/100;strapAnchorValue.textContent=strapAnchorSlider.value;updateStrapAnchor(selected);
-    if(selected.mirrorPartner){selected.mirrorPartner.t=selected.t;updateStrapAnchor(selected.mirrorPartner)}
+    selected.t=+strapAnchorSlider.value/100;
+    strapAnchorValue.textContent=strapAnchorSlider.value;
+    updateStrapAnchor(selected);
+    connections.filter(c=>c.a===selected||c.b===selected).forEach(updateConnection);
+    if(selected.mirrorPartner){
+      selected.mirrorPartner.t=selected.t;
+      updateStrapAnchor(selected.mirrorPartner);
+      connections.filter(c=>c.a===selected.mirrorPartner||c.b===selected.mirrorPartner).forEach(updateConnection);
+    }
+  }
+});
+strapAnchorSizeSlider.addEventListener('input',()=>{
+  if(kindOf(selected)==='strapAnchor'){
+    selected.sizeMM=+strapAnchorSizeSlider.value;
+    strapAnchorSizeValue.textContent=strapAnchorSizeSlider.value;
+    updateStrapAnchorGeometry(selected);
+    if(selected.mirrorPartner){
+      selected.mirrorPartner.sizeMM=selected.sizeMM;
+      updateStrapAnchorGeometry(selected.mirrorPartner);
+    }
   }
 });
 mirrorToggle.addEventListener('click',e=>{
@@ -749,6 +861,27 @@ deleteSelectedBtn.addEventListener('click',()=>{
 resetBtn.addEventListener('click',resetHarness);
 
 
+
+function refreshSurfaceOffset(){
+  anchors.forEach(a=>{
+    if(a.userData.surfacePoint && a.userData.normal){
+      a.position.copy(a.userData.surfacePoint)
+        .addScaledVector(a.userData.normal,surfaceOffsetScene()+ringTubeRadius(a));
+    }
+  });
+  connections.forEach(c=>{
+    c.controlPoint=null;
+    updateConnection(c);
+  });
+  strapAnchors.forEach(updateStrapAnchor);
+}
+
+surfaceOffsetSlider.addEventListener('input',()=>{
+  surfaceOffsetMM=+surfaceOffsetSlider.value;
+  surfaceOffsetValue.textContent=surfaceOffsetSlider.value;
+  refreshSurfaceOffset();
+});
+
 function syncRotationUI(){
   const d=180/Math.PI;
   rotXSlider.value=Math.round(mannequin.rotation.x*d);
@@ -757,6 +890,8 @@ function syncRotationUI(){
   rotXValue.textContent=rotXSlider.value;
   rotYValue.textContent=rotYSlider.value;
   rotZValue.textContent=rotZSlider.value;
+  surfaceOffsetSlider.value=surfaceOffsetMM;
+  surfaceOffsetValue.textContent=surfaceOffsetMM;
 }
 function applyManualRotation(){
   const r=Math.PI/180;
@@ -835,21 +970,20 @@ canvas.addEventListener('pointerup',e=>{
     const dist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
     if(dist<=TAP&&mode==='build'){
       const ih=single.hit;
-      if(ih?.kind==='anchor'){
+      if(ih?.kind==='anchor' || ih?.kind==='strapAnchor'){
         if(buildTool==='connect'){
           if(!connectStart){
             connectStart=ih.owner;
-            showToast('Zweiten Ring antippen');
+            selectObject(ih.owner);
+            showToast('Zweites Ziel antippen');
           }else{
             makeConnection(connectStart,ih.owner);
             connectStart=null;
           }
-        }else{
+        }else if(ih.kind==='anchor'){
           selectObject(ih.owner);
         }
       }else if(ih?.kind==='connection'){
-        if(buildTool==='connect')selectObject(ih.owner);
-      }else if(ih?.kind==='strapAnchor'){
         if(buildTool==='connect')selectObject(ih.owner);
       }else if(!ih&&buildTool==='ring'){
         const h=bodyHitXY(e.clientX,e.clientY);
