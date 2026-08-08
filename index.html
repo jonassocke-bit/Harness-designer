@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.3c</title>
+  <title>Harness Designer V0.4bb</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.3c</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.4b</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -37,45 +37,79 @@
     </header>
 
     <div class="hint" id="hint">
-      <strong>Tippen setzt · Ziehen dreht</strong>
-      <span>1 Finger ziehen: Ansicht drehen · 1 Finger tippen: Anchor · 2 Finger: Zoom + drehen + hoch/runter · Anchor/Riemen direkt greifen: Objekt verschieben</span>
+      <strong>Ring setzen → verbinden</strong>
+      <span>„Ring“ aktiv: auf den Körper tippen · „Verbinden“ aktiv: zwei Ringe antippen · Ringe direkt ziehen · 1 Finger sonst Kamera</span>
     </div>
 
-    <div class="mode-pill sheetish" id="modePill">
-      <div class="mini-grabber"></div>
+    <div id="buildTools" class="build-tools">
+      <button class="tool active" data-tool="ring">＋ Ring</button>
+      <button class="tool" data-tool="connect">↔ Verbinden</button>
+    </div>
+
+    <div class="mode-pill" id="modePill">
       <button class="mode active" data-mode="build">Bauen</button>
       <button class="mode" data-mode="accessories">Accessoires</button>
       <button class="mode" data-mode="photo">Foto</button>
     </div>
 
-    <section id="strapPanel" class="sheet hidden">
+    <section id="selectionPanel" class="sheet hidden">
       <div class="grabber"></div>
       <div class="sheet-row">
-        <div><div class="sheet-label">AUSGEWÄHLTER RIEMEN</div><div class="sheet-title">Strap 01</div></div>
-        <div class="value-badge"><span id="widthValue">30</span> mm</div>
+        <div>
+          <div class="sheet-label" id="selectionLabel">AUSWAHL</div>
+          <div class="sheet-title" id="selectionTitle">Ring</div>
+        </div>
+        <button id="deleteSelectedBtn" class="small-danger">Löschen</button>
       </div>
-      <label class="control"><span>Breite</span><input id="widthSlider" type="range" min="12" max="60" value="30" step="1"></label>
-      <label class="control"><span>Lockerheit</span><div class="control-meta"><span>Straff</span><span>Locker</span></div><input id="slackSlider" type="range" min="0" max="100" value="8" step="1"></label>
-      <button id="deleteStrapBtn" class="danger-btn">Riemen löschen</button>
+
+      <div id="ringControls" class="panel-group hidden">
+        <div class="subheading">Anschlusspunkte</div>
+        <div class="clock-grid">
+          <button data-slot="0">12</button>
+          <button data-slot="1">1:30</button>
+          <button data-slot="2">3</button>
+          <button data-slot="3">4:30</button>
+          <button data-slot="4">6</button>
+          <button data-slot="5">7:30</button>
+          <button data-slot="6">9</button>
+          <button data-slot="7">10:30</button>
+        </div>
+        <p class="microcopy">Die Punkte werden als Snap-Positionen für Riemen verwendet. Vorerst wählt die App automatisch den passendsten Punkt.</p>
+      </div>
+
+      <div id="strapControls" class="panel-group hidden">
+        <label class="control">
+          <span>Breite</span>
+          <div class="value-badge"><span id="widthValue">30</span> mm</div>
+          <input id="widthSlider" type="range" min="12" max="60" value="30" step="1">
+        </label>
+        <label class="control">
+          <span>Lockerheit</span>
+          <div class="control-meta"><span>Straff</span><span>Locker</span></div>
+          <input id="slackSlider" type="range" min="0" max="100" value="8" step="1">
+        </label>
+      </div>
     </section>
 
     <section id="accessoryPanel" class="sheet hidden compact-sheet">
-      <div class="grabber"></div><div class="sheet-label">ACCESSOIRE-MODUS</div>
-      <div class="sheet-title">Grundmodus aktiv</div>
-      <p>Die Konstruktion ist ausgeblendet. Nieten, Ösen und Snap-Reihen kommen im Accessoire-Meilenstein.</p>
+      <div class="grabber"></div>
+      <div class="sheet-label">ACCESSOIRE-MODUS</div>
+      <div class="sheet-title">Vorbereitet</div>
+      <p>Nieten, Ösen, Spikes und Reihen-Snaps kommen als nächster großer Arbeitsbereich.</p>
     </section>
 
     <section id="photoPanel" class="sheet hidden compact-sheet">
-      <div class="grabber"></div><div class="sheet-label">FOTO-MODUS</div>
+      <div class="grabber"></div>
+      <div class="sheet-label">FOTO-MODUS</div>
       <div class="sheet-title">Clean View</div>
-      <p>Keine Konstruktionshilfen. Posen, Licht und Materialpresets folgen später.</p>
+      <p>Konstruktionshilfen werden ausgeblendet. Posen und Materialpresets folgen später.</p>
     </section>
   </div>
 
-  <button id="restoreUI" class="restore-ui hidden" aria-label="Menüs einblenden"><span></span></button>
-
+  <button id="restoreUI" class="restore-ui hidden"><span></span></button>
   <div id="toast" class="toast hidden"></div>
 </div>
+
 <script type="module" src="./app.js"></script>
 </body>
 </html>

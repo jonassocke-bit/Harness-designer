@@ -1,5 +1,5 @@
 
-:root{color-scheme:dark;--bg:#09090b;--panel:rgba(19,19,22,.91);--line:rgba(255,255,255,.12);--text:#f7f7f8;--muted:#9c9ca3}
+:root{color-scheme:dark;--bg:#09090b;--panel:rgba(19,19,22,.92);--line:rgba(255,255,255,.12);--text:#f7f7f8;--muted:#9c9ca3}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;color:var(--text)}
 body{overscroll-behavior:none}
@@ -9,41 +9,40 @@ button,input{font:inherit}
 #scene{display:block;width:100%;height:100%;touch-action:none}
 #chrome{position:absolute;inset:0;z-index:10;pointer-events:none;opacity:1;transition:opacity .22s ease}
 #chrome.ui-hidden{opacity:0;pointer-events:none}
+#chrome.ui-hidden,#chrome.ui-hidden>*,#chrome.ui-hidden *{pointer-events:none!important}
 #chrome>*{pointer-events:auto}
 .topbar{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 12px) 16px 10px;display:flex;align-items:center;justify-content:space-between}
 .top-actions{display:flex;gap:7px;align-items:center}
 .eyebrow{font-size:10px;letter-spacing:.15em;color:var(--muted);font-weight:700}
 .title{font-size:23px;line-height:1.05;font-weight:760;letter-spacing:-.035em;margin-top:3px}
 .icon-btn,.text-btn{height:42px;border-radius:14px;border:1px solid var(--line);background:rgba(20,20,23,.74);color:#fff;backdrop-filter:blur(20px)}
-.icon-btn{width:42px;font-size:22px}
-.text-btn{padding:0 12px;font-size:12px;font-weight:680}
+.icon-btn{width:42px;font-size:22px}.text-btn{padding:0 12px;font-size:12px;font-weight:680}
 .hint{position:absolute;left:18px;right:18px;top:calc(env(safe-area-inset-top) + 78px);padding:12px 14px;border-radius:16px;background:rgba(18,18,21,.68);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(18px);transition:opacity .25s ease,transform .25s ease}
 .hint strong{display:block;font-size:13px;margin-bottom:3px}.hint span{display:block;color:#b7b7bd;font-size:11.5px;line-height:1.38}
 .hint.minimized{opacity:.22;transform:scale(.975)}
-.mode-pill{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 16px);display:flex;background:rgba(20,20,23,.86);border:1px solid var(--line);border-radius:18px;padding:4px;backdrop-filter:blur(24px);touch-action:none;will-change:transform}
-.mini-grabber{display:none}
+.build-tools{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 146px);display:flex;gap:7px;padding:4px;background:rgba(20,20,23,.80);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(22px)}
+.tool{border:0;border-radius:12px;background:transparent;color:#9c9ca3;padding:9px 12px;font-size:12px;font-weight:680}
+.tool.active{background:#fff;color:#111}
+.mode-pill{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 16px);display:flex;background:rgba(20,20,23,.86);border:1px solid var(--line);border-radius:18px;padding:4px;backdrop-filter:blur(24px);touch-action:none}
 .mode{border:0;background:transparent;color:#8f8f96;padding:10px 14px;border-radius:14px;font-weight:660;font-size:13px}
 .mode.active{background:#fff;color:#111}
 .sheet{position:absolute;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom) + 72px);background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:8px 16px 16px;backdrop-filter:blur(30px);box-shadow:0 20px 50px rgba(0,0,0,.35);touch-action:none;will-change:transform,opacity;transition:transform .42s cubic-bezier(.18,.86,.28,1.12),opacity .24s ease}
-.sheet.hidden{transform:translateY(calc(100% + 105px));opacity:0;pointer-events:none}
-.sheet.dragging{transition:none}
+.sheet.hidden{transform:translateY(calc(100% + 105px));opacity:0;pointer-events:none}.sheet.dragging{transition:none}
 .grabber{width:38px;height:4px;background:#62626a;border-radius:999px;margin:2px auto 10px}
 .sheet-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .sheet-label{font-size:10px;letter-spacing:.08em;color:var(--muted);font-weight:700}.sheet-title{font-size:18px;font-weight:720;margin-top:3px}
-.value-badge{font-size:12px;background:rgba(255,255,255,.09);padding:7px 9px;border-radius:10px}
-.control{display:block;margin-top:13px}.control>span{font-size:12px;font-weight:650}.control-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-top:7px}
+.panel-group.hidden{display:none}.subheading{font-size:12px;font-weight:680;margin-bottom:9px}
+.clock-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.clock-grid button{border:1px solid var(--line);background:rgba(255,255,255,.055);color:#ddd;border-radius:11px;padding:8px 4px;font-size:11px}
+.microcopy{font-size:10.5px;line-height:1.4;color:#9f9fa6;margin:10px 0 0}
+.control{display:block;margin-top:12px}.control>span{font-size:12px;font-weight:650}
+.control .value-badge{float:right;margin-top:-4px}
+.control-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-top:7px}
+.value-badge{font-size:12px;background:rgba(255,255,255,.09);padding:6px 8px;border-radius:10px}
 input[type=range]{width:100%;accent-color:#fff;margin-top:9px}
-.danger-btn{width:100%;margin-top:13px;border:0;border-radius:14px;padding:11px;background:rgba(255,79,79,.12);color:#ff8d8d;font-weight:650}
+.small-danger{border:0;border-radius:11px;padding:8px 10px;background:rgba(255,79,79,.12);color:#ff9696;font-size:11px;font-weight:680}
 .compact-sheet p{font-size:12px;line-height:1.45;color:#b8b8bf;margin:10px 0 2px}
 .restore-ui{position:absolute;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 9px);width:66px;height:27px;border:1px solid rgba(255,255,255,.08);border-radius:999px;background:rgba(28,28,32,.72);backdrop-filter:blur(20px)}
 .restore-ui span{display:block;width:30px;height:4px;border-radius:99px;background:#8a8a91;margin:auto}.restore-ui.hidden{display:none}
 .toast{position:absolute;z-index:30;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 76px);background:rgba(20,20,23,.9);border:1px solid var(--line);padding:9px 13px;border-radius:13px;font-size:12px;backdrop-filter:blur(20px);max-width:80%;text-align:center;transition:.22s}
 .toast.hidden{opacity:0;pointer-events:none;transform:translate(-50%,-8px)}
-
-
-/* V0.3c: when UI is hidden, none of its invisible children may intercept canvas gestures */
-#chrome.ui-hidden,
-#chrome.ui-hidden > *,
-#chrome.ui-hidden * {
-  pointer-events: none !important;
-}
