@@ -908,3 +908,123 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
 #selectionPanel .sheet-row > div:first-child{
   padding-right:0!important;
 }
+
+/* V0.10j — corrected after inspecting actual DOM */
+
+/* Ring | Verbinden is .build-tools */
+.build-tools{
+  position:absolute!important;
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+  left:50%!important;
+  right:auto!important;
+  bottom:auto!important;
+  transform:translateX(-50%)!important;
+  width:154px!important;
+  height:34px!important;
+  padding:2px!important;
+  gap:2px!important;
+  border-radius:17px!important;
+  z-index:40!important;
+}
+.build-tools .tool{
+  flex:1 1 0!important;
+  min-width:0!important;
+  height:30px!important;
+  padding:0 7px!important;
+  border-radius:15px!important;
+  font-size:11px!important;
+  white-space:nowrap!important;
+}
+
+/* Side controls compressed so all three zones fit on one iPhone row. */
+.history-bubbles{
+  top:calc(env(safe-area-inset-top) + 10px)!important;
+  left:8px!important;
+  right:auto!important;
+  gap:3px!important;
+  z-index:41!important;
+}
+.history-bubbles .utility-bubble{
+  width:28px!important;
+  height:28px!important;
+  min-width:28px!important;
+  min-height:28px!important;
+  border-radius:14px!important;
+  font-size:12px!important;
+}
+.utility-bubbles{
+  top:calc(env(safe-area-inset-top) + 10px)!important;
+  right:8px!important;
+  left:auto!important;
+  gap:3px!important;
+  z-index:41!important;
+}
+.utility-bubbles .utility-bubble{
+  width:28px!important;
+  height:28px!important;
+  min-width:28px!important;
+  min-height:28px!important;
+  border-radius:14px!important;
+  font-size:12px!important;
+}
+.more-bubble{display:none!important}
+
+/* The header is now structurally three siblings in one row:
+   [type/name] [lock] [delete] */
+#selectionPanel .sheet-row{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 36px 36px!important;
+  column-gap:6px!important;
+  align-items:center!important;
+  height:38px!important;
+  min-height:38px!important;
+  padding:0!important;
+  margin:0 0 4px!important;
+}
+
+#selectionPanel .sheet-row > div:first-child{
+  grid-column:1!important;
+  grid-row:1!important;
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:center!important;
+  gap:7px!important;
+  min-width:0!important;
+  height:38px!important;
+  padding:0!important;
+  margin:0!important;
+}
+
+#selectionPanel .sheet-row > #lockSelectedBtn{
+  grid-column:2!important;
+  grid-row:1!important;
+  position:relative!important;
+  inset:auto!important;
+  width:36px!important;
+  min-width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  border-radius:10px!important;
+  display:block!important;
+}
+
+#selectionPanel .sheet-row > #deleteSelectedBtn{
+  grid-column:3!important;
+  grid-row:1!important;
+  position:relative!important;
+  inset:auto!important;
+  width:36px!important;
+  min-width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  border-radius:10px!important;
+  display:block!important;
+}
+
+/* Old wrapper no longer exists. */
+#selectionPanel .quick-actions{display:none!important}
+
+/* Remove old offsets inherited from prior experimental CSS. */
+#selectionPanel .sheet-row > div:first-child{padding-right:0!important}
