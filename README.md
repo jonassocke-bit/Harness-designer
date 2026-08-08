@@ -1,19 +1,47 @@
-# Harness Designer V0.11a — Live Bezier Preview
+# Harness Designer V1 — Clean Rewrite
 
-Based on V0.11 Strap Engine 2.0.
+Fresh implementation. No previous strap/node engine code was copied.
 
-During drag:
-- shows the actual quadratic Bezier strap shape live
-- updates once per animation frame
-- 16 curve samples
-- uses the same ribbonGeometry as the final strap
-- skips body midpoint projection, crossings, ring-wrap rebuilds and full topology work
-- final strap group is hidden only while the live preview is shown
+## Core architecture
+- project state is plain data (`nodes`, `straps`)
+- Three.js objects are render-only
+- dragging a node updates only that node and straps directly connected to it
+- no global geometry rebuild during ordinary drag
 
-On release:
-- preview disappears
-- one full V0.11 quality rebuild runs, including the single midpoint body query,
-  crossings, wraps and all final topology
+## Implemented
+- iPhone-first compact UI based on the late V0.10 screenshots
+- fallback mannequin
+- GLB/GLTF model upload
+- manual model XYZ rotation + surface offset
+- ring/point unified node model
+- ring diameter, thickness and point size
+- direct numeric entry + 4 long-press-save presets
+- ring placement and body-surface dragging
+- center-axis snapping
+- connect two nodes into a strap
+- Strap Engine: automatic single-control quadratic Bezier
+- width and slack
+- live strap geometry updates using one persistent BufferGeometry
+- additional manual curve points
+- manual curve-point dragging
+- Auto resets to the simple one-point strap
+- ring-edge strap termination
+- leather-colored ring wrap segments
+- strap anchors stored as percentage `t` on the curve
+- mirror mode + mirror selected
+- object lock/delete
+- undo/redo + local autosave snapshots
+- single-finger camera / two-finger zoom+pan
+- resizable, internally scrollable bottom sheet
 
-This restores WYSIWYG-style live editing while keeping the new lightweight
-Strap Engine 2.0.
+## Deliberately deferred until the V1 core is stress-tested
+- automatic crossing nodes
+- true strap split/merge when an anchor is converted to a ring
+- accessories / rivets / eyelets
+- chains
+- strap grid/pixel designer
+- photo/pose mode
+- light/material/blacklight controls
+- randomizer / preset design generator
+
+The next gate should be performance and interaction testing with 10–20 straps before those systems are added.

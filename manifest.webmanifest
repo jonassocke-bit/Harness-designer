@@ -1,8 +1,9 @@
 {
-  "name": "Harness Designer V0.11a",
+  "name": "Harness Designer V1",
   "short_name": "Harness",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#09090b",
-  "theme_color": "#09090b"
+  "theme_color": "#09090b",
+  "icons": []
 }

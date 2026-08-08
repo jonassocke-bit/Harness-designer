@@ -1,17 +1,16 @@
-<!DOCTYPE html>
-
+<!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" name="viewport"/>
-<meta content="#0b0b0d" name="theme-color"/>
-<meta content="yes" name="apple-mobile-web-app-capable"/>
-<meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"/>
-<meta content="Harness Designer" name="apple-mobile-web-app-title"/>
-<title>Harness Designer V0.10m</title>
-<link href="./manifest.webmanifest" rel="manifest"/>
-<link href="./style.css" rel="stylesheet"/>
-<script type="importmap">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Harness Designer">
+  <title>Harness Designer V1</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
   {
     "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
@@ -22,164 +21,141 @@
 </head>
 <body>
 <div id="app">
-<main id="viewport"><canvas id="scene"></canvas></main>
-<div id="chrome">
-<header class="topbar">
-<div>
-<div class="title" id="modeTitle">Build</div>
-</div>
-<div class="top-actions">
-<button class="text-btn" id="modelBtn">3D Modell</button>
-<button aria-label="Zurücksetzen" class="icon-btn" id="resetBtn">↺</button>
-</div>
-<input accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden="" id="modelInput" type="file"/>
-</header>
-<div class="history-bubbles"><button aria-label="Rückgängig" class="utility-bubble" id="undoBtn">↶</button><button aria-label="Wiederholen" class="utility-bubble" id="redoBtn">↷</button></div>
-<div class="utility-bubbles">
-<button aria-label="Spiegelmodus" aria-pressed="false" class="utility-bubble" id="mirrorToggle">⇆</button>
-<button aria-label="Auswahl spiegeln" class="utility-bubble" id="mirrorSelectedBtn">◇</button>
-<button aria-label="Modell drehen" class="utility-bubble" id="rotateModelBtn">⟳</button>
-</div>
-<div class="build-tools" id="buildTools">
-<button class="tool active" data-tool="ring">＋ Ring</button>
-<button class="tool" data-tool="connect">↔ Verbinden</button>
-</div>
-<div class="mode-pill" id="modePill">
-<button class="mode active" data-mode="build">Bauen</button>
-<button class="mode" data-mode="accessories">Accessoires</button>
-<button class="mode" data-mode="photo">Foto</button>
-</div>
-<section class="sheet hidden" id="selectionPanel">
-<div class="grabber"></div>
+  <main id="viewport"><canvas id="scene"></canvas></main>
 
-<div class="sheet-scroll"><div class="sheet-row">
-<div>
-<div class="sheet-label" id="selectionLabel">AUSWAHL</div>
-<div class="sheet-title" id="selectionTitle">Element</div>
+  <div id="chrome">
+    <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
+
+    <div class="top-row">
+      <div class="history-group">
+        <button id="undoBtn" class="circle-btn icon-undo" aria-label="Rückgängig"></button>
+        <button id="redoBtn" class="circle-btn icon-redo" aria-label="Wiederholen"></button>
+      </div>
+
+      <div id="buildTools" class="build-tools">
+        <button class="tool active" data-tool="ring">+ Ring</button>
+        <button class="tool" data-tool="connect">↔ Verbinden</button>
+      </div>
+
+      <div class="utility-group">
+        <button id="mirrorToggle" class="circle-btn icon-mirror" aria-label="Spiegelmodus" aria-pressed="false"></button>
+        <button id="mirrorSelectedBtn" class="circle-btn icon-diamond" aria-label="Auswahl spiegeln"></button>
+        <button id="rotateModelBtn" class="circle-btn icon-rotate" aria-label="Modell"></button>
+      </div>
+    </div>
+
+    <button id="restoreUI" class="restore-ui hidden" aria-label="Menüs einblenden">›</button>
+
+    <section id="selectionPanel" class="sheet hidden">
+      <div class="grabber" aria-label="Menühöhe ändern"></div>
+      <div class="sheet-scroll">
+        <div class="selection-head">
+          <div class="selection-name">
+            <span id="selectionLabel">AUSWAHL</span>
+            <strong id="selectionTitle">Element</strong>
+          </div>
+          <button id="lockSelectedBtn" class="head-btn icon-lock" aria-label="Sperren"></button>
+          <button id="deleteSelectedBtn" class="head-btn danger icon-trash" aria-label="Löschen"></button>
+        </div>
+
+        <div id="nodeControls" class="control-group hidden">
+          <div class="toggle-line">
+            <span>Ring</span>
+            <button id="nodeRingToggle" class="switch active" aria-pressed="true">An</button>
+          </div>
+
+          <div id="pointSizeControl" class="parameter hidden">
+            <div class="parameter-top"><span>Punktgröße</span><div id="pointSizeTools" class="parameter-tools"></div></div>
+            <input id="pointSizeSlider" type="range" min="0" max="30" step="1" value="8">
+          </div>
+
+          <div id="ringDiameterControl" class="parameter">
+            <div class="parameter-top"><span>Ringdurchmesser</span><div id="ringDiameterTools" class="parameter-tools"></div></div>
+            <input id="ringDiameterSlider" type="range" min="0" max="100" step="1" value="40">
+          </div>
+
+          <div id="ringThicknessControl" class="parameter">
+            <div class="parameter-top"><span>Ringstärke</span><div id="ringThicknessTools" class="parameter-tools"></div></div>
+            <input id="ringThicknessSlider" type="range" min="0" max="20" step="0.5" value="6">
+          </div>
+        </div>
+
+        <div id="strapControls" class="control-group hidden">
+          <div class="parameter">
+            <div class="parameter-top"><span>Breite</span><div id="strapWidthTools" class="parameter-tools"></div></div>
+            <input id="strapWidthSlider" type="range" min="0" max="100" step="1" value="30">
+          </div>
+
+          <div class="parameter">
+            <div class="parameter-top">
+              <span>Lockerheit</span>
+              <div id="strapSlackTools" class="parameter-tools"></div>
+            </div>
+            <input id="strapSlackSlider" type="range" min="0" max="100" step="1" value="8">
+            <div class="range-caption"><span>Straff</span><span>Locker</span></div>
+          </div>
+
+          <div class="curve-box">
+            <div class="curve-title">
+              <span>Kurvenpunkte</span>
+              <strong id="curvePointCount">Auto · 1</strong>
+            </div>
+            <div class="curve-actions">
+              <button id="curveMinusBtn" class="soft-btn">− Punkt</button>
+              <button id="curvePlusBtn" class="soft-btn">+ Punkt</button>
+              <button id="curveAutoBtn" class="soft-btn">Auto</button>
+            </div>
+          </div>
+
+          <button id="addAnchorBtn" class="primary-btn">+ Anker auf Riemen</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="modelPanel" class="sheet compact-sheet hidden">
+      <div class="grabber"></div>
+      <div class="sheet-scroll">
+        <div class="selection-head">
+          <div class="selection-name"><span>3D MODELL</span><strong>Ausrichtung</strong></div>
+          <button id="closeModelPanelBtn" class="head-btn icon-close" aria-label="Schließen"></button>
+        </div>
+
+        <div class="model-actions">
+          <button id="uploadModelBtn" class="soft-btn">Eigenes Modell laden</button>
+          <button id="reloadModelBtn" class="soft-btn">Standardmodell</button>
+        </div>
+
+        <div class="parameter">
+          <div class="parameter-top"><span>X-Achse</span><div id="rotXTools" class="parameter-tools"></div></div>
+          <input id="rotXSlider" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Y-Achse</span><div id="rotYTools" class="parameter-tools"></div></div>
+          <input id="rotYSlider" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Z-Achse</span><div id="rotZTools" class="parameter-tools"></div></div>
+          <input id="rotZSlider" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Abstand zum Modell</span><div id="surfaceOffsetTools" class="parameter-tools"></div></div>
+          <input id="surfaceOffsetSlider" type="range" min="0" max="30" step="0.5" value="2">
+        </div>
+        <button id="rotationResetBtn" class="primary-btn">Rotation zurücksetzen</button>
+      </div>
+    </section>
+
+    <div id="modePill" class="mode-pill">
+      <button class="mode active" data-mode="build">Bauen</button>
+      <button class="mode" data-mode="accessories">Accessoires</button>
+      <button class="mode" data-mode="photo">Foto</button>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <div class="version-badge">v1.0</div>
+  </div>
 </div>
-<button aria-label="Sperren" aria-pressed="false" class="quick-btn clean-lock-btn" id="lockSelectedBtn">🔓 Sperren</button>
-<button aria-label="Löschen" class="small-danger clean-delete-btn" id="deleteSelectedBtn">Löschen</button>
-</div>
-<div class="panel-group hidden" id="ringControls">
-<div class="inline-toggle-row">
-<span>Ring</span>
-<button aria-pressed="true" class="mini-toggle active" id="surfaceNodeRingToggle">An</button>
-</div>
-<label class="control">
-<span>Punktgröße</span>
-<div class="value-badge"><span id="surfaceNodeSizeValue">10</span> mm</div>
-<input id="surfaceNodeSizeSlider" max="30" min="2" step="1" type="range" value="10"/>
-</label>
-<label class="control">
-<span>Ringdurchmesser</span>
-<div class="value-badge"><span id="ringDiameterValue">40</span> mm</div>
-<input id="ringDiameterSlider" max="100" min="0" step="1" type="range" value="40"/>
-</label>
-<label class="control">
-<span>Ringstärke</span>
-<div class="value-badge"><span id="ringThicknessValue">6</span> mm</div>
-<input id="ringThicknessSlider" max="15" min="0" step="0.5" type="range" value="6"/>
-</label>
-</div>
-<div class="panel-group hidden" id="strapControls">
-<label class="control">
-<span>Breite</span>
-<div class="value-badge"><span id="widthValue">30</span> mm</div>
-<input id="widthSlider" max="60" min="0" step="1" type="range" value="30"/>
-</label>
-<label class="control">
-<span>Lockerheit</span>
-<div class="control-meta"><span>Straff</span><span>Locker</span></div>
-<input id="slackSlider" max="100" min="0" step="1" type="range" value="8"/>
-</label>
-<button class="primary-btn" id="addStrapAnchorBtn">＋ Anker auf Riemen</button>
-</div>
-<div class="panel-group hidden" id="strapAnchorControls">
-<div class="inline-toggle-row">
-<span>Ring</span>
-<button aria-pressed="false" class="mini-toggle" id="strapNodeRingToggle">Aus</button>
-</div>
-<label class="control">
-<span>Ankerposition</span>
-<div class="value-badge"><span id="strapAnchorValue">50</span> %</div>
-<div class="control-meta"><span>Anfang</span><span>Ende</span></div>
-<input id="strapAnchorSlider" max="100" min="0" step="1" type="range" value="50"/>
-</label>
-<label class="control">
-<span>Ankergröße</span>
-<div class="value-badge"><span id="strapAnchorSizeValue">10</span> mm</div>
-<input id="strapAnchorSizeSlider" max="30" min="2" step="1" type="range" value="10"/>
-</label>
-</div>
-</div>
-</section>
-<section class="sheet hidden compact-sheet" id="rotationPanel">
-<div class="grabber"></div>
-<div class="sheet-row">
-<div>
-<div class="sheet-label">MODELLAUSRICHTUNG</div>
-<div class="sheet-title">Manuell drehen</div>
-</div>
-<button class="text-btn" id="closeRotationBtn">Fertig</button>
-</div>
-<label class="control">
-<span>X-Achse</span><div class="value-badge"><span id="rotXValue">0</span>°</div>
-<input id="rotXSlider" max="180" min="-180" step="1" type="range" value="0"/>
-</label>
-<label class="control">
-<span>Y-Achse</span><div class="value-badge"><span id="rotYValue">0</span>°</div>
-<input id="rotYSlider" max="180" min="-180" step="1" type="range" value="0"/>
-</label>
-<label class="control">
-<span>Z-Achse</span><div class="value-badge"><span id="rotZValue">0</span>°</div>
-<input id="rotZSlider" max="180" min="-180" step="1" type="range" value="0"/>
-</label>
-<label class="control">
-<span>Abstand zum Modell</span>
-<div class="value-badge"><span id="surfaceOffsetValue">2</span> mm</div>
-<input id="surfaceOffsetSlider" max="30" min="0" step="0.5" type="range" value="2"/>
-</label>
-<label class="control">
-<span>Oberflächenglättung</span>
-<div class="value-badge"><span id="envelopeSmoothValue">35</span> %</div>
-<input id="envelopeSmoothSlider" max="100" min="0" step="1" type="range" value="35"/>
-</label>
-<label class="control">
-<span>Hüllenabstand</span>
-<div class="value-badge"><span id="envelopeInflateValue">4</span> mm</div>
-<input id="envelopeInflateSlider" max="30" min="0" step="0.5" type="range" value="4"/>
-</label>
-<div class="inline-toggle-row">
-<span>Hülle anzeigen</span>
-<button aria-pressed="false" class="mini-toggle" id="envelopeVisibleToggle">Aus</button>
-<div class="inline-toggle-row">
-<span>Symmetrische Arbeitshülle</span>
-<button aria-pressed="false" class="mini-toggle" id="symmetricEnvelopeToggle">Aus</button>
-</div>
-</div>
-<div class="model-file-actions">
-<button class="secondary-btn" id="rotationModelUploadBtn" type="button">Eigenes 3D-Modell laden</button>
-<button class="secondary-btn" id="rotationModelReloadBtn" type="button">Modell neu laden</button>
-</div>
-<button class="primary-btn" id="rotationResetBtn">Rotation zurücksetzen</button>
-</section>
-<section class="sheet hidden compact-sheet" id="accessoryPanel">
-<div class="grabber"></div>
-<div class="sheet-label">ACCESSOIRE-MODUS</div>
-<div class="sheet-title">Vorbereitet</div>
-<p>Nieten, Ösen, Spikes und Reihen-Snaps kommen als nächster großer Arbeitsbereich.</p>
-</section>
-<section class="sheet hidden compact-sheet" id="photoPanel">
-<div class="grabber"></div>
-<div class="sheet-label">FOTO-MODUS</div>
-<div class="sheet-title">Clean View</div>
-<p>Konstruktionshilfen werden ausgeblendet. Posen und Materialpresets folgen später.</p>
-</section>
-</div>
-<button class="restore-ui hidden" id="restoreUI"><span></span></button>
-<div class="toast hidden" id="toast"></div>
-</div>
-<script src="./app.js" type="module"></script>
-<div class="version-badge">v0.11a</div>
+
+<script type="module" src="./app.js"></script>
 </body>
 </html>
