@@ -1,20 +1,15 @@
-# Harness Designer V0.4b — Flat Straps
+# Harness Designer V0.4c — Smooth Straps
 
-## Neu
-- Riemen sind jetzt flache Bänder statt TubeGeometry
-- sichtbare Breite entspricht tatsächlich der Riemenbreite
-- erste reale Lederdicke (intern ca. 2,5 mm)
-- Bandfläche orientiert sich entlang des Pfads an der Körperoberfläche
-- Riemenpfad wird in viele Punkte zerlegt und bei niedriger Lockerheit an die Körperoberfläche gezogen
-- damit schneiden straffe Riemen deutlich seltener durch Brust, Schulter oder Rücken
-- bestehendes Anchor-/Ring-System bleibt erhalten
+## Änderungen gegenüber V0.4b
+- Surface Following nutzt nur noch wenige Stützpunkte statt vieler Einzelprojektionen
+- Stützpunkte werden geglättet und anschließend durch eine saubere Catmull-Rom-Kurve verbunden
+- dadurch deutlich ruhigere, glattere Lederriemen
+- unrealistische Sprünge auf andere Körperteile werden verworfen
+- Riemen lassen sich direkt antippen und werden dann bearbeitet
+- ausgewählter Ring bzw. Riemen erhält einen sehr subtilen Glow
+- Riemenenden stoppen jetzt am Ringkörper statt bis in die Ringmitte zu laufen
+- Breite, Lockerheit und direkte Strap-Handle-Bearbeitung bleiben erhalten
 
-## Technischer Stand
-Das ist bewusst noch kein perfekter geodätischer Solver. Für straffe Riemen wird der Pfad aktuell
-mehrfach auf die sichtbare Körperoberfläche projiziert. Das ist ein deutlicher Schritt nach vorn und
-liefert die richtige flache Ledergeometrie als Grundlage für den späteren Grid-/Strap-Editor.
-
-## Weiter
-- manuelle Ring-Slots
-- Riemenanker auf bestehenden Riemen
-- später echte geodätische/meshbasierte Surface-Following-Logik
+## Ziel
+V0.4c priorisiert eine visuell saubere Riemenkurve. Perfektes vollflächiges
+Aufliegen auf jedem einzelnen Mesh-Polygon ist bewusst nachrangig.

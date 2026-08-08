@@ -83,13 +83,16 @@ function worldNormal(hit){const nm=new THREE.Matrix3().getNormalMatrix(hit.objec
 
 const anchorMat=new THREE.MeshStandardMaterial({color:0xfff2bb,emissive:0x44380c,emissiveIntensity:.8,roughness:.34,metalness:.18});
 const anchorSelectedMat=anchorMat.clone();anchorSelectedMat.color.set(0xffffff);anchorSelectedMat.emissive.set(0x555555);
+anchorSelectedMat.emissiveIntensity=1.15;
+const RING_MAJOR_RADIUS=.074;
+const RING_TUBE_RADIUS=.017;
 const slotMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.75});
 const anchors=[],connections=[];
 let selected=null,connectStart=null;
 
 function makeAnchor(hit){
   const g=new THREE.Group();g.userData={kind:'anchor',id:`A${anchors.length+1}`,normal:new THREE.Vector3(),slots:[]};
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(.074,.017,16,56),anchorMat);ring.userData.kind='anchorRing';g.add(ring);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(RING_MAJOR_RADIUS,RING_TUBE_RADIUS,16,56),anchorMat);ring.userData.kind='anchorRing';g.add(ring);
   const hitDisc=new THREE.Mesh(new THREE.CircleGeometry(.060,32),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.02,side:THREE.DoubleSide}));
   hitDisc.position.z=-.004;hitDisc.userData.kind='anchorRing';g.add(hitDisc);
   for(let i=0;i<8;i++){
@@ -105,7 +108,17 @@ function positionAnchor(g,hit){
   connections.filter(c=>c.a===g||c.b===g).forEach(updateConnection);
 }
 function slotWorld(anchor,i){
-  const s=anchor.userData.slots[i];return s.getWorldPosition(new THREE.Vector3());
+  const s=anchor.userData.slots[i];
+  return s.getWorldPosition(new THREE.Vector3());
+}
+
+function strapEndpoint(anchor,slotIndex,otherAnchor){
+  // The snap slot lies on the torus centreline. Move the actual leather
+  // endpoint outward toward the incoming strap so it stops at the ring body,
+  // not inside the ring hole.
+  const slot=slotWorld(anchor,slotIndex);
+  const towardOther=otherAnchor.position.clone().sub(anchor.position).normalize();
+  return slot.clone().addScaledVector(towardOther,RING_TUBE_RADIUS+.008);
 }
 function chooseSlot(anchor,other){
   let best=0,bestDot=-Infinity;
@@ -141,33 +154,51 @@ function surfaceSampledPath(c){
   c.slotA=chooseSlot(c.a,c.b);
   c.slotB=chooseSlot(c.b,c.a);
 
-  const p1=slotWorld(c.a,c.slotA);
-  const p2=slotWorld(c.b,c.slotB);
+  const p1=strapEndpoint(c.a,c.slotA,c.b);
+  const p2=strapEndpoint(c.b,c.slotB,c.a);
 
   if(!c.controlPoint)c.controlPoint=surfaceMidpoint(c);
 
   const cp=c.controlPoint.clone();
-  cp.y-=(c.slack/100)*.22;
+  cp.y-=(c.slack/100)*.20;
 
-  const guide=new THREE.CatmullRomCurve3([p1,cp,p2],false,'centripetal',.5);
+  const guide=new THREE.CatmullRomCurve3([p1,cp,p2],false,'centripetal',.55);
 
-  const samples=[];
-  const N=28;
+  // Important: use only a few surface support points. V0.4b used many
+  // individual projections, which reproduced every tiny mesh/raycast wobble.
+  const supports=[];
+  const SUPPORTS=7;
+  const hug=1-THREE.MathUtils.clamp(c.slack/100,0,1);
 
-  for(let i=0;i<=N;i++){
-    const t=i/N;
+  for(let i=0;i<SUPPORTS;i++){
+    const t=i/(SUPPORTS-1);
     let p=guide.getPoint(t);
 
-    // At low slack, strongly hug the mannequin. With more slack, preserve
-    // more of the free-space guide curve for later gravity behaviour.
-    const hug=1-THREE.MathUtils.clamp(c.slack/100,0,1);
-    if(hug>0.05){
-      const snapped=projectPointToBodyFromCamera(p,.042);
-      p=p.clone().lerp(snapped,hug*.92);
+    if(i!==0 && i!==SUPPORTS-1 && hug>.08){
+      const snapped=projectPointToBodyFromCamera(p,.047);
+
+      // Ignore implausible jumps to another body part/occluding limb.
+      if(snapped.distanceTo(p)<.34){
+        p=p.clone().lerp(snapped,hug*.72);
+      }
     }
-    samples.push(p);
+    supports.push(p);
   }
-  return samples;
+
+  // Mild moving-average pass on internal support points.
+  const relaxed=supports.map(p=>p.clone());
+  for(let i=1;i<supports.length-1;i++){
+    relaxed[i]
+      .multiplyScalar(.62)
+      .addScaledVector(supports[i-1],.19)
+      .addScaledVector(supports[i+1],.19);
+  }
+  relaxed[0].copy(p1);
+  relaxed[relaxed.length-1].copy(p2);
+
+  // Then fit one genuinely smooth curve through those few supports.
+  const smoothCurve=new THREE.CatmullRomCurve3(relaxed,false,'centripetal',.5);
+  return smoothCurve.getPoints(40);
 }
 
 function buildRibbonGeometry(points,widthMM,thicknessMM=2.5){
@@ -267,9 +298,11 @@ function updateConnection(c){
     geom,
     new THREE.MeshStandardMaterial({
       color:0x171718,
-      roughness:.52,
+      roughness:.50,
       metalness:0,
-      side:THREE.DoubleSide
+      side:THREE.DoubleSide,
+      emissive: selected===c ? 0x26221a : 0x000000,
+      emissiveIntensity: selected===c ? .65 : 0
     })
   );
   mesh.castShadow=true;
@@ -284,6 +317,7 @@ function updateConnection(c){
   h.userData={kind:'strapHandle',owner:c};
   c.group.add(h);
   c.handle=h;
+  refreshSelectionVisuals();
 }
 
 function removeConnection(c){
@@ -315,10 +349,26 @@ function showSelection(){
 function hideSelection(){
   selectionPanel.classList.add('hidden');ringControls.classList.add('hidden');strapControls.classList.add('hidden');
 }
+function refreshSelectionVisuals(){
+  anchors.forEach(a=>{
+    a.children[0].material=(selected===a)?anchorSelectedMat:anchorMat;
+    a.userData.slots.forEach(s=>s.visible=(selected===a));
+  });
+
+  connections.forEach(c=>{
+    const mesh=c.group.children.find(ch=>ch.userData?.kind==='connectionMesh');
+    if(mesh?.material){
+      const active=selected===c;
+      mesh.material.emissive.setHex(active?0x2c271d:0x000000);
+      mesh.material.emissiveIntensity=active ? .75 : 0;
+      mesh.material.needsUpdate=true;
+    }
+  });
+}
+
 function selectObject(obj){
-  anchors.forEach(a=>{a.children[0].material=anchorMat;a.userData.slots.forEach(s=>s.visible=false)});
   selected=obj;
-  if(obj?.kind==='anchor'){obj.children[0].material=anchorSelectedMat}
+  refreshSelectionVisuals();
   showSelection();
 }
 function interactiveHit(x,y){
@@ -352,6 +402,9 @@ canvas.addEventListener('pointerdown',e=>{
   canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,pinfo(e));
   if(pointers.size===1){
     const hit=mode==='build'?interactiveHit(e.clientX,e.clientY):null;
+    // Immediate subtle feedback when touching a selectable object.
+    if(hit?.kind==='connection') selectObject(hit.owner);
+    if(hit?.kind==='anchor' && buildTool!=='connect') selectObject(hit.owner);
     single={id:e.pointerId,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,hit};
   }else if(pointers.size===2){
     single=null;const[a,b]=[...pointers.values()];
