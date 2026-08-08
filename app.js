@@ -508,27 +508,52 @@ function setMiniToggle(btn,on){btn.classList.toggle('active',on);btn.setAttribut
 function showSelection(){
   if(mode!=='build'||!selected){hideSelection();return}
   selectionPanel.classList.remove('hidden');
-  ringControls.classList.add('hidden');strapControls.classList.add('hidden');strapAnchorControls.classList.add('hidden');
+  ringControls.classList.add('hidden');
+  strapControls.classList.add('hidden');
+  strapAnchorControls.classList.add('hidden');
 
   if(selected.kind==='node'){
-    if(selected.source==='surface'){
+    // Every visible ring uses exactly the same ring editor.
+    if(selected.ringVisible){
       ringControls.classList.remove('hidden');
-      selectionLabel.textContent='KNOTEN';selectionTitle.textContent=selected.id;
-      ringDiameterSlider.value=selected.diameterMM;ringDiameterValue.textContent=selected.diameterMM;
-      ringThicknessSlider.value=selected.thicknessMM;ringThicknessValue.textContent=selected.thicknessMM;
-      surfaceNodeSizeSlider.value=selected.sizeMM;surfaceNodeSizeValue.textContent=selected.sizeMM;
-      setMiniToggle(surfaceNodeRingToggle,selected.ringVisible);
-    }else{
+      selectionLabel.textContent='RING';
+      selectionTitle.textContent=selected.id;
+      ringDiameterSlider.value=selected.diameterMM;
+      ringDiameterValue.textContent=selected.diameterMM;
+      ringThicknessSlider.value=selected.thicknessMM;
+      ringThicknessValue.textContent=selected.thicknessMM;
+      surfaceNodeSizeSlider.value=selected.sizeMM;
+      surfaceNodeSizeValue.textContent=selected.sizeMM;
+      setMiniToggle(surfaceNodeRingToggle,true);
+    }else if(selected.source==='strap'){
       strapAnchorControls.classList.remove('hidden');
-      selectionLabel.textContent='RIEMEN-KNOTEN';selectionTitle.textContent=selected.id;
-      strapAnchorSlider.value=Math.round(selected.t*100);strapAnchorValue.textContent=Math.round(selected.t*100);
-      strapAnchorSizeSlider.value=selected.sizeMM;strapAnchorSizeValue.textContent=selected.sizeMM;
-      setMiniToggle(strapNodeRingToggle,selected.ringVisible);
+      selectionLabel.textContent='RIEMEN-ANKER';
+      selectionTitle.textContent=selected.id;
+      strapAnchorSlider.value=Math.round(selected.t*100);
+      strapAnchorValue.textContent=Math.round(selected.t*100);
+      strapAnchorSizeSlider.value=selected.sizeMM;
+      strapAnchorSizeValue.textContent=selected.sizeMM;
+      setMiniToggle(strapNodeRingToggle,false);
+    }else{
+      // Surface node without a visible ring.
+      ringControls.classList.remove('hidden');
+      selectionLabel.textContent='KNOTEN';
+      selectionTitle.textContent=selected.id;
+      ringDiameterSlider.value=selected.diameterMM;
+      ringDiameterValue.textContent=selected.diameterMM;
+      ringThicknessSlider.value=selected.thicknessMM;
+      ringThicknessValue.textContent=selected.thicknessMM;
+      surfaceNodeSizeSlider.value=selected.sizeMM;
+      surfaceNodeSizeValue.textContent=selected.sizeMM;
+      setMiniToggle(surfaceNodeRingToggle,false);
     }
   }else{
     strapControls.classList.remove('hidden');
-    selectionLabel.textContent='RIEMEN';selectionTitle.textContent=selected.id;
-    widthSlider.value=selected.widthMM;widthValue.textContent=selected.widthMM;slackSlider.value=selected.slack;
+    selectionLabel.textContent='RIEMEN';
+    selectionTitle.textContent=selected.id;
+    widthSlider.value=selected.widthMM;
+    widthValue.textContent=selected.widthMM;
+    slackSlider.value=selected.slack;
   }
 }
 
@@ -541,9 +566,20 @@ function splitConnectionAtNode(node){
   const splitT=THREE.MathUtils.clamp(node.t,.001,.999);
   const siblings=nodes.filter(n=>n!==node&&n.source==='strap'&&n.parent===parent);
   const splitPosition=node.group.position.clone();
+
+  // Give the new real ring a body-surface reference immediately.
+  const avgN=averageNormal(parent.a,parent.b);
+  const surface=castToSurfaceFrom(splitPosition,avgN);
+  node.surfacePoint=surface.point.clone();
+  node.normal=surface.normal.clone();
+
   scene.remove(parent.group);
   const pi=connections.indexOf(parent);if(pi>=0)connections.splice(pi,1);
-  node.source='split';node.parent=null;node.group.position.copy(splitPosition);
+  node.source='split';
+  node.parent=null;
+  node.group.position.copy(node.surfacePoint)
+    .addScaledVector(node.normal,surfaceOffsetScene()+ringTube(node));
+  node.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),node.normal.clone().normalize());
   const left=createConnection(originalA,node,true),right=createConnection(node,originalB,true);
   left.widthMM=right.widthMM=width;left.slack=right.slack=slack;
   node._split={left,right,originalA,originalB,originalT:splitT};
@@ -552,6 +588,7 @@ function splitConnectionAtNode(node){
     else{s.parent=right;s.t=(s.t-splitT)/(1-splitT);}
   }
   updateAllGeometry();
+  if(selected===node)showSelection();
 }
 
 function mergeSplitNode(node){
@@ -566,6 +603,7 @@ function mergeSplitNode(node){
   for(const s of rightNodes){s.parent=merged;s.t=originalT+s.t*(1-originalT);}
   node.source='strap';node.parent=merged;node.t=originalT;node._split=null;
   updateAllGeometry();
+  if(selected===node)showSelection();
 }
 
 function removeConnection(c){
@@ -613,21 +651,31 @@ surfaceNodeSizeSlider.addEventListener('input',()=>{
 });
 surfaceNodeRingToggle.addEventListener('click',()=>{
   if(selected?.kind!=='node')return;
-  selected.ringVisible=!selected.ringVisible;
-  if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
-  setMiniToggle(surfaceNodeRingToggle,selected.ringVisible);updateAllGeometry();
-});
-strapNodeRingToggle.addEventListener('click',()=>{
-  if(selected?.kind!=='node')return;
+
   if(selected.source==='strap'&&!selected.ringVisible){
-    selected.ringVisible=true;splitConnectionAtNode(selected);
+    selected.ringVisible=true;
+    splitConnectionAtNode(selected);
   }else if(selected.source==='split'&&selected.ringVisible){
-    selected.ringVisible=false;mergeSplitNode(selected);
+    selected.ringVisible=false;
+    mergeSplitNode(selected);
   }else{
     selected.ringVisible=!selected.ringVisible;
   }
-  if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
-  setMiniToggle(strapNodeRingToggle,selected.ringVisible);updateAllGeometry();
+
+  if(paired(selected)){
+    selected.mirrorPartner.ringVisible=selected.ringVisible;
+  }
+
+  updateAllGeometry();
+  showSelection();
+});
+strapNodeRingToggle.addEventListener('click',()=>{
+  if(selected?.kind!=='node'||selected.source!=='strap')return;
+  selected.ringVisible=true;
+  splitConnectionAtNode(selected);
+  if(paired(selected))selected.mirrorPartner.ringVisible=true;
+  updateAllGeometry();
+  showSelection();
 });
 widthSlider.addEventListener('input',()=>{
   if(selected?.kind!=='connection')return;
@@ -654,6 +702,25 @@ strapAnchorSizeSlider.addEventListener('input',()=>{
   selected.sizeMM=+strapAnchorSizeSlider.value;strapAnchorSizeValue.textContent=strapAnchorSizeSlider.value;
   if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;updateAllGeometry();
 });
+
+
+function closestTOnConnectionScreen(connection,clientX,clientY){
+  if(!connection?.baseCurve)return 0.5;
+  const rect=canvas.getBoundingClientRect();
+  let bestT=0,bestD=Infinity;
+
+  // Dense enough for precise touch dragging, still inexpensive for one selected node.
+  const N=96;
+  for(let i=0;i<=N;i++){
+    const t=i/N;
+    const p=connection.baseCurve.getPoint(t).clone().project(camera);
+    const sx=rect.left+(p.x+1)*0.5*rect.width;
+    const sy=rect.top+(1-p.y)*0.5*rect.height;
+    const d=(sx-clientX)*(sx-clientX)+(sy-clientY)*(sy-clientY);
+    if(d<bestD){bestD=d;bestT=t}
+  }
+  return bestT;
+}
 
 function interactiveHit(x,y){
   setPointerXY(x,y);
@@ -713,27 +780,52 @@ canvas.addEventListener('pointermove',e=>{
   }
   if(!single||single.id!==e.pointerId)return;
 
-  if(single.hit?.kind==='node'&&single.hit.owner.source==='surface'){
+  if(single.hit?.kind==='node'){
+    const node=single.hit.owner;
     const d=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
-    if(d>6){
-      let h=bodyHitXY(e.clientX,e.clientY);if(h){
-        h=snapHitToAxis(h);
-        const n=single.hit.owner;
-        n.surfacePoint=h.point.clone();
-        n.normal=worldNormal(h);
-        updateSurfaceNodeTransform(n);
 
-        if(n.mirrorPartner&&Math.abs(n.surfacePoint.x)>.012){
-          const mh=mirroredBodyHit(n.group.position);
+    // Body-attached rings, including rings converted from strap anchors,
+    // are fully draggable on the construction surface.
+    if((node.source==='surface'||node.source==='split') && d>6){
+      let h=bodyHitXY(e.clientX,e.clientY);
+      if(h){
+        h=snapHitToAxis(h);
+        node.surfacePoint=h.point.clone();
+        node.normal=worldNormal(h);
+
+        if(node.source==='split'){
+          // A split-ring is now a real spatial node: its two straps simply use
+          // its current position as their shared endpoint.
+          node.group.position.copy(node.surfacePoint)
+            .addScaledVector(node.normal,surfaceOffsetScene()+ringTube(node));
+          if(Math.abs(node.surfacePoint.x)<MIRROR_AXIS_SNAP)node.group.position.x=0;
+          node.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),node.normal.clone().normalize());
+        }
+
+        if(node.mirrorPartner&&Math.abs(node.surfacePoint.x)>.012){
+          const mh=mirroredBodyHit(node.group.position);
           if(mh){
-            n.mirrorPartner.surfacePoint=mh.point.clone();
-            n.mirrorPartner.normal=worldNormal(mh);
+            node.mirrorPartner.surfacePoint=mh.point.clone();
+            node.mirrorPartner.normal=worldNormal(mh);
+            if(node.mirrorPartner.source==='split'){
+              node.mirrorPartner.group.position.copy(node.mirrorPartner.surfacePoint)
+                .addScaledVector(node.mirrorPartner.normal,surfaceOffsetScene()+ringTube(node.mirrorPartner));
+            }
           }
         }
         updateAllGeometry();
       }
+      single.lx=e.clientX;single.ly=e.clientY;return;
     }
-    single.lx=e.clientX;single.ly=e.clientY;return;
+
+    // A normal strap anchor is dragged ALONG its parent strap.
+    if(node.source==='strap' && node.parent && d>4){
+      node.t=closestTOnConnectionScreen(node.parent,e.clientX,e.clientY);
+      if(paired(node))node.mirrorPartner.t=node.t;
+      updateAllGeometry();
+      showSelection();
+      single.lx=e.clientX;single.ly=e.clientY;return;
+    }
   }
 
 
