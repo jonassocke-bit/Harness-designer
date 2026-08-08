@@ -7,11 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.2</title>
-
+  <title>Harness Designer V0.3a</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
-
   <script type="importmap">
   {
     "imports": {
@@ -22,75 +20,62 @@
   </script>
 </head>
 <body>
-  <div id="app">
-    <div id="chrome">
-      <header class="topbar">
-        <div>
-          <div class="eyebrow">HARNESS DESIGNER · V0.2</div>
-          <div class="title">Build</div>
-        </div>
+<div id="app">
+  <main id="viewport"><canvas id="scene"></canvas></main>
+
+  <div id="chrome">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.3a</div>
+        <div class="title" id="modeTitle">Build</div>
+      </div>
+      <div class="top-actions">
+        <button id="modelBtn" class="text-btn">3D Modell</button>
         <button id="resetBtn" class="icon-btn" aria-label="Zurücksetzen">↺</button>
-      </header>
-
-      <div class="hint" id="hint">
-        <strong>Zwei Finger = Kamera</strong>
-        <span>Ein kurzer Tap auf das Mannequin setzt einen Anchor. Anchors und Riemen-Kontrollpunkt kannst du anschließend mit einem Finger verschieben.</span>
       </div>
+      <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
+    </header>
 
-      <div class="mode-pill" id="modePill">
-        <button class="mode active" data-mode="build">Bauen</button>
-        <button class="mode" data-mode="accessories">Accessoires</button>
-        <button class="mode" data-mode="photo">Foto</button>
-      </div>
-
-      <section id="strapPanel" class="sheet hidden">
-        <div class="grabber"></div>
-        <div class="sheet-row">
-          <div>
-            <div class="sheet-label">Ausgewählter Riemen</div>
-            <div class="sheet-title">Strap 01</div>
-          </div>
-          <div class="value-badge"><span id="widthValue">30</span> mm</div>
-        </div>
-
-        <label class="control">
-          <span>Breite</span>
-          <input id="widthSlider" type="range" min="12" max="60" value="30" step="1" />
-        </label>
-
-        <label class="control">
-          <span>Lockerheit</span>
-          <div class="control-meta"><span>Straff</span><span>Locker</span></div>
-          <input id="slackSlider" type="range" min="0" max="100" value="8" step="1" />
-        </label>
-
-        <button id="deleteStrapBtn" class="danger-btn">Riemen löschen</button>
-      </section>
-
-      <section id="accessoryPanel" class="sheet hidden compact-sheet">
-        <div class="grabber"></div>
-        <div class="sheet-label">ACCESSOIRE-MODUS</div>
-        <div class="sheet-title">Vorbereitet</div>
-        <p>Nieten, Ösen, Spikes und Snap-Muster kommen in V0.7. Der Modus funktioniert bereits getrennt vom Baumodus.</p>
-      </section>
-
-      <section id="photoPanel" class="sheet hidden compact-sheet">
-        <div class="grabber"></div>
-        <div class="sheet-label">FOTO-MODUS</div>
-        <div class="sheet-title">Clean View</div>
-        <p>Anchors und Kontrollpunkte werden ausgeblendet. Posen, Licht und Materialien folgen später.</p>
-      </section>
+    <div class="hint" id="hint">
+      <strong>Tippen setzt · Ziehen dreht</strong>
+      <span>1 Finger ziehen: Ansicht drehen · 1 Finger tippen: Anchor · 2 Finger: Zoom + drehen + hoch/runter · Anchor/Riemen direkt greifen: Objekt verschieben</span>
     </div>
 
-    <button id="restoreUI" class="restore-ui hidden" aria-label="Menüs einblenden">
-      <span></span>
-    </button>
+    <div class="mode-pill sheetish" id="modePill">
+      <div class="mini-grabber"></div>
+      <button class="mode active" data-mode="build">Bauen</button>
+      <button class="mode" data-mode="accessories">Accessoires</button>
+      <button class="mode" data-mode="photo">Foto</button>
+    </div>
 
-    <main id="viewport">
-      <canvas id="scene"></canvas>
-    </main>
+    <section id="strapPanel" class="sheet hidden">
+      <div class="grabber"></div>
+      <div class="sheet-row">
+        <div><div class="sheet-label">AUSGEWÄHLTER RIEMEN</div><div class="sheet-title">Strap 01</div></div>
+        <div class="value-badge"><span id="widthValue">30</span> mm</div>
+      </div>
+      <label class="control"><span>Breite</span><input id="widthSlider" type="range" min="12" max="60" value="30" step="1"></label>
+      <label class="control"><span>Lockerheit</span><div class="control-meta"><span>Straff</span><span>Locker</span></div><input id="slackSlider" type="range" min="0" max="100" value="8" step="1"></label>
+      <button id="deleteStrapBtn" class="danger-btn">Riemen löschen</button>
+    </section>
+
+    <section id="accessoryPanel" class="sheet hidden compact-sheet">
+      <div class="grabber"></div><div class="sheet-label">ACCESSOIRE-MODUS</div>
+      <div class="sheet-title">Grundmodus aktiv</div>
+      <p>Die Konstruktion ist ausgeblendet. Nieten, Ösen und Snap-Reihen kommen im Accessoire-Meilenstein.</p>
+    </section>
+
+    <section id="photoPanel" class="sheet hidden compact-sheet">
+      <div class="grabber"></div><div class="sheet-label">FOTO-MODUS</div>
+      <div class="sheet-title">Clean View</div>
+      <p>Keine Konstruktionshilfen. Posen, Licht und Materialpresets folgen später.</p>
+    </section>
   </div>
 
-  <script type="module" src="./app.js"></script>
+  <button id="restoreUI" class="restore-ui hidden" aria-label="Menüs einblenden"><span></span></button>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+<script type="module" src="./app.js"></script>
 </body>
 </html>
