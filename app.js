@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const $=id=>document.getElementById(id);
-const canvas=$('scene'),viewport=$('viewport'),chrome=$('chrome'),restoreUI=$('restoreUI'),hint=$('hint');
+const canvas=$('scene'),viewport=$('viewport'),chrome=$('chrome'),restoreUI=$('restoreUI');
 const buildTools=$('buildTools'),selectionPanel=$('selectionPanel'),ringControls=$('ringControls'),strapControls=$('strapControls'),strapAnchorControls=$('strapAnchorControls');
 const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle'),deleteSelectedBtn=$('deleteSelectedBtn');
 const widthSlider=$('widthSlider'),widthValue=$('widthValue'),slackSlider=$('slackSlider');
@@ -20,6 +20,11 @@ const modeButtons=[...document.querySelectorAll('.mode')],toolButtons=[...docume
 
 let mode='build',buildTool='ring',mirrorMode=false;
 
+function kindOf(obj){
+  if(!obj)return null;
+  return obj.kind || obj.userData?.kind || null;
+}
+
 const scene=new THREE.Scene();
 scene.fog=new THREE.Fog(0x09090b,6.2,10);
 const camera=new THREE.PerspectiveCamera(31,1,.01,50);
@@ -35,6 +40,26 @@ const fill=new THREE.DirectionalLight(0xd8ddff,1);fill.position.set(-3,2,2);scen
 const rim=new THREE.DirectionalLight(0xa7b4ff,1.25);rim.position.set(-3,2.8,-3.2);scene.add(rim);
 const floor=new THREE.Mesh(new THREE.CircleGeometry(2.35,96),new THREE.MeshStandardMaterial({color:0x141418,roughness:1}));
 floor.rotation.x=-Math.PI/2;floor.position.y=-1.81;floor.receiveShadow=true;scene.add(floor);
+
+// Visual guide for the mirror plane x = 0 on the base floor.
+// The line runs front-to-back through the mannequin centre.
+const axisGeom=new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0,-1.795,-2.05),
+  new THREE.Vector3(0,-1.795, 2.05)
+]);
+const axisLine=new THREE.Line(
+  axisGeom,
+  new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.34})
+);
+scene.add(axisLine);
+
+const axisMarkerMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.42});
+for(const z of [-1.5,-1.0,-.5,0,.5,1.0,1.5]){
+  const mark=new THREE.Mesh(new THREE.PlaneGeometry(.12,.012),axisMarkerMat);
+  mark.rotation.x=-Math.PI/2;
+  mark.position.set(0,-1.79,z);
+  scene.add(mark);
+}
 
 function updateCamera(){
   const ce=Math.cos(camEl);
@@ -89,7 +114,7 @@ modelInput.addEventListener('change',async()=>{
     obj.updateMatrixWorld(true);
     scene.remove(mannequin);mannequin=new THREE.Group();mannequin.add(obj);scene.add(mannequin);importedModel=obj;
     bodyMeshes=[];obj.traverse(n=>{if(n.isMesh)registerMesh(n,false)});
-    resetHarness();showToast('3D-Modell geladen');
+    resetHarness();rotationPanel.classList.add('hidden');rotateModelBtn.classList.remove('active');showToast('3D-Modell geladen');
   }catch(e){console.error(e);showToast('Modell konnte nicht geladen werden')}
   finally{URL.revokeObjectURL(url);modelInput.value=''}
 });
@@ -530,19 +555,16 @@ function setHelpers(v){
   anchors.forEach(a=>a.visible=v);
   strapAnchors.forEach(sa=>sa.group.visible=v);
   connections.forEach(c=>{
-    if(c.handle)c.handle.visible=v && buildTool!=='connect';
+    if(c.handle)c.handle.visible=v;
   });
 }
 function showSelection(){
   if(mode!=='build'){hideSelection();return;}
 
-  const ringMode=buildTool==='ring';
-  const connectMode=buildTool==='connect';
-
-  // Ring mode only exposes ring editing. Connect mode only exposes strap editing.
-  const showRing=ringMode && selected?.kind==='anchor';
-  const showStrap=connectMode && selected?.kind==='connection';
-  const showStrapAnchor=connectMode && selected?.kind==='strapAnchor';
+  const k=kindOf(selected);
+  const showRing=(buildTool==='ring' && k==='anchor');
+  const showStrap=(buildTool==='connect' && k==='connection');
+  const showStrapAnchor=(buildTool==='connect' && k==='strapAnchor');
 
   ringControls.classList.toggle('hidden',!showRing);
   strapControls.classList.toggle('hidden',!showStrap);
@@ -611,7 +633,6 @@ function interactiveHit(x,y){
   const strapObjs=[];
   connections.forEach(c=>{
     c.group.children.forEach(ch=>{
-      if(ch.userData?.kind==='strapHandle' && buildTool==='connect')return;
       strapObjs.push(ch);
     });
   });
@@ -636,9 +657,11 @@ function interactiveHit(x,y){
 
 function refreshBuildToolVisibility(){
   connections.forEach(c=>{
-    if(c.handle)c.handle.visible=(mode==='build' && buildTool!=='connect');
+    if(c.handle)c.handle.visible=(mode==='build');
   });
-  strapAnchors.forEach(sa=>sa.group.visible=(mode==='build'));
+  strapAnchors.forEach(sa=>{
+    sa.group.visible=(mode==='build');
+  });
 }
 
 function setBuildTool(t){
@@ -647,33 +670,32 @@ function setBuildTool(t){
   connectStart=null;
   refreshBuildToolVisibility();
 
-  // The lower editor follows the active construction tool.
-  if(t==='ring'){
-    if(selected?.kind!=='anchor')selected=null;
-    showSelection();
-  }else{
-    if(selected?.kind==='anchor')selected=null;
-    showSelection();
-    showToast('Ringe verbinden oder Riemen antippen');
-  }
+  // Keep selection only if it belongs to the editor of the chosen tool.
+  const k=kindOf(selected);
+  if(t==='ring' && k!=='anchor')selected=null;
+  if(t==='connect' && k!=='connection' && k!=='strapAnchor')selected=null;
+
   refreshSelectionVisuals();
+  showSelection();
+
+  if(t==='connect')showToast('Ringe verbinden oder Riemen bearbeiten');
 }
 toolButtons.forEach(b=>b.addEventListener('click',()=>setBuildTool(b.dataset.tool)));
 
 widthSlider.addEventListener('input',()=>{
-  if(selected?.kind==='connection'){
+  if(kindOf(selected)==='connection'){
     selected.widthMM=+widthSlider.value;widthValue.textContent=widthSlider.value;updateConnection(selected);
     if(selected.mirrorPartner){selected.mirrorPartner.widthMM=selected.widthMM;updateConnection(selected.mirrorPartner)}
   }
 });
 slackSlider.addEventListener('input',()=>{
-  if(selected?.kind==='connection'){
+  if(kindOf(selected)==='connection'){
     selected.slack=+slackSlider.value;updateConnection(selected);
     if(selected.mirrorPartner){selected.mirrorPartner.slack=selected.slack;updateConnection(selected.mirrorPartner)}
   }
 });
 ringDiameterSlider.addEventListener('input',()=>{
-  if(selected?.kind==='anchor'){
+  if(kindOf(selected)==='anchor'){
     selected.userData.diameterMM=+ringDiameterSlider.value;ringDiameterValue.textContent=ringDiameterSlider.value;rebuildRingGeometry(selected);
     connections.filter(c=>c.a===selected||c.b===selected).forEach(updateConnection);
     const mp=selected.userData.mirrorPartner;
@@ -681,7 +703,7 @@ ringDiameterSlider.addEventListener('input',()=>{
   }
 });
 ringThicknessSlider.addEventListener('input',()=>{
-  if(selected?.kind==='anchor'){
+  if(kindOf(selected)==='anchor'){
     selected.userData.thicknessMM=+ringThicknessSlider.value;ringThicknessValue.textContent=ringThicknessSlider.value;rebuildRingGeometry(selected);
     connections.filter(c=>c.a===selected||c.b===selected).forEach(updateConnection);
     const mp=selected.userData.mirrorPartner;
@@ -689,7 +711,7 @@ ringThicknessSlider.addEventListener('input',()=>{
   }
 });
 addStrapAnchorBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='connection')return;
+  if(kindOf(selected)!=='connection')return;
   const sa=makeStrapAnchor(selected,.5);
   if(mirrorMode){
     const mc=selected.mirrorPartner||findMirrorConnection(selected);
@@ -701,7 +723,7 @@ addStrapAnchorBtn.addEventListener('click',()=>{
   selectObject(sa);
 });
 strapAnchorSlider.addEventListener('input',()=>{
-  if(selected?.kind==='strapAnchor'){
+  if(kindOf(selected)==='strapAnchor'){
     selected.t=+strapAnchorSlider.value/100;strapAnchorValue.textContent=strapAnchorSlider.value;updateStrapAnchor(selected);
     if(selected.mirrorPartner){selected.mirrorPartner.t=selected.t;updateStrapAnchor(selected.mirrorPartner)}
   }
@@ -716,10 +738,13 @@ mirrorToggle.addEventListener('click',e=>{
 });
 deleteSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
-  if(selected.kind==='anchor')removeAnchor(selected);
-  else if(selected.kind==='connection')removeConnection(selected);
-  else if(selected.kind==='strapAnchor')removeStrapAnchor(selected);
-  selected=null;hideSelection();
+  const k=kindOf(selected);
+  if(k==='anchor')removeAnchor(selected);
+  else if(k==='connection')removeConnection(selected);
+  else if(k==='strapAnchor')removeStrapAnchor(selected);
+  selected=null;
+  hideSelection();
+  refreshSelectionVisuals();
 });
 resetBtn.addEventListener('click',resetHarness);
 

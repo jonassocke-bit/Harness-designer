@@ -54,3 +54,49 @@ input[type=range]{width:100%;accent-color:#fff;margin-top:9px}
 .mirror-tool{background:rgba(20,20,23,.80)!important;color:#9c9ca3!important}
 .mirror-tool.active{background:#fff!important;color:#111!important}
 .rotate-tool.active{background:#fff;color:#111}
+
+/* V0.5e UI cleanup */
+.hint{display:none!important}
+
+.build-tools{
+  top:calc(env(safe-area-inset-top) + 78px)!important;
+}
+
+.utility-bubbles{
+  position:absolute;
+  z-index:12;
+  right:16px;
+  top:calc(env(safe-area-inset-top) + 72px);
+  display:flex;
+  gap:8px;
+  pointer-events:auto;
+}
+
+.utility-bubble{
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(20,20,23,.82);
+  color:#9c9ca3;
+  font-size:19px;
+  font-weight:700;
+  backdrop-filter:blur(22px);
+  box-shadow:0 5px 18px rgba(0,0,0,.18);
+}
+
+.utility-bubble.active{
+  background:#fff;
+  color:#111;
+  border-color:#fff;
+}
+
+#mirrorToggle[aria-pressed="true"]{
+  background:#fff!important;
+  color:#111!important;
+}
+
+#mirrorToggle[aria-pressed="false"]{
+  background:rgba(20,20,23,.82)!important;
+  color:#9c9ca3!important;
+}

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.5db</title>
+  <title>Harness Designer V0.5eb</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.5d</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.5e</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -36,16 +36,13 @@
       <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
     </header>
 
-    <div class="hint" id="hint">
-      <strong>Ring setzen → verbinden</strong>
-      <span>„Ring“ aktiv: auf den Körper tippen · „Verbinden“ aktiv: zwei Ringe antippen · Ringe direkt ziehen · 1 Finger sonst Kamera</span>
+    <div class="utility-bubbles">
+      <button id="mirrorToggle" class="utility-bubble" aria-pressed="false" aria-label="Spiegelmodus">⇆</button>
+      <button id="rotateModelBtn" class="utility-bubble" aria-label="Modell drehen">⟳</button>
     </div>
-
-    <div id="buildTools" class="build-tools">
+<div id="buildTools" class="build-tools">
       <button class="tool active" data-tool="ring">＋ Ring</button>
       <button class="tool" data-tool="connect">↔ Verbinden</button>
-      <button id="mirrorToggle" class="tool mirror-tool" aria-pressed="false">⇆ Spiegeln</button>
-      <button id="rotateModelBtn" class="tool rotate-tool">⟳ Modell</button>
     </div>
 
     <div class="mode-pill" id="modePill">
