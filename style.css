@@ -176,3 +176,15 @@ input[type=range]{margin-top:5px}
   color:#aaa;
   font-size:9px;
 }
+
+/* V0.10 iPhone workbench */
+.sheet{background:rgba(18,18,21,.78)!important;backdrop-filter:blur(24px) saturate(1.25);-webkit-backdrop-filter:blur(24px) saturate(1.25);max-height:min(62dvh,520px);overflow:hidden;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+.sheet .grabber{touch-action:none;cursor:ns-resize}
+.sheet-scroll{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:calc(min(62dvh,520px) - 104px);padding-right:2px}
+.sheet.compact{max-height:220px}.sheet.compact .sheet-scroll{max-height:118px}
+.quick-actions{display:flex;gap:7px;margin:8px 0 7px}.quick-btn{flex:1;min-width:0;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;border-radius:12px;padding:8px 5px;font-size:11px}.quick-btn.active{background:rgba(255,255,255,.2)}
+.history-bubbles{position:absolute;z-index:12;left:max(12px,env(safe-area-inset-left));top:calc(env(safe-area-inset-top) + 72px);display:flex;gap:8px}
+.history-bubbles .utility-bubble{width:38px;height:38px;font-size:18px}
+.utility-bubbles{top:calc(env(safe-area-inset-top) + 72px)!important}
+.sheet-row{margin-bottom:4px}.panel-group{gap:7px!important}.control{padding:7px 0!important}.sheet-title{font-size:17px!important}
+body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}

@@ -7,6 +7,7 @@ const canvas=$('scene'),viewport=$('viewport'),chrome=$('chrome'),restoreUI=$('r
 const buildTools=$('buildTools'),selectionPanel=$('selectionPanel');
 const ringControls=$('ringControls'),strapControls=$('strapControls'),strapAnchorControls=$('strapAnchorControls');
 const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle'),deleteSelectedBtn=$('deleteSelectedBtn');
+const undoBtn=$('undoBtn'),redoBtn=$('redoBtn'),lockSelectedBtn=$('lockSelectedBtn'),hideSelectedBtn=$('hideSelectedBtn'),isolateSelectedBtn=$('isolateSelectedBtn');
 const widthSlider=$('widthSlider'),widthValue=$('widthValue'),slackSlider=$('slackSlider');
 const ringDiameterSlider=$('ringDiameterSlider'),ringDiameterValue=$('ringDiameterValue');
 const ringThicknessSlider=$('ringThicknessSlider'),ringThicknessValue=$('ringThicknessValue');
@@ -769,8 +770,76 @@ function updateAllGeometry(){
 }
 function paired(o){return o?.mirrorPartner&&o.mirrorPartner!==o}
 
+
+let isolatedObject=null,history=[],future=[],historyBusy=false,historyTimer=null;
+
+function objectVisible(o){return o?.group?.visible!==false}
+function setObjectVisibility(o,on){if(o?.group)o.group.visible=on}
+
+function captureState(){
+  return {
+    nodes:nodes.filter(n=>n.source!=='crossing').map(n=>({
+      id:n.id,source:n.source,ringVisible:n.ringVisible,diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
+      t:n.t,locked:!!n.locked,hidden:!objectVisible(n),
+      pos:n.group.position.toArray(),normal:n.normal?.toArray?.()||[0,0,1],
+      surfacePoint:n.surfacePoint?.toArray?.()||null
+    })),
+    connections:connections.map(c=>({id:c.id,a:c.a.id,b:c.b.id,widthMM:c.widthMM,slack:c.slack,locked:!!c.locked,hidden:!objectVisible(c)}))
+  };
+}
+function stateSignature(s){return JSON.stringify(s)}
+function rememberState(){
+  if(historyBusy)return;
+  clearTimeout(historyTimer);
+  historyTimer=setTimeout(()=>{
+    const s=captureState(),sig=stateSignature(s);
+    if(history.length&&history[history.length-1].sig===sig)return;
+    history.push({sig,state:s});if(history.length>40)history.shift();future.length=0;updateHistoryUI();saveProject();
+  },80);
+}
+function updateHistoryUI(){undoBtn.disabled=history.length<2;redoBtn.disabled=!future.length}
+function saveProject(){try{localStorage.setItem('harnessDesignerAutosave',JSON.stringify(captureState()))}catch{}}
+function vibrate(ms=8){try{navigator.vibrate?.(ms)}catch{}}
+
+function applyState(s){
+  historyBusy=true;
+  try{
+    resetHarness();
+    const map=new Map();
+    for(const d of s.nodes){
+      const n={kind:'node',id:d.id,source:'surface',group:new THREE.Group(),ringVisible:d.ringVisible,diameterMM:d.diameterMM,thicknessMM:d.thicknessMM,sizeMM:d.sizeMM,parent:null,t:d.t||0,normal:new THREE.Vector3().fromArray(d.normal||[0,0,1]),mirrorPartner:null,locked:!!d.locked};
+      n.surfacePoint=d.surfacePoint?new THREE.Vector3().fromArray(d.surfacePoint):new THREE.Vector3().fromArray(d.pos);
+      nodes.push(n);scene.add(n.group);updateSurfaceNodeTransform(n);setObjectVisibility(n,!d.hidden);map.set(n.id,n);
+    }
+    for(const d of s.connections){
+      const a=map.get(d.a),b=map.get(d.b);if(!a||!b)continue;
+      const c=createConnection(a,b,true);c.id=d.id;c.widthMM=d.widthMM;c.slack=d.slack;c.locked=!!d.locked;setObjectVisibility(c,!d.hidden);
+    }
+    selected=null;hideSelection();updateAllGeometry();
+  }finally{historyBusy=false}
+}
+function undo(){
+  if(history.length<2)return;
+  future.push(history.pop());
+  applyState(history[history.length-1].state);updateHistoryUI();saveProject();vibrate();
+}
+function redo(){
+  if(!future.length)return;
+  const item=future.pop();history.push(item);applyState(item.state);updateHistoryUI();saveProject();vibrate();
+}
+function updateQuickActions(){
+  if(!selected)return;
+  lockSelectedBtn.classList.toggle('active',!!selected.locked);
+  lockSelectedBtn.textContent=selected.locked?'🔒 Gesperrt':'🔓 Sperren';
+  isolateSelectedBtn.classList.toggle('active',isolatedObject===selected);
+}
+function clearIsolation(){
+  isolatedObject=null;document.body.classList.remove('object-isolated');
+  for(const n of nodes)setObjectVisibility(n,!n.hiddenByUser);
+  for(const c of connections)setObjectVisibility(c,!c.hiddenByUser);
+}
 function selectObject(o){
-  selected=o;refreshSelectionVisuals();showSelection();
+  selected=o;refreshSelectionVisuals();showSelection();updateQuickActions();vibrate(5);
 }
 function refreshSelectionVisuals(){
   for(const n of nodes)rebuildNodeVisual(n);
@@ -915,8 +984,20 @@ resetBtn.addEventListener('click',resetHarness);
 deleteSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
   if(selected.kind==='node')removeNode(selected);else removeConnection(selected);
-  selected=null;hideSelection();updateAllGeometry();
+  selected=null;hideSelection();updateAllGeometry();rememberState();
 });
+lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;updateQuickActions();rememberState();vibrate()});
+hideSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.hiddenByUser=true;setObjectVisibility(selected,false);selected=null;hideSelection();rememberState()});
+isolateSelectedBtn.addEventListener('click',()=>{
+  if(!selected)return;
+  if(isolatedObject===selected){clearIsolation();updateAllGeometry();return}
+  isolatedObject=selected;document.body.classList.add('object-isolated');
+  for(const n of nodes)setObjectVisibility(n,n===selected||(selected.kind==='connection'&&(n===selected.a||n===selected.b)));
+  for(const c of connections)setObjectVisibility(c,c===selected||(selected.kind==='node'&&(c.a===selected||c.b===selected)));
+  updateQuickActions();
+});
+undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
+
 
 ringDiameterSlider.addEventListener('input',()=>{
   if(selected?.kind!=='node')return;
@@ -1102,6 +1183,7 @@ canvas.addEventListener('pointermove',e=>{
 
   if(single.hit?.kind==='node'){
     const node=single.hit.owner;
+    if(node.locked){single.lx=e.clientX;single.ly=e.clientY;return}
     const d=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
 
     // Body-attached rings, including rings converted from strap anchors,
@@ -1147,7 +1229,7 @@ canvas.addEventListener('pointermove',e=>{
 
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
 });
-canvas.addEventListener('pointerup',e=>{
+canvas.addEventListener('pointerup',e=>{rememberState();
   pointers.delete(e.pointerId);if(pointers.size<2)twoStart=null;
   if(single&&single.id===e.pointerId&&Math.hypot(e.clientX-single.sx,e.clientY-single.sy)<=TAP&&mode==='build'){
     const ih=single.hit;
@@ -1196,10 +1278,18 @@ symmetricEnvelopeToggle?.addEventListener('click',()=>{
 
 function hideAllUI(){chrome.classList.add('ui-hidden');restoreUI.classList.remove('hidden')}
 function installSheetPhysics(el){
+  const grab=el.querySelector?.('.grabber');
+  if(grab){
+    let sy=0,startH=0,tracking=false;
+    grab.addEventListener('pointerdown',e=>{tracking=true;sy=e.clientY;startH=el.getBoundingClientRect().height;grab.setPointerCapture?.(e.pointerId);e.stopPropagation()});
+    grab.addEventListener('pointermove',e=>{if(!tracking)return;const h=THREE.MathUtils.clamp(startH+(sy-e.clientY),118,Math.min(innerHeight*.72,620));el.style.height=h+'px';el.classList.toggle('compact',h<190);e.stopPropagation()});
+    const end=e=>{if(!tracking)return;tracking=false;try{grab.releasePointerCapture?.(e.pointerId)}catch{}};
+    grab.addEventListener('pointerup',end);grab.addEventListener('pointercancel',end);
+  }
   let sy=0,dy=0,tracking=false;
-  el.addEventListener('pointerdown',e=>{if(e.target.matches('input,button'))return;tracking=true;sy=e.clientY;dy=0;el.classList.add('dragging');el.setPointerCapture?.(e.pointerId)});
+  el.addEventListener('pointerdown',e=>{if(e.target.closest('input,button,.sheet-scroll,.grabber'))return;tracking=true;sy=e.clientY;dy=0;el.setPointerCapture?.(e.pointerId)});
   el.addEventListener('pointermove',e=>{if(!tracking)return;dy=Math.max(0,e.clientY-sy);el.style.transform=`translateY(${dy}px)`;el.style.opacity=String(Math.max(.35,1-dy/260))});
-  const end=e=>{if(!tracking)return;tracking=false;el.classList.remove('dragging');el.style.transform='';el.style.opacity='';if(dy>58)hideAllUI();try{el.releasePointerCapture?.(e.pointerId)}catch{}};
+  const end=e=>{if(!tracking)return;tracking=false;el.style.transform='';el.style.opacity='';if(dy>58)hideAllUI();try{el.releasePointerCapture?.(e.pointerId)}catch{}};
   el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
 }
 [selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
@@ -1210,5 +1300,11 @@ function resize(){
 }
 addEventListener('resize',resize);resize();
 
-requestAnimationFrame(()=>{try{rebuildEnvelope();updateAllGeometry()}catch(err){console.error(err);collisionMeshes=bodyMeshes}});
+requestAnimationFrame(()=>{try{
+  rebuildEnvelope();updateAllGeometry();
+  const initial=captureState();history=[{sig:stateSignature(initial),state:initial}];updateHistoryUI();saveProject();
+}catch(err){console.error(err);collisionMeshes=bodyMeshes}});
 function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)}animate();
+
+document.querySelectorAll('input[type="range"]').forEach(el=>el.addEventListener('change',rememberState));
+document.querySelectorAll('.mini-toggle,.primary-btn').forEach(el=>el.addEventListener('click',()=>setTimeout(rememberState,0)));

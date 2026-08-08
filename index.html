@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.9</title>
+  <title>Harness Designer V0.10</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.9</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.10</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -36,6 +36,7 @@
       <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
     </header>
 
+    <div class="history-bubbles"><button id="undoBtn" class="utility-bubble" aria-label="Rückgängig">↶</button><button id="redoBtn" class="utility-bubble" aria-label="Wiederholen">↷</button></div>
     <div class="utility-bubbles">
       <button id="mirrorToggle" class="utility-bubble" aria-pressed="false" aria-label="Spiegelmodus">⇆</button>
       <button id="mirrorSelectedBtn" class="utility-bubble" aria-label="Auswahl spiegeln">◇</button>
@@ -62,6 +63,12 @@
         <button id="deleteSelectedBtn" class="small-danger">Löschen</button>
       </div>
 
+      <div class="quick-actions">
+        <button id="lockSelectedBtn" class="quick-btn" aria-pressed="false">🔓 Sperren</button>
+        <button id="hideSelectedBtn" class="quick-btn">◉ Ausblenden</button>
+        <button id="isolateSelectedBtn" class="quick-btn" aria-pressed="false">◎ Isolieren</button>
+      </div>
+      <div class="sheet-scroll">
       <div id="ringControls" class="panel-group hidden">
         <div class="inline-toggle-row">
           <span>Ring</span>
@@ -114,6 +121,7 @@
           <div class="value-badge"><span id="strapAnchorSizeValue">10</span> mm</div>
           <input id="strapAnchorSizeSlider" type="range" min="2" max="30" value="10" step="1">
         </label>
+      </div>
       </div>
     </section>
 
