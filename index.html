@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0b0d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Harness Designer" />
+  <title>Harness Designer V0.10c</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<div id="app">
+  <main id="viewport"><canvas id="scene"></canvas></main>
+
+  <div id="chrome">
+    <header class="topbar minimal-topbar">
+      <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
+    </header>
+
+    <div class="history-bubbles"><button id="undoBtn" class="utility-bubble" aria-label="Rückgängig">↶</button><button id="redoBtn" class="utility-bubble" aria-label="Wiederholen">↷</button></div>
+    <div class="utility-bubbles">
+      <button id="mirrorToggle" class="utility-bubble" aria-pressed="false" aria-label="Spiegelmodus">⇆</button>
+      <button id="mirrorSelectedBtn" class="utility-bubble" aria-label="Auswahl spiegeln">◇</button>
+      <button id="rotateModelBtn" class="utility-bubble" aria-label="Modell drehen">⟳</button>
+    </div>
+<div id="buildTools" class="build-tools">
+      <button class="tool active" data-tool="ring">＋ Ring</button>
+      <button class="tool" data-tool="connect">↔ Verbinden</button>
+    </div>
+
+    <div class="mode-pill" id="modePill">
+      <button class="mode active" data-mode="build">Bauen</button>
+      <button class="mode" data-mode="accessories">Accessoires</button>
+      <button class="mode" data-mode="photo">Foto</button>
+    </div>
+
+    <section id="selectionPanel" class="sheet hidden">
+      <div class="grabber"></div>
+      <div class="sheet-row selection-compact-row">
+        <div class="selection-inline-title">
+          <span id="selectionLabel">AUSWAHL</span>
+          <strong id="selectionTitle">Element</strong>
+        </div>
+        <button id="lockSelectedBtn" class="header-action" aria-pressed="false" aria-label="Sperren">🔓</button>
+        <button id="deleteSelectedBtn" class="header-action danger-mini" aria-label="Löschen">🗑</button>
+      </div>
+
+      
+      <div class="sheet-scroll">
+      <div id="ringControls" class="panel-group hidden">
+        <div class="inline-toggle-row">
+          <span>Ring</span>
+          <button id="surfaceNodeRingToggle" class="mini-toggle active" aria-pressed="true">An</button>
+        </div>
+        <label class="control">
+          <span>Punktgröße</span>
+          <div class="value-badge"><span id="surfaceNodeSizeValue">10</span> mm</div>
+          <input id="surfaceNodeSizeSlider" type="range" min="2" max="30" value="10" step="1">
+        </label>
+        <label class="control">
+          <span>Ringdurchmesser</span>
+          <div class="value-badge"><span id="ringDiameterValue">40</span> mm</div>
+          <input id="ringDiameterSlider" type="range" min="0" max="100" value="40" step="1">
+        </label>
+        <label class="control">
+          <span>Ringstärke</span>
+          <div class="value-badge"><span id="ringThicknessValue">6</span> mm</div>
+          <input id="ringThicknessSlider" type="range" min="0" max="15" value="6" step="0.5">
+        </label>
+      </div>
+
+      <div id="strapControls" class="panel-group hidden">
+        <label class="control">
+          <span>Breite</span>
+          <div class="value-badge"><span id="widthValue">30</span> mm</div>
+          <input id="widthSlider" type="range" min="0" max="60" value="30" step="1">
+        </label>
+        <label class="control">
+          <span>Lockerheit</span>
+          <div class="control-meta"><span>Straff</span><span>Locker</span></div>
+          <input id="slackSlider" type="range" min="0" max="100" value="8" step="1">
+        </label>
+        <button id="addStrapAnchorBtn" class="primary-btn">＋ Anker auf Riemen</button>
+      </div>
+
+      <div id="strapAnchorControls" class="panel-group hidden">
+        <div class="inline-toggle-row">
+          <span>Ring</span>
+          <button id="strapNodeRingToggle" class="mini-toggle" aria-pressed="false">Aus</button>
+        </div>
+        <label class="control">
+          <span>Ankerposition</span>
+          <div class="value-badge"><span id="strapAnchorValue">50</span> %</div>
+          <div class="control-meta"><span>Anfang</span><span>Ende</span></div>
+          <input id="strapAnchorSlider" type="range" min="0" max="100" value="50" step="1">
+        </label>
+        <label class="control">
+          <span>Ankergröße</span>
+          <div class="value-badge"><span id="strapAnchorSizeValue">10</span> mm</div>
+          <input id="strapAnchorSizeSlider" type="range" min="2" max="30" value="10" step="1">
+        </label>
+      </div>
+      </div>
+    </section>
+
+    <section id="rotationPanel" class="sheet hidden compact-sheet">
+      <div class="grabber"></div>
+      <div class="sheet-row">
+        <div>
+          <div class="sheet-label">MODELLAUSRICHTUNG</div>
+          <div class="sheet-title">Manuell drehen</div>
+        </div>
+        <button id="closeRotationBtn" class="text-btn">Fertig</button>
+      </div>
+      <label class="control">
+        <span>X-Achse</span><div class="value-badge"><span id="rotXValue">0</span>°</div>
+        <input id="rotXSlider" type="range" min="-180" max="180" value="0" step="1">
+      </label>
+      <label class="control">
+        <span>Y-Achse</span><div class="value-badge"><span id="rotYValue">0</span>°</div>
+        <input id="rotYSlider" type="range" min="-180" max="180" value="0" step="1">
+      </label>
+      <label class="control">
+        <span>Z-Achse</span><div class="value-badge"><span id="rotZValue">0</span>°</div>
+        <input id="rotZSlider" type="range" min="-180" max="180" value="0" step="1">
+      </label>
+      <label class="control">
+        <span>Abstand zum Modell</span>
+        <div class="value-badge"><span id="surfaceOffsetValue">2</span> mm</div>
+        <input id="surfaceOffsetSlider" type="range" min="0" max="30" value="2" step="0.5">
+      </label>
+      <label class="control">
+        <span>Oberflächenglättung</span>
+        <div class="value-badge"><span id="envelopeSmoothValue">35</span> %</div>
+        <input id="envelopeSmoothSlider" type="range" min="0" max="100" value="35" step="1">
+      </label>
+      <label class="control">
+        <span>Hüllenabstand</span>
+        <div class="value-badge"><span id="envelopeInflateValue">4</span> mm</div>
+        <input id="envelopeInflateSlider" type="range" min="0" max="30" value="4" step="0.5">
+      </label>
+      <div class="inline-toggle-row">
+        <span>Hülle anzeigen</span>
+        <button id="envelopeVisibleToggle" class="mini-toggle" aria-pressed="false">Aus</button>
+        <div class="inline-toggle-row">
+          <span>Symmetrische Arbeitshülle</span>
+          <button id="symmetricEnvelopeToggle" class="mini-toggle" aria-pressed="false">Aus</button>
+        </div>
+      </div>
+      <button id="rotationResetBtn" class="primary-btn">Rotation zurücksetzen</button>
+    </section>
+
+    <section id="accessoryPanel" class="sheet hidden compact-sheet">
+      <div class="grabber"></div>
+      <div class="sheet-label">ACCESSOIRE-MODUS</div>
+      <div class="sheet-title">Vorbereitet</div>
+      <p>Nieten, Ösen, Spikes und Reihen-Snaps kommen als nächster großer Arbeitsbereich.</p>
+    </section>
+
+    <section id="photoPanel" class="sheet hidden compact-sheet">
+      <div class="grabber"></div>
+      <div class="sheet-label">FOTO-MODUS</div>
+      <div class="sheet-title">Clean View</div>
+      <p>Konstruktionshilfen werden ausgeblendet. Posen und Materialpresets folgen später.</p>
+    </section>
+  </div>
+
+  <button id="restoreUI" class="restore-ui hidden"><span></span></button>
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script type="module" src="./app.js"></script>
+  <div id="versionBadge" class="version-badge">v0.10c</div>
+</body>
+</html>
