@@ -204,36 +204,32 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
 .preset-row{display:flex;gap:5px;margin:1px 0 4px}.preset-chip{min-width:40px;padding:5px 7px;border-radius:9px;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.065);color:#fff;font-size:11px}
 .node-point-only .ring-only{display:none!important}.node-ring-only .point-only{display:none!important}
 
-/* V0.10d startup hotfix: required controls live in overflow menu */
-.more-bubble{
-  position:absolute;
-  right:max(12px,env(safe-area-inset-right));
-  top:calc(env(safe-area-inset-top) + 8px);
-  z-index:30;
-}
-.more-menu{
-  position:absolute;
-  right:12px;
-  top:calc(env(safe-area-inset-top) + 52px);
-  z-index:31;
-  width:190px;
-  padding:7px;
-  background:rgba(22,22,25,.88);
-  -webkit-backdrop-filter:blur(22px);
-  backdrop-filter:blur(22px);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:16px;
-  box-shadow:0 12px 36px rgba(0,0,0,.28);
-}
-.more-menu.hidden{display:none}
-.menu-action{
-  display:block;
-  width:100%;
-  border:0;
-  border-radius:10px;
-  background:transparent;
-  color:#fff;
-  padding:11px 10px;
-  text-align:left;
-}
-.menu-action:active{background:rgba(255,255,255,.1)}
+/* V0.10e recovery UI — preserve original DOM */
+.topbar .eyebrow,.topbar .title{display:none!important}
+.topbar{height:0!important;min-height:0!important;padding:0!important;margin:0!important}
+.model-btn,.reset-btn{display:none!important}
+.more-bubble{top:calc(env(safe-area-inset-top) + 8px)!important}
+.history-bubbles{top:calc(env(safe-area-inset-top) + 8px)!important}
+.utility-bubbles{top:calc(env(safe-area-inset-top) + 8px)!important}
+.mode-switch{top:calc(env(safe-area-inset-top) + 58px)!important}
+.version-badge{position:absolute;right:8px;bottom:calc(env(safe-area-inset-bottom) + 58px);z-index:8;font-size:9px;color:rgba(255,255,255,.38);pointer-events:none}
+.sheet{background:rgba(18,18,21,.62)!important;max-height:none!important;height:34dvh;min-height:112px;transition:none!important}
+.sheet-scroll{max-height:none!important;height:calc(100% - 50px)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch}
+.sheet-row{display:flex!important;align-items:center!important;gap:6px!important;margin:0!important;min-height:38px!important}
+.sheet-row>div:first-child{display:flex!important;align-items:baseline!important;gap:7px!important;flex:1!important;min-width:0!important}
+.sheet-label{font-size:9px!important}.sheet-title{font-size:16px!important}
+.small-danger{padding:7px 9px!important;font-size:0!important;min-width:36px!important}.small-danger:after{content:"🗑";font-size:15px}
+.quick-actions{position:absolute!important;right:50px!important;top:9px!important;margin:0!important;z-index:4!important}
+.quick-actions #hideSelectedBtn,.quick-actions #isolateSelectedBtn{display:none!important}
+.quick-actions #lockSelectedBtn{width:36px!important;height:32px!important;padding:0!important;font-size:0!important}
+.quick-actions #lockSelectedBtn:after{content:"🔓";font-size:15px}.quick-actions #lockSelectedBtn.active:after{content:"🔒"}
+.panel-group{gap:2px!important}.control{padding:3px 0!important;margin:0!important}
+.sheet>.grabber{position:relative!important;width:44px!important;height:5px!important;margin:3px auto 4px!important;z-index:20!important}
+.sheet>.grabber:before{content:"";position:absolute;left:50%;top:50%;width:200px;height:48px;transform:translate(-50%,-50%);background:transparent}
+.param-inline-tools{display:flex;align-items:center;gap:3px;margin-left:auto}
+.param-number{width:54px;border:0;border-radius:9px;background:rgba(255,255,255,.10);color:#fff;padding:5px 4px;text-align:right;font:inherit}
+.inline-presets{display:flex;gap:2px}.inline-preset{min-width:31px;padding:5px 4px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#fff;font-size:10px}
+.value-badge.has-inline-replacement{display:none!important}
+.control.has-inline-tools{display:grid!important;grid-template-columns:minmax(82px,1fr) auto!important;align-items:center!important;column-gap:6px!important}
+.control.has-inline-tools>span:first-child{grid-column:1;grid-row:1}.control.has-inline-tools>.param-inline-tools{grid-column:2;grid-row:1}.control.has-inline-tools>input[type=range]{grid-column:1/-1;grid-row:2;width:100%;margin:3px 0 1px!important}
+.node-point-only .ring-only{display:none!important}.node-ring-only .point-only{display:none!important}

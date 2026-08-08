@@ -827,12 +827,7 @@ function redo(){
   if(!future.length)return;
   const item=future.pop();history.push(item);applyState(item.state);updateHistoryUI();saveProject();vibrate();
 }
-function updateQuickActions(){
-  if(!selected)return;
-  lockSelectedBtn.classList.toggle('active',!!selected.locked);
-  lockSelectedBtn.setAttribute('aria-pressed',selected.locked?'true':'false');
-  lockSelectedBtn.textContent=selected.locked?'🔒':'🔓';
-}
+function updateQuickActions(){if(!selected)return;lockSelectedBtn.classList.toggle('active',!!selected.locked);lockSelectedBtn.textContent=selected.locked?'🔒 Gesperrt':'🔓 Sperren';}
 function clearIsolation(){
   isolatedObject=null;document.body.classList.remove('object-isolated');
   for(const n of nodes)setObjectVisibility(n,!n.hiddenByUser);
@@ -1274,41 +1269,15 @@ symmetricEnvelopeToggle?.addEventListener('click',()=>{
 
 function hideAllUI(){chrome.classList.add('ui-hidden');restoreUI.classList.remove('hidden')}
 function installSheetPhysics(el){
-  const saved=Number(localStorage.getItem('harnessSheetHeight'));
-  if(saved>110)el.style.height=Math.min(saved,innerHeight*.72)+'px';
-
-  const grab=el.querySelector?.('.grabber');
-  if(!grab)return;
-
-  let sy=0,startH=0,tracking=false,pointerId=null;
-  const begin=e=>{
-    tracking=true;pointerId=e.pointerId;sy=e.clientY;startH=el.getBoundingClientRect().height;
-    grab.setPointerCapture?.(e.pointerId);e.preventDefault();e.stopPropagation();
-  };
-
+  const saved=Number(localStorage.getItem('harnessSheetHeight'));if(saved>110)el.style.height=Math.min(saved,innerHeight*.72)+'px';
+  const grab=el.querySelector?.('.grabber');if(!grab)return;
+  let tracking=false,sy=0,startH=0,pid=null;
+  const begin=e=>{tracking=true;pid=e.pointerId;sy=e.clientY;startH=el.getBoundingClientRect().height;e.preventDefault();e.stopPropagation()};
   grab.addEventListener('pointerdown',begin);
-
-  // Entire upper 40px of sheet works as resize hot-zone, except buttons/inputs.
-  el.addEventListener('pointerdown',e=>{
-    if(e.target.closest('button,input'))return;
-    const r=el.getBoundingClientRect();
-    if(e.clientY-r.top<=40&&!tracking)begin(e);
-  });
-
-  el.addEventListener('pointermove',e=>{
-    if(!tracking||e.pointerId!==pointerId)return;
-    const h=THREE.MathUtils.clamp(startH+(sy-e.clientY),112,innerHeight*.72);
-    el.style.height=h+'px';e.preventDefault();e.stopPropagation();
-  });
-
-  const finish=e=>{
-    if(!tracking||e.pointerId!==pointerId)return;
-    tracking=false;
-    localStorage.setItem('harnessSheetHeight',String(el.getBoundingClientRect().height));
-    try{grab.releasePointerCapture?.(e.pointerId)}catch{}
-  };
-  el.addEventListener('pointerup',finish);
-  el.addEventListener('pointercancel',finish);
+  el.addEventListener('pointerdown',e=>{if(e.target.closest('button,input'))return;const r=el.getBoundingClientRect();if(e.clientY-r.top<=42&&!tracking)begin(e)});
+  el.addEventListener('pointermove',e=>{if(!tracking||e.pointerId!==pid)return;el.style.height=THREE.MathUtils.clamp(startH+(sy-e.clientY),112,innerHeight*.72)+'px';e.preventDefault()});
+  const finish=e=>{if(!tracking||e.pointerId!==pid)return;tracking=false;localStorage.setItem('harnessSheetHeight',String(el.getBoundingClientRect().height))};
+  el.addEventListener('pointerup',finish);el.addEventListener('pointercancel',finish);
 }
 [selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
@@ -1327,83 +1296,35 @@ function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)}
 document.querySelectorAll('input[type="range"]').forEach(el=>el.addEventListener('change',rememberState));
 document.querySelectorAll('.mini-toggle,.primary-btn').forEach(el=>el.addEventListener('click',()=>setTimeout(rememberState,0)));
 
-function setupContextualNodeControls(){
-  surfaceNodeSizeSlider?.closest('.control,.sheet-row')?.classList.add('point-only');
-  ringDiameterSlider?.closest('.control,.sheet-row')?.classList.add('ring-only');
-  ringThicknessSlider?.closest('.control,.sheet-row')?.classList.add('ring-only');
+
+function setupSafeCompactUI(){
+  surfaceNodeSizeSlider?.closest('.control')?.classList.add('point-only');
+  ringDiameterSlider?.closest('.control')?.classList.add('ring-only');
+  ringThicknessSlider?.closest('.control')?.classList.add('ring-only');
+
+  const specs=[
+    [widthSlider,widthValue,[10,20,30,40],'width'],
+    [ringDiameterSlider,ringDiameterValue,[20,30,40,50],'ringDiameter'],
+    [ringThicknessSlider,ringThicknessValue,[3,4,6,8],'ringThickness'],
+    [surfaceNodeSizeSlider,surfaceNodeSizeValue,[4,6,8,10],'pointSize']
+  ];
+  for(const [slider,valueEl,defaults,name] of specs){
+    if(!slider||!valueEl)continue;
+    const control=slider.closest('.control');if(!control)continue;
+    control.classList.add('has-inline-tools');
+    valueEl.closest('.value-badge')?.classList.add('has-inline-replacement');
+    const tools=document.createElement('div');tools.className='param-inline-tools';
+    const num=document.createElement('input');num.className='param-number';num.type='number';num.inputMode='decimal';num.min=slider.min;num.max=slider.max;num.step=slider.step||1;num.value=slider.value;tools.appendChild(num);
+    let vals;try{vals=JSON.parse(localStorage.getItem('safePreset:'+name))}catch{}if(!Array.isArray(vals)||vals.length!==4)vals=[...defaults];
+    const row=document.createElement('div');row.className='inline-presets';
+    const render=()=>{row.innerHTML='';vals.forEach((v,i)=>{const b=document.createElement('button');b.className='inline-preset';b.textContent=v;b.addEventListener('click',e=>{e.preventDefault();slider.value=v;slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}))});let t;b.addEventListener('pointerdown',()=>t=setTimeout(()=>{vals[i]=Number(slider.value);localStorage.setItem('safePreset:'+name,JSON.stringify(vals));render();vibrate(12);showToast('Preset gespeichert')},550));['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>clearTimeout(t)));row.appendChild(b)})};render();tools.appendChild(row);
+    slider.addEventListener('input',()=>num.value=slider.value);
+    num.addEventListener('change',()=>{let v=Number(num.value);if(!Number.isFinite(v))v=Number(slider.value);v=Math.max(Number(slider.min),Math.min(Number(slider.max),v));slider.value=String(v);slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}))});
+    control.insertBefore(tools,slider);
+  }
 }
 function updateNodeParameterVisibility(){
   selectionPanel?.classList.remove('node-point-only','node-ring-only');
   if(selected?.kind==='node')selectionPanel?.classList.add(selected.ringVisible?'node-ring-only':'node-point-only');
 }
-const PRESET_DEFAULTS={widthSlider:[10,20,30,40],ringDiameterSlider:[20,30,40,50],ringThicknessSlider:[3,4,6,8],surfaceNodeSizeSlider:[4,6,8,10],strapAnchorSizeSlider:[4,6,8,10]};
-function setupNumericPresets(){
-  document.querySelectorAll('input[type="range"]').forEach(slider=>{
-    if(!slider.id)return;
-    const valueEl=document.getElementById(slider.id.replace('Slider','Value'));
-    if(!valueEl)return;
-    const control=slider.closest('.control');
-    if(!control)return;
-
-    const tools=document.createElement('div');
-    tools.className='param-inline-tools';
-
-    const input=document.createElement('input');
-    input.className='param-value-edit';
-    input.type='number';
-    input.inputMode='decimal';
-    input.min=slider.min;
-    input.max=slider.max;
-    input.step=slider.step||1;
-    input.value=slider.value;
-
-    const oldBadge=valueEl.closest('.value-badge')||valueEl;
-    oldBadge.remove();
-    tools.appendChild(input);
-
-    slider.addEventListener('input',()=>input.value=slider.value);
-    input.addEventListener('change',()=>{
-      let v=Number(input.value);
-      if(!Number.isFinite(v))v=Number(slider.value);
-      v=Math.max(Number(slider.min),Math.min(Number(slider.max),v));
-      slider.value=String(v);
-      slider.dispatchEvent(new Event('input',{bubbles:true}));
-      slider.dispatchEvent(new Event('change',{bubbles:true}));
-    });
-
-    if(PRESET_DEFAULTS[slider.id]){
-      const key='presets:'+slider.id;
-      let vals;
-      try{vals=JSON.parse(localStorage.getItem(key))}catch{}
-      if(!Array.isArray(vals)||vals.length!==4)vals=[...PRESET_DEFAULTS[slider.id]];
-
-      const row=document.createElement('div');
-      row.className='preset-row';
-      const render=()=>{
-        row.innerHTML='';
-        vals.forEach((v,i)=>{
-          const b=document.createElement('button');
-          b.className='preset-chip';
-          b.textContent=v;
-          b.addEventListener('click',()=>{
-            slider.value=v;
-            slider.dispatchEvent(new Event('input',{bubbles:true}));
-            slider.dispatchEvent(new Event('change',{bubbles:true}));
-          });
-          let timer;
-          b.addEventListener('pointerdown',()=>timer=setTimeout(()=>{
-            vals[i]=Number(slider.value);
-            localStorage.setItem(key,JSON.stringify(vals));
-            render();vibrate(14);showToast('Preset gespeichert');
-          },550));
-          ['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>clearTimeout(timer)));
-          row.appendChild(b);
-        });
-      };
-      render();
-      tools.appendChild(row);
-    }
-    control.insertBefore(tools,slider);
-  });
-}
-requestAnimationFrame(()=>{setupContextualNodeControls();setupNumericPresets();updateNodeParameterVisibility()});
+requestAnimationFrame(()=>{setupSafeCompactUI();updateNodeParameterVisibility()});
