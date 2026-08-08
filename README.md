@@ -1,1 +1,1 @@
-Harness Designer V0.10b — compact persistent editor, overflow app menu, typed values, editable presets, contextual Ring/Punkt parameters.
+V0.10c: no visible top header, tiny version badge, inline presets/value, one-line selection header, much larger panel resize hot-zone.
