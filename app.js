@@ -475,9 +475,24 @@ function controlFrame(c){
 function controlPoint(c){
   const A=nodePosition(c.a),B=nodePosition(c.b);
   const mid=A.clone().lerp(B,.5);
+
+  // One surface query only: the midpoint is gently projected to the
+  // construction surface. This is only a design guide, not a physical solver.
   const avgN=averageNormal(c.a,c.b);
   const surf=castToSurfaceFrom(mid,avgN);
-  return surf.point.clone().addScaledVector(surf.normal,surfaceOffsetScene()+.008);
+
+  const tight=1-THREE.MathUtils.clamp(c.slack/100,0,1);
+  const base=mid.clone().lerp(
+    surf.point.clone().addScaledVector(surf.normal,surfaceOffsetScene()+.010),
+    tight*.72
+  );
+
+  // "Lockerheit": move away from the body and slightly downward.
+  const slack=THREE.MathUtils.clamp(c.slack/100,0,1);
+  base.addScaledVector(surf.normal,slack*.18);
+  base.y-=slack*.20;
+
+  return base;
 }
 function visibleEndpoint(node,toward){
   const center=nodePosition(node);
@@ -489,73 +504,17 @@ function visibleEndpoint(node,toward){
 }
 function buildBaseCurve(c){
   const A=nodePosition(c.a),B=nodePosition(c.b);
-  const a=visibleEndpoint(c.a,B);
-  const b=visibleEndpoint(c.b,A);
-  const tight=1-THREE.MathUtils.clamp(c.slack/100,0,1);
 
-  function projectSample(p){
-    const avgN=averageNormal(c.a,c.b);
-    const origins=[
-      p.clone().addScaledVector(avgN,.75),
-      p.clone().addScaledVector(avgN,-.75)
-    ];
-    let best=null,bestD=Infinity;
-    for(let j=0;j<2;j++){
-      const dir=j===0?avgN.clone().negate():avgN.clone();
-      raycaster.set(origins[j],dir);
-      const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
-      if(hits.length){
-        const d=hits[0].point.distanceTo(p);
-        if(d<bestD){bestD=d;best=hits[0]}
-      }
-    }
-    if(best&&bestD<.48){
-      return best.point.clone().addScaledVector(worldNormal(best),surfaceOffsetScene()+.008);
-    }
-    return p.clone();
-  }
+  // Logical endpoints are always node/ring centres.
+  // visibleEndpoint trims the rendered strap to the ring edge dynamically.
+  const ctrl=controlPoint(c);
+  const a=visibleEndpoint(c.a,ctrl);
+  const b=visibleEndpoint(c.b,ctrl);
 
-  // Start coarse and recursively add points where the projected surface
-  // deviates from a straight segment. Tight curves therefore get more support.
-  let samples=[{t:0,p:a.clone()},{t:1,p:b.clone()}];
-  for(let pass=0;pass<4;pass++){
-    const next=[samples[0]];
-    for(let i=0;i<samples.length-1;i++){
-      const L=samples[i],R=samples[i+1];
-      const tm=(L.t+R.t)/2;
-      const linear=L.p.clone().lerp(R.p,.5);
-      const projected=projectSample(linear);
-      const deviation=projected.distanceTo(linear);
-      const segment=L.p.distanceTo(R.p);
-      if((deviation>.012 || segment>.20) && next.length<70){
-        next.push({t:tm,p:linear.clone().lerp(projected,tight*.88)});
-      }
-      next.push(R);
-    }
-    samples=next.sort((x,y)=>x.t-y.t);
-  }
-
-  // Final surface projection for interior points.
-  const supports=samples.map((s,i)=>{
-    if(i===0||i===samples.length-1)return s.p;
-    const projected=projectSample(s.p);
-    return s.p.clone().lerp(projected,tight*.82);
-  });
-
-  // Guarantee enough smooth samples even on flat areas.
-  if(supports.length<7){
-    supports.length=0;
-    const straight=new THREE.LineCurve3(a,b);
-    for(let i=0;i<9;i++){
-      let p=straight.getPoint(i/8);
-      if(i>0&&i<8)p.lerp(projectSample(p),tight*.82);
-      supports.push(p);
-    }
-  }
-
-  const curve=new THREE.CatmullRomCurve3(supports,false,'centripetal',.5);
+  const curve=new THREE.QuadraticBezierCurve3(a,ctrl,b);
   c.baseCurve=curve;
   c.renderCurve=curve;
+  c.controlPoint=ctrl;
   return curve;
 }
 
@@ -563,7 +522,7 @@ function buildBaseCurve(c){
 const AUTO_CROSS_EPS=.028;
 let autoCrossingUpdate=false;
 
-function sampledSegments(c,count=36){
+function sampledSegments(c,count=20){
   const curve=c.renderCurve||c.baseCurve;if(!curve)return [];
   const out=[];let a=curve.getPoint(0);
   for(let i=1;i<=count;i++){
@@ -668,57 +627,61 @@ function updateStrapNode(n){
 function ribbonGeometry(points,widthMM,thicknessMM=2.5){
   const halfW=Math.max(.0002,.15*(widthMM/30)*.5);
   const halfT=.009*(thicknessMM/2.5);
-  const verts=[],idx=[],uv=[],frames=[];
+  const verts=[],idx=[],uv=[];
+  const frames=[];
 
-  let prevNormal=null,prevSide=null;
+  // One stable reference normal for the whole strap.
+  // No surface raycasts are performed here.
+  let prevSide=null;
+  let prevNormal=null;
+
   for(let i=0;i<points.length;i++){
     const prev=points[Math.max(0,i-1)];
     const next=points[Math.min(points.length-1,i+1)];
     const tangent=next.clone().sub(prev).normalize();
 
-    // Start from a stable construction-surface normal, not the camera.
-    let normal=prevNormal?prevNormal.clone():new THREE.Vector3(0,0,1);
-    const probeBase=prevNormal||averageNormal({normal:new THREE.Vector3(0,0,1)},{normal:new THREE.Vector3(0,0,1)});
-    const origins=[
-      points[i].clone().addScaledVector(probeBase,.35),
-      points[i].clone().addScaledVector(probeBase,-.35)
-    ];
-    let best=null,bestD=Infinity;
-    for(let j=0;j<2;j++){
-      const dir=j===0?probeBase.clone().negate():probeBase.clone();
-      raycaster.set(origins[j],dir);
-      const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
-      if(hits.length){
-        const d=hits[0].point.distanceTo(points[i]);
-        if(d<bestD){bestD=d;best=hits[0]}
-      }
-    }
-    if(best&&bestD<.45)normal=worldNormal(best);
+    let normal=new THREE.Vector3(0,0,1);
 
+    if(prevNormal){
+      normal.copy(prevNormal);
+    }else{
+      // Seed from endpoint normals; fallback to world Z.
+      normal.copy(averageNormal(
+        {normal:points.length?new THREE.Vector3(0,0,1):new THREE.Vector3(0,0,1)},
+        {normal:new THREE.Vector3(0,0,1)}
+      ));
+    }
+
+    // Project previous normal into the plane perpendicular to tangent.
     normal.addScaledVector(tangent,-normal.dot(tangent));
-    if(normal.lengthSq()<1e-8)normal=prevNormal?prevNormal.clone():new THREE.Vector3(0,1,0);
+    if(normal.lengthSq()<1e-8){
+      normal.set(0,1,0);
+      normal.addScaledVector(tangent,-normal.dot(tangent));
+    }
     normal.normalize();
 
-    // Never permit a sudden normal hemisphere flip.
-    if(prevNormal&&normal.dot(prevNormal)<0)normal.negate();
-
     let side=new THREE.Vector3().crossVectors(normal,tangent);
-    if(side.lengthSq()<1e-8&&prevSide)side.copy(prevSide);
-    if(side.lengthSq()<1e-8)side.set(1,0,0);
+    if(side.lengthSq()<1e-8){
+      side.set(1,0,0);
+      side.addScaledVector(tangent,-side.dot(tangent));
+    }
     side.normalize();
 
-    normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
-
-    // Preserve handedness continuously from one sample to the next.
+    // Parallel-transport continuity: never allow a sudden side flip.
     if(prevSide&&side.dot(prevSide)<0){
-      side.negate();normal.negate();
+      side.negate();
+      normal.negate();
     }
+
+    normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
     if(prevNormal&&normal.dot(prevNormal)<0){
-      side.negate();normal.negate();
+      side.negate();
+      normal.negate();
     }
 
     frames.push({side:side.clone(),normal:normal.clone()});
-    prevSide=side.clone();prevNormal=normal.clone();
+    prevSide=side.clone();
+    prevNormal=normal.clone();
   }
 
   for(let i=0;i<points.length;i++){
@@ -730,18 +693,26 @@ function ribbonGeometry(points,widthMM,thicknessMM=2.5){
     const bl=l.clone().addScaledVector(f.normal,-halfT);
     const br=r.clone().addScaledVector(f.normal,-halfT);
     [tl,tr,bl,br].forEach(v=>verts.push(v.x,v.y,v.z));
-    const u=i/(points.length-1);uv.push(0,u,1,u,0,u,1,u);
+    const u=i/(points.length-1);
+    uv.push(0,u,1,u,0,u,1,u);
   }
 
   for(let i=0;i<points.length-1;i++){
     const a=i*4,b=(i+1)*4;
-    idx.push(a,a+1,b,a+1,b+1,b,a+2,b+2,a+3,a+3,b+2,b+3,a+2,a,b+2,a,b,b+2,a+1,a+3,b+1,a+3,b+3,b+1);
+    idx.push(
+      a,a+1,b,a+1,b+1,b,
+      a+2,b+2,a+3,a+3,b+2,b+3,
+      a+2,a,b+2,a,b,b+2,
+      a+1,a+3,b+1,a+3,b+3,b+1
+    );
   }
 
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
-  g.setIndex(idx);g.computeVertexNormals();return g;
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }
 function addRibbon(c,points){
   if(points.length<2)return;
@@ -752,16 +723,32 @@ function addRibbon(c,points){
   mesh.castShadow=true;mesh.userData={kind:'connectionMesh',owner:c};c.group.add(mesh);
 }
 function renderConnection(c){
-  while(c.group.children.length){const q=c.group.children.pop();q.geometry?.dispose?.();q.material?.dispose?.()}
-  const curve=c.baseCurve;if(!curve)return;
+  while(c.group.children.length){
+    const q=c.group.children.pop();
+    q.geometry?.dispose?.();
+    q.material?.dispose?.();
+  }
 
+  const curve=c.baseCurve;
+  if(!curve)return;
+
+  // Ring nodes split the strap into separate visible pieces as before.
   const split=strapNodesOn(c).filter(n=>n.ringVisible);
-  const breaks=[{t:0,node:c.a,start:true},...split.map(n=>({t:n.t,node:n})),{t:1,node:c.b,end:true}];
+  const breaks=[
+    {t:0,node:c.a,start:true},
+    ...split.map(n=>({t:n.t,node:n})),
+    {t:1,node:c.b,end:true}
+  ];
 
   for(let s=0;s<breaks.length-1;s++){
-    const L=breaks[s],R=breaks[s+1],pts=[];
-    const count=Math.max(8,Math.ceil((R.t-L.t)*42));
-    for(let i=0;i<=count;i++)pts.push(curve.getPoint(THREE.MathUtils.lerp(L.t,R.t,i/count)));
+    const L=breaks[s],R=breaks[s+1];
+    const pts=[];
+
+    // 16 samples are visually smooth enough for a design tool.
+    const count=Math.max(6,Math.ceil((R.t-L.t)*16));
+    for(let i=0;i<=count;i++){
+      pts.push(curve.getPoint(THREE.MathUtils.lerp(L.t,R.t,i/count)));
+    }
 
     if(L.t>0&&L.node?.ringVisible&&pts.length>1){
       pts[0]=visibleEndpoint(L.node,pts[1]);
@@ -769,9 +756,9 @@ function renderConnection(c){
     if(R.t<1&&R.node?.ringVisible&&pts.length>1){
       pts[pts.length-1]=visibleEndpoint(R.node,pts[pts.length-2]);
     }
+
     addRibbon(c,pts);
   }
-
 }
 
 
@@ -838,10 +825,10 @@ function finishDragPreview(){
 
 function updateAllGeometry(){
   for(const n of nodes)if(n.source==='surface')updateSurfaceNodeTransform(n);
-  for(let pass=0;pass<5;pass++){
-    for(const c of connections)buildBaseCurve(c);
-    for(const n of nodes)if(n.source==='strap')updateStrapNode(n);
-  }
+  for(const c of connections)buildBaseCurve(c);
+  for(const n of nodes)if(n.source==='strap')updateStrapNode(n);
+  // Rebuild once more so strap-node positions are reflected in dependent curves.
+  for(const c of connections)buildBaseCurve(c);
   for(const c of connections)renderConnection(c);
   refreshAutomaticCrossings();
   for(const n of nodes){

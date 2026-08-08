@@ -1,10 +1,20 @@
-# Harness Designer V0.10n
+# Harness Designer V0.11 — Strap Engine 2.0
 
-Based directly on V0.10m.
+The old adaptive surface-following strap solver has been removed.
 
-Restored model controls in the rotation/model settings:
-- `Eigenes 3D-Modell laden` opens the existing GLB/GLTF file input and therefore
-  uses the same established import logic as the former top `3D Modell` button.
-- `Modell neu laden` restores the built-in mannequin and rebuilds its envelope.
-- Existing rotation, surface offset and envelope controls remain unchanged.
-- Main workspace stays uncluttered; no 3D/harness/drag logic changed.
+New strap model:
+- logical path: Ring/Node A -> one automatic control point -> Ring/Node B
+- one midpoint surface query only
+- QuadraticBezierCurve3 for a clean, predictable strap path
+- slack moves the automatic control point away from the body and slightly down
+- rendered endpoints are still trimmed dynamically to the ring edge
+- ring wraps remain dynamic
+- no per-ribbon-point body raycasts
+- ribbon orientation uses a continuous raycast-free transported frame
+- only ~16 render samples per full strap
+- no iterative 3–5 pass surface solver
+- dynamic strap nodes / split rings / crossings remain connected to the new curve
+- drag preview from V0.10M/N remains: no full strap rebuild during finger movement
+
+This intentionally favors design stability, speed and visual cleanliness over
+physical leather simulation accuracy.
