@@ -1,19 +1,16 @@
-# Harness Designer V0.10l — Drag Performance
+# Harness Designer V0.10m
 
-Two-stage geometry update:
+Built from known-good V0.10j.
 
-During finger drag:
-- updates are coalesced to at most one geometry refresh per animation frame
-- fast curve uses only 5 support points
-- fast ribbon uses only 12 samples
-- no automatic crossing refresh
-- no ring-wrap rebuild
-- no expensive surface-normal raycasts for ribbon orientation
-- no full multi-pass solver
+Menu:
+- complete intact selection header is moved structurally into `.sheet-scroll`
+- Ring/N1, Lock and Delete can scroll fully out of sight
+- no HTML string-fragment surgery
 
-On pointer release:
-- one full `updateAllGeometry()` restores final high-quality geometry,
-  crossings, wraps and surface following.
+Drag performance:
+- NO strap ribbon geometry is rebuilt while dragging
+- each connection uses one reusable BoxGeometry preview
+- pointer movement only changes preview transform (position / quaternion / scale)
+- final ribbon, crossings, wraps and surface following are rebuilt exactly once on release
 
-This specifically targets the reported slowdown that occurs only while moving
-a strap / strap endpoint. Static scene quality remains unchanged.
+This specifically targets the slowdown that occurs only while moving a strap/end node.
