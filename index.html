@@ -7,9 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer Prototype</title>
+  <title>Harness Designer V0.2</title>
+
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
+
   <script type="importmap">
   {
     "imports": {
@@ -21,26 +23,24 @@
 </head>
 <body>
   <div id="app">
-    <header class="topbar">
-      <div>
-        <div class="eyebrow">PROTOTYPE 01</div>
-        <div class="title">Harness Designer</div>
-      </div>
-      <button id="resetBtn" class="icon-btn" aria-label="Zurücksetzen">↺</button>
-    </header>
-
-    <main id="viewport">
-      <canvas id="scene"></canvas>
+    <div id="chrome">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">HARNESS DESIGNER · V0.2</div>
+          <div class="title">Build</div>
+        </div>
+        <button id="resetBtn" class="icon-btn" aria-label="Zurücksetzen">↺</button>
+      </header>
 
       <div class="hint" id="hint">
-        <strong>Bauen</strong>
-        <span>Tippe zwei Punkte auf das Mannequin. Danach kannst du den Riemen in der Mitte greifen und verschieben.</span>
+        <strong>Zwei Finger = Kamera</strong>
+        <span>Ein kurzer Tap auf das Mannequin setzt einen Anchor. Anchors und Riemen-Kontrollpunkt kannst du anschließend mit einem Finger verschieben.</span>
       </div>
 
-      <div class="mode-pill">
-        <button class="mode active">Bauen</button>
-        <button class="mode" disabled>Accessoires</button>
-        <button class="mode" disabled>Foto</button>
+      <div class="mode-pill" id="modePill">
+        <button class="mode active" data-mode="build">Bauen</button>
+        <button class="mode" data-mode="accessories">Accessoires</button>
+        <button class="mode" data-mode="photo">Foto</button>
       </div>
 
       <section id="strapPanel" class="sheet hidden">
@@ -66,9 +66,29 @@
 
         <button id="deleteStrapBtn" class="danger-btn">Riemen löschen</button>
       </section>
-    </main>
 
-    <footer class="bottom-safe"></footer>
+      <section id="accessoryPanel" class="sheet hidden compact-sheet">
+        <div class="grabber"></div>
+        <div class="sheet-label">ACCESSOIRE-MODUS</div>
+        <div class="sheet-title">Vorbereitet</div>
+        <p>Nieten, Ösen, Spikes und Snap-Muster kommen in V0.7. Der Modus funktioniert bereits getrennt vom Baumodus.</p>
+      </section>
+
+      <section id="photoPanel" class="sheet hidden compact-sheet">
+        <div class="grabber"></div>
+        <div class="sheet-label">FOTO-MODUS</div>
+        <div class="sheet-title">Clean View</div>
+        <p>Anchors und Kontrollpunkte werden ausgeblendet. Posen, Licht und Materialien folgen später.</p>
+      </section>
+    </div>
+
+    <button id="restoreUI" class="restore-ui hidden" aria-label="Menüs einblenden">
+      <span></span>
+    </button>
+
+    <main id="viewport">
+      <canvas id="scene"></canvas>
+    </main>
   </div>
 
   <script type="module" src="./app.js"></script>

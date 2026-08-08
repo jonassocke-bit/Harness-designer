@@ -1,21 +1,20 @@
-# Harness Designer Prototype 01
+# Harness Designer V0.2
 
-iPhone-first Web-Prototyp für den geplanten Harness-Designer.
+## Neu in V0.2
+- anatomisch deutlich verbessertes Mannequin
+- Zwei-Finger-Gesten sind exklusiv für Kamera/Zoom reserviert
+- Anchors werden nur durch einen gezielten Tap gesetzt
+- Anchors lassen sich auf der Körperoberfläche verschieben
+- Riemen-Kontrollpunkt lässt sich auf der Körperoberfläche verschieben
+- Menüs per Wisch nach unten ausblendbar
+- kleiner Wiederherstellungs-Handle unten
+- Bauen / Accessoires / Foto sind jetzt echte getrennte Modi
+- Foto-Modus blendet Konstruktionshilfen aus
 
-## Aktueller Funktionsumfang
-- 3D-Mannequin
-- Drehen und Zoomen
-- Zwei Ankerpunkte direkt auf dem Körper setzen
-- Automatisch erzeugter Riemen
-- Riemenbreite per Slider
-- Lockerheit per Slider
-- Mittleren Riemen-Kontrollpunkt direkt ziehen
-- Mobile UI / PWA-Grundlage
-
-## GitHub Pages
-1. Repository erstellen
-2. Alle Dateien aus diesem Ordner hochladen
-3. Settings → Pages
-4. Source: Deploy from a branch
-5. Branch: main, Folder: / (root)
-6. Speichern
+## Noch bewusst nicht enthalten
+- echtes Rig / Posen
+- Accessoires
+- Ring-Uhrzeit-Snaps
+- echte Oberflächen-Geodäten für Riemen
+- Kettenphysik / Gravitation
+- Grid-Strap-Editor
