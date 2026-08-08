@@ -304,8 +304,8 @@ function createConnection(a,b,skipMirror=false){
   const existing=connectionBetween(a,b);if(existing)return existing;
   const c={
     kind:'connection',id:`S${connections.length+1}`,a,b,group:new THREE.Group(),
-    widthMM:30,slack:8,bendSide:0,bendNormal:0,bendAlong:0,
-    baseCurve:null,renderCurve:null,handle:null,handleHit:null,mirrorPartner:null
+    widthMM:30,slack:8,
+    baseCurve:null,renderCurve:null,mirrorPartner:null
   };
   connections.push(c);scene.add(c.group);updateAllGeometry();
 
@@ -341,7 +341,6 @@ function mirrorSelectedObject(){
     if(ma&&mb){
       const mc=createConnection(ma,mb,true);
       mc.widthMM=selected.widthMM;mc.slack=selected.slack;
-      mc.bendSide=-selected.bendSide;mc.bendNormal=selected.bendNormal;mc.bendAlong=selected.bendAlong;
       selected.mirrorPartner=mc;mc.mirrorPartner=selected;updateAllGeometry();showToast('Riemen gespiegelt & gekoppelt');
     }
   }
@@ -371,12 +370,11 @@ function controlFrame(c){
   return {base,tangent,side,normal};
 }
 function controlPoint(c){
-  const f=controlFrame(c);
-  return f.base.clone()
-    .addScaledVector(f.tangent,c.bendAlong)
-    .addScaledVector(f.side,c.bendSide)
-    .addScaledVector(f.normal,c.bendNormal)
-    .add(new THREE.Vector3(0,-(c.slack/100)*.22,0));
+  const A=nodePosition(c.a),B=nodePosition(c.b);
+  const mid=A.clone().lerp(B,.5);
+  const avgN=averageNormal(c.a,c.b);
+  const surf=castToSurfaceFrom(mid,avgN);
+  return surf.point.clone().addScaledVector(surf.normal,surfaceOffsetScene()+.008);
 }
 function visibleEndpoint(node,toward){
   const center=nodePosition(node);
@@ -387,18 +385,20 @@ function visibleEndpoint(node,toward){
   return node.group.localToWorld(d.multiplyScalar(ringMajor(node)+ringTube(node)*.45));
 }
 function buildBaseCurve(c){
-  const ctrl=controlPoint(c);
-  const a=visibleEndpoint(c.a,ctrl),b=visibleEndpoint(c.b,ctrl);
-  const guide=new THREE.CatmullRomCurve3([a,ctrl,b],false,'centripetal',.55);
+  const A=nodePosition(c.a),B=nodePosition(c.b);
+  const a=visibleEndpoint(c.a,B);
+  const b=visibleEndpoint(c.b,A);
+  const straight=new THREE.LineCurve3(a,b);
   const tight=1-THREE.MathUtils.clamp(c.slack/100,0,1);
   const supports=[];
-  const N=9;
+  const N=11;
   for(let i=0;i<N;i++){
-    const t=i/(N-1);let p=guide.getPoint(t);
+    const t=i/(N-1);
+    let p=straight.getPoint(t);
     if(i>0&&i<N-1&&tight>.08){
-      const normal=averageNormal(c.a,c.b);
-      const origin=p.clone().addScaledVector(normal,.8);
-      raycaster.set(origin,normal.clone().negate());
+      const avgN=averageNormal(c.a,c.b);
+      const origin=p.clone().addScaledVector(avgN,.8);
+      raycaster.set(origin,avgN.clone().negate());
       const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
       if(hits.length&&hits[0].point.distanceTo(p)<.42){
         const snap=hits[0].point.clone().addScaledVector(worldNormal(hits[0]),surfaceOffsetScene()+.008);
@@ -472,11 +472,6 @@ function renderConnection(c){
     addRibbon(c,pts);
   }
 
-  const cp=controlPoint(c);
-  const h=new THREE.Mesh(new THREE.SphereGeometry(.058,22,14),new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.24}));
-  h.position.copy(cp);h.userData={kind:'strapHandle',owner:c};c.group.add(h);c.handle=h;
-  const hh=new THREE.Mesh(new THREE.SphereGeometry(.115,16,10),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
-  hh.position.copy(cp);hh.userData={kind:'strapHandleHit',owner:c};c.group.add(hh);c.handleHit=hh;
 }
 
 function updateAllGeometry(){
@@ -537,6 +532,42 @@ function showSelection(){
   }
 }
 
+
+function splitConnectionAtNode(node){
+  if(node.source!=='strap'||!node.parent||node._split)return;
+  const parent=node.parent;
+  const originalA=parent.a,originalB=parent.b;
+  const width=parent.widthMM,slack=parent.slack;
+  const splitT=THREE.MathUtils.clamp(node.t,.001,.999);
+  const siblings=nodes.filter(n=>n!==node&&n.source==='strap'&&n.parent===parent);
+  const splitPosition=node.group.position.clone();
+  scene.remove(parent.group);
+  const pi=connections.indexOf(parent);if(pi>=0)connections.splice(pi,1);
+  node.source='split';node.parent=null;node.group.position.copy(splitPosition);
+  const left=createConnection(originalA,node,true),right=createConnection(node,originalB,true);
+  left.widthMM=right.widthMM=width;left.slack=right.slack=slack;
+  node._split={left,right,originalA,originalB,originalT:splitT};
+  for(const s of siblings){
+    if(s.t<splitT){s.parent=left;s.t=s.t/splitT;}
+    else{s.parent=right;s.t=(s.t-splitT)/(1-splitT);}
+  }
+  updateAllGeometry();
+}
+
+function mergeSplitNode(node){
+  if(!node._split)return;
+  const {left,right,originalA,originalB,originalT}=node._split;
+  const leftNodes=nodes.filter(n=>n.source==='strap'&&n.parent===left);
+  const rightNodes=nodes.filter(n=>n.source==='strap'&&n.parent===right);
+  const width=left?.widthMM??right?.widthMM??30,slack=left?.slack??right?.slack??8;
+  for(const c of [left,right]){if(!c)continue;scene.remove(c.group);const i=connections.indexOf(c);if(i>=0)connections.splice(i,1);}
+  const merged=createConnection(originalA,originalB,true);merged.widthMM=width;merged.slack=slack;
+  for(const s of leftNodes){s.parent=merged;s.t=s.t*originalT;}
+  for(const s of rightNodes){s.parent=merged;s.t=originalT+s.t*(1-originalT);}
+  node.source='strap';node.parent=merged;node.t=originalT;node._split=null;
+  updateAllGeometry();
+}
+
 function removeConnection(c){
   const attached=nodes.filter(n=>n.source==='strap'&&n.parent===c).slice();
   attached.forEach(removeNode);
@@ -587,8 +618,14 @@ surfaceNodeRingToggle.addEventListener('click',()=>{
   setMiniToggle(surfaceNodeRingToggle,selected.ringVisible);updateAllGeometry();
 });
 strapNodeRingToggle.addEventListener('click',()=>{
-  if(selected?.kind!=='node'||selected.source!=='strap')return;
-  selected.ringVisible=!selected.ringVisible;
+  if(selected?.kind!=='node')return;
+  if(selected.source==='strap'&&!selected.ringVisible){
+    selected.ringVisible=true;splitConnectionAtNode(selected);
+  }else if(selected.source==='split'&&selected.ringVisible){
+    selected.ringVisible=false;mergeSplitNode(selected);
+  }else{
+    selected.ringVisible=!selected.ringVisible;
+  }
   if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
   setMiniToggle(strapNodeRingToggle,selected.ringVisible);updateAllGeometry();
 });
@@ -620,19 +657,16 @@ strapAnchorSizeSlider.addEventListener('input',()=>{
 
 function interactiveHit(x,y){
   setPointerXY(x,y);
-  const nodeObjects=[];for(const n of nodes)nodeObjects.push(...n.group.children);
+  const nodeObjects=[];
+  for(const n of nodes)nodeObjects.push(...n.group.children);
   const h1=raycaster.intersectObjects(nodeObjects,true)[0];
   if(h1?.object?.userData?.owner)return {kind:'node',owner:h1.object.userData.owner};
-
-  const handleObjects=[],meshObjects=[];
+  const meshObjects=[];
   for(const c of connections){
     for(const ch of c.group.children){
-      if(ch.userData?.kind==='strapHandle'||ch.userData?.kind==='strapHandleHit')handleObjects.push(ch);
       if(ch.userData?.kind==='connectionMesh')meshObjects.push(ch);
     }
   }
-  const hh=raycaster.intersectObjects(handleObjects,true)[0];
-  if(hh)return {kind:'handle',owner:hh.object.userData.owner};
   const hm=raycaster.intersectObjects(meshObjects,true)[0];
   if(hm)return {kind:'connection',owner:hm.object.userData.owner};
   return null;
@@ -652,7 +686,7 @@ function switchMode(next){
   mode=next;modeButtons.forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));modeTitle.textContent=mode==='build'?'Build':mode==='accessories'?'Accessories':'Photo';
   selectionPanel.classList.add('hidden');accessoryPanel.classList.add('hidden');photoPanel.classList.add('hidden');
   buildTools.style.display=mode==='build'?'flex':'none';
-  const helpers=mode==='build';nodes.forEach(n=>n.group.visible=helpers);connections.forEach(c=>{if(c.handle)c.handle.visible=helpers;if(c.handleHit)c.handleHit.visible=helpers});
+  const helpers=mode==='build';nodes.forEach(n=>n.group.visible=helpers);
   if(mode==='build')showSelection();if(mode==='accessories')accessoryPanel.classList.remove('hidden');if(mode==='photo')photoPanel.classList.remove('hidden');
 }
 modeButtons.forEach(b=>b.addEventListener('click',()=>switchMode(b.dataset.mode)));
@@ -664,7 +698,7 @@ canvas.addEventListener('pointerdown',e=>{
   if(pointers.size===1){
     const hit=mode==='build'?interactiveHit(e.clientX,e.clientY):null;
     if(hit?.kind==='node')selectObject(hit.owner);
-    if(hit?.kind==='connection'||hit?.kind==='handle')selectObject(hit.owner);
+    if(hit?.kind==='connection')selectObject(hit.owner);
     single={id:e.pointerId,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,hit};
   }else if(pointers.size===2){
     single=null;const[a,b]=[...pointers.values()];
@@ -702,16 +736,6 @@ canvas.addEventListener('pointermove',e=>{
     single.lx=e.clientX;single.ly=e.clientY;return;
   }
 
-  if(single.hit?.kind==='handle'){
-    const c=single.hit.owner,h=bodyHitXY(e.clientX,e.clientY);
-    if(h){
-      const f=controlFrame(c),targetP=h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008),delta=targetP.sub(f.base);
-      c.bendAlong=delta.dot(f.tangent);c.bendSide=delta.dot(f.side);c.bendNormal=delta.dot(f.normal);
-      if(paired(c)){c.mirrorPartner.bendAlong=c.bendAlong;c.mirrorPartner.bendSide=-c.bendSide;c.mirrorPartner.bendNormal=c.bendNormal}
-      updateAllGeometry();
-    }
-    single.lx=e.clientX;single.ly=e.clientY;return;
-  }
 
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
 });
@@ -725,7 +749,7 @@ canvas.addEventListener('pointerup',e=>{
         if(!connectStart){connectStart=ih.owner;showToast('Zweiten Knoten antippen')}
         else{const c=createConnection(connectStart,ih.owner);connectStart=null;if(c)selectObject(c)}
       }
-    }else if(ih?.kind==='connection'||ih?.kind==='handle'){
+    }else if(ih?.kind==='connection'){
       selectObject(ih.owner);
     }else if(buildTool==='ring'){
       const h=bodyHitXY(e.clientX,e.clientY);if(h)selectObject(createSurfaceNode(h,true));
