@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.4cb</title>
+  <title>Harness Designer V0.5b</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.4c</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.5</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -44,6 +44,7 @@
     <div id="buildTools" class="build-tools">
       <button class="tool active" data-tool="ring">＋ Ring</button>
       <button class="tool" data-tool="connect">↔ Verbinden</button>
+      <button id="mirrorToggle" class="tool mirror-tool" aria-pressed="false">⇆ Spiegeln</button>
     </div>
 
     <div class="mode-pill" id="modePill">
@@ -57,24 +58,22 @@
       <div class="sheet-row">
         <div>
           <div class="sheet-label" id="selectionLabel">AUSWAHL</div>
-          <div class="sheet-title" id="selectionTitle">Ring</div>
+          <div class="sheet-title" id="selectionTitle">Element</div>
         </div>
         <button id="deleteSelectedBtn" class="small-danger">Löschen</button>
       </div>
 
       <div id="ringControls" class="panel-group hidden">
-        <div class="subheading">Anschlusspunkte</div>
-        <div class="clock-grid">
-          <button data-slot="0">12</button>
-          <button data-slot="1">1:30</button>
-          <button data-slot="2">3</button>
-          <button data-slot="3">4:30</button>
-          <button data-slot="4">6</button>
-          <button data-slot="5">7:30</button>
-          <button data-slot="6">9</button>
-          <button data-slot="7">10:30</button>
-        </div>
-        <p class="microcopy">Die Punkte werden als Snap-Positionen für Riemen verwendet. Vorerst wählt die App automatisch den passendsten Punkt.</p>
+        <label class="control">
+          <span>Ringdurchmesser</span>
+          <div class="value-badge"><span id="ringDiameterValue">40</span> mm</div>
+          <input id="ringDiameterSlider" type="range" min="20" max="100" value="40" step="1">
+        </label>
+        <label class="control">
+          <span>Ringstärke</span>
+          <div class="value-badge"><span id="ringThicknessValue">6</span> mm</div>
+          <input id="ringThicknessSlider" type="range" min="2" max="15" value="6" step="0.5">
+        </label>
       </div>
 
       <div id="strapControls" class="panel-group hidden">
@@ -87,6 +86,16 @@
           <span>Lockerheit</span>
           <div class="control-meta"><span>Straff</span><span>Locker</span></div>
           <input id="slackSlider" type="range" min="0" max="100" value="8" step="1">
+        </label>
+        <button id="addStrapAnchorBtn" class="primary-btn">＋ Anker auf Riemen</button>
+      </div>
+
+      <div id="strapAnchorControls" class="panel-group hidden">
+        <label class="control">
+          <span>Ankerposition</span>
+          <div class="value-badge"><span id="strapAnchorValue">50</span> %</div>
+          <div class="control-meta"><span>Anfang</span><span>Ende</span></div>
+          <input id="strapAnchorSlider" type="range" min="0" max="100" value="50" step="1">
         </label>
       </div>
     </section>

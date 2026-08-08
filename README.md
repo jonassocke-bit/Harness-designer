@@ -1,15 +1,30 @@
-# Harness Designer V0.4c — Smooth Straps
+# Harness Designer V0.5 — Strap Anchors, Ring Sizes & Mirror Mode
 
-## Änderungen gegenüber V0.4b
-- Surface Following nutzt nur noch wenige Stützpunkte statt vieler Einzelprojektionen
-- Stützpunkte werden geglättet und anschließend durch eine saubere Catmull-Rom-Kurve verbunden
-- dadurch deutlich ruhigere, glattere Lederriemen
-- unrealistische Sprünge auf andere Körperteile werden verworfen
-- Riemen lassen sich direkt antippen und werden dann bearbeitet
-- ausgewählter Ring bzw. Riemen erhält einen sehr subtilen Glow
-- Riemenenden stoppen jetzt am Ringkörper statt bis in die Ringmitte zu laufen
-- Breite, Lockerheit und direkte Strap-Handle-Bearbeitung bleiben erhalten
+## Riemen-Anker
+- Riemen auswählen → „Anker auf Riemen“
+- Anker wird bei 50 % erzeugt
+- Position per 0–100-%-Slider von Anfang bis Ende verschieben
+- Position bleibt relativ zum Riemenpfad erhalten, wenn Breite, Lockerheit oder Ringpositionen geändert werden
+- mehrere Riemen-Anker pro Riemen möglich
 
-## Ziel
-V0.4c priorisiert eine visuell saubere Riemenkurve. Perfektes vollflächiges
-Aufliegen auf jedem einzelnen Mesh-Polygon ist bewusst nachrangig.
+## Ringparameter
+- Ringdurchmesser 20–100 mm
+- Ringstärke 2–15 mm
+- jeder Ring hat eigene Werte
+- Riemen-Endpunkte und Wrap-Segmente passen sich beim Ändern automatisch an
+
+## Spiegelmodus
+- optionaler Toggle im Baumodus
+- neuer Ring außerhalb der Körpermittellinie erzeugt automatisch ein Gegenstück
+- Ringbewegung, Durchmesser und Stärke bleiben gekoppelt
+- gespiegelte Verbindungen werden automatisch erzeugt, wenn beide Endringe Mirror-Partner besitzen
+- Breite und Lockerheit werden gekoppelt
+- Riemen-Anker können gespiegelt erzeugt und per Prozentposition gekoppelt werden
+- Mittellinien-Elemente werden nicht dupliziert
+
+## Weiterhin enthalten
+- GLB/GLTF-Mannequin-Import
+- glatte Flat-Straps
+- Ring-Wrap-Segmente
+- Auswahl/Glow
+- Build / Accessories / Photo
