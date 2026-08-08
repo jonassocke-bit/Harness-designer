@@ -21,7 +21,7 @@ const rotXValue=$('rotXValue'),rotYValue=$('rotYValue'),rotZValue=$('rotZValue')
 const surfaceOffsetSlider=$('surfaceOffsetSlider'),surfaceOffsetValue=$('surfaceOffsetValue');
 const envelopeSmoothSlider=$('envelopeSmoothSlider'),envelopeSmoothValue=$('envelopeSmoothValue');
 const envelopeInflateSlider=$('envelopeInflateSlider'),envelopeInflateValue=$('envelopeInflateValue');
-const envelopeVisibleToggle=$('envelopeVisibleToggle');
+const envelopeVisibleToggle=$('envelopeVisibleToggle'),symmetricEnvelopeToggle=$('symmetricEnvelopeToggle');
 const resetBtn=$('resetBtn'),modelBtn=$('modelBtn'),modelInput=$('modelInput'),toast=$('toast'),modeTitle=$('modeTitle');
 const modeButtons=[...document.querySelectorAll('.mode')],toolButtons=[...document.querySelectorAll('.tool')];
 
@@ -69,7 +69,7 @@ updateCamera();
 
 let mode='build',buildTool='ring',mirrorMode=false;
 let selected=null,connectStart=null;
-let surfaceOffsetMM=2,envelopeSmoothPct=35,envelopeInflateMM=4,envelopeVisible=false;
+let surfaceOffsetMM=2,envelopeSmoothPct=35,envelopeInflateMM=4,envelopeVisible=false,symmetricEnvelope=false;
 
 const nodes=[];
 const connections=[];
@@ -133,7 +133,7 @@ function smoothGeometryClone(sourceGeom,smoothPct,inflateMM){
   for(let i=0;i<p.count;i++){
     v.fromBufferAttribute(p,i); n.fromBufferAttribute(nAttr,i).normalize();
     toward.copy(center).sub(v);
-    const radial=Math.min(toward.length(),.11)*smooth*.22;
+    const radial=Math.min(toward.length(),.22)*smooth*.46;
     if(toward.lengthSq()>1e-8)v.addScaledVector(toward.normalize(),radial);
     v.addScaledVector(n,inflate);
     p.setXYZ(i,v.x,v.y,v.z);
@@ -198,7 +198,12 @@ function worldNormal(hit){
   return hit.face.normal.clone().applyMatrix3(nm).normalize();
 }
 function snapHitToAxis(hit){
-  if(hit&&Math.abs(hit.point.x)<MIRROR_AXIS_SNAP)hit.point.x=0;
+  if(!hit)return hit;
+  if(Math.abs(hit.point.x)<MIRROR_AXIS_SNAP)hit.point.x=0;
+  if(symmetricEnvelope&&hit.point.x<0){
+    const mirrored=mirroredBodyHit(new THREE.Vector3(-hit.point.x,hit.point.y,hit.point.z));
+    if(mirrored)return mirrored;
+  }
   return hit;
 }
 
@@ -213,6 +218,77 @@ function ringMajor(n){return Math.max(.001,n.diameterMM*MM_TO_SCENE/2)}
 function ringTube(n){return Math.max(.001,n.thicknessMM*MM_TO_SCENE/2)}
 function nodePointRadius(n){return Math.max(.006,n.sizeMM*MM_TO_SCENE/2)}
 
+
+const leatherWrapMat=new THREE.MeshStandardMaterial({
+  color:0x171718,roughness:.5,metalness:0,side:THREE.DoubleSide
+});
+
+function connectionsAtNode(n){
+  return connections.filter(c=>c.a===n||c.b===n);
+}
+
+function ringLocalContactAngle(n,c){
+  const center=nodePosition(n);
+  const other=c.a===n?nodePosition(c.b):nodePosition(c.a);
+  const qInv=n.group.quaternion.clone().invert();
+  const d=other.clone().sub(center).applyQuaternion(qInv);
+  d.z=0;
+  if(d.lengthSq()<1e-8)return 0;
+  return Math.atan2(d.y,d.x);
+}
+
+function addRingWraps(n){
+  if(!n.ringVisible)return;
+  const attached=connectionsAtNode(n);
+  for(const c of attached){
+    const angle=ringLocalContactAngle(n,c);
+    const strapWidth=Math.max(.018,.15*(c.widthMM/30));
+    const arcLen=THREE.MathUtils.clamp(strapWidth/(Math.max(ringMajor(n),.01)),.16,1.15);
+    const tubular=16,radial=18;
+    const geom=new THREE.TorusGeometry(
+      ringMajor(n),
+      ringTube(n)*1.10,
+      tubular,
+      radial,
+      arcLen
+    );
+    const mesh=new THREE.Mesh(geom,leatherWrapMat);
+    // TorusGeometry arc begins on +X. Center the leather segment on contact angle.
+    mesh.rotation.z=angle-arcLen/2;
+    mesh.position.z=.0008;
+    mesh.userData={kind:'ringWrap',owner:n,connection:c};
+    n.group.add(mesh);
+  }
+}
+
+function seatRingOnSurface(n){
+  if(!n.ringVisible||!n.surfacePoint||!n.normal)return;
+
+  // Multi-point seating: sample around the ring and move it outward until
+  // no sampled point is significantly behind the construction surface.
+  const center=n.surfacePoint.clone().addScaledVector(n.normal,surfaceOffsetScene()+ringTube(n));
+  const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),n.normal.clone().normalize());
+  let push=0;
+  const samples=12;
+
+  for(let i=0;i<samples;i++){
+    const a=i/samples*Math.PI*2;
+    const local=new THREE.Vector3(Math.cos(a)*ringMajor(n),Math.sin(a)*ringMajor(n),0);
+    const sample=center.clone().add(local.applyQuaternion(q));
+    const origin=sample.clone().addScaledVector(n.normal,.32);
+    raycaster.set(origin,n.normal.clone().negate());
+    const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
+    if(!hits.length)continue;
+    const surface=hits[0].point;
+    const signed=surface.clone().sub(sample).dot(n.normal);
+    push=Math.max(push,signed+ringTube(n)*.25);
+  }
+
+  n.group.position.copy(center).addScaledVector(n.normal,Math.max(0,push));
+  if(Math.abs(n.surfacePoint.x)<MIRROR_AXIS_SNAP)n.group.position.x=0;
+  n.group.quaternion.copy(q);
+}
+
 function rebuildNodeVisual(n){
   while(n.group.children.length){
     const q=n.group.children.pop();q.geometry?.dispose?.();if(q.material!==metalMat&&q.material!==metalSelected&&q.material!==pointMat&&q.material!==pointSelected)q.material?.dispose?.();
@@ -222,6 +298,7 @@ function rebuildNodeVisual(n){
     ring.userData={kind:'nodeVisual',owner:n};n.group.add(ring);
     const hit=new THREE.Mesh(new THREE.SphereGeometry(Math.max(ringMajor(n)+ringTube(n),.055),18,12),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
     hit.userData={kind:'nodeHit',owner:n};n.group.add(hit);
+    addRingWraps(n);
   }else{
     const sphere=new THREE.Mesh(new THREE.SphereGeometry(nodePointRadius(n),24,16),selected===n?pointSelected:pointMat);
     sphere.userData={kind:'nodeVisual',owner:n};n.group.add(sphere);
@@ -246,9 +323,14 @@ function createSurfaceNode(hit,ringVisible=true,skipMirror=false){
   return n;
 }
 function updateSurfaceNodeTransform(n){
-  n.group.position.copy(n.surfacePoint).addScaledVector(n.normal,surfaceOffsetScene()+(n.ringVisible?ringTube(n):0));
-  if(Math.abs(n.surfacePoint.x)<MIRROR_AXIS_SNAP){n.surfacePoint.x=0;n.group.position.x=0}
-  n.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n.normal.clone().normalize());
+  if(Math.abs(n.surfacePoint.x)<MIRROR_AXIS_SNAP)n.surfacePoint.x=0;
+  if(n.ringVisible){
+    seatRingOnSurface(n);
+  }else{
+    n.group.position.copy(n.surfacePoint).addScaledVector(n.normal,surfaceOffsetScene());
+    if(Math.abs(n.surfacePoint.x)<MIRROR_AXIS_SNAP)n.group.position.x=0;
+    n.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n.normal.clone().normalize());
+  }
 }
 function createStrapNode(parent,t=.5,skipMirror=false){
   const n={
@@ -388,27 +470,72 @@ function buildBaseCurve(c){
   const A=nodePosition(c.a),B=nodePosition(c.b);
   const a=visibleEndpoint(c.a,B);
   const b=visibleEndpoint(c.b,A);
-  const straight=new THREE.LineCurve3(a,b);
   const tight=1-THREE.MathUtils.clamp(c.slack/100,0,1);
-  const supports=[];
-  const N=11;
-  for(let i=0;i<N;i++){
-    const t=i/(N-1);
-    let p=straight.getPoint(t);
-    if(i>0&&i<N-1&&tight>.08){
-      const avgN=averageNormal(c.a,c.b);
-      const origin=p.clone().addScaledVector(avgN,.8);
-      raycaster.set(origin,avgN.clone().negate());
+
+  function projectSample(p){
+    const avgN=averageNormal(c.a,c.b);
+    const origins=[
+      p.clone().addScaledVector(avgN,.75),
+      p.clone().addScaledVector(avgN,-.75)
+    ];
+    let best=null,bestD=Infinity;
+    for(let j=0;j<2;j++){
+      const dir=j===0?avgN.clone().negate():avgN.clone();
+      raycaster.set(origins[j],dir);
       const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
-      if(hits.length&&hits[0].point.distanceTo(p)<.42){
-        const snap=hits[0].point.clone().addScaledVector(worldNormal(hits[0]),surfaceOffsetScene()+.008);
-        p.lerp(snap,tight*.62);
+      if(hits.length){
+        const d=hits[0].point.distanceTo(p);
+        if(d<bestD){bestD=d;best=hits[0]}
       }
     }
-    supports.push(p);
+    if(best&&bestD<.48){
+      return best.point.clone().addScaledVector(worldNormal(best),surfaceOffsetScene()+.008);
+    }
+    return p.clone();
   }
+
+  // Start coarse and recursively add points where the projected surface
+  // deviates from a straight segment. Tight curves therefore get more support.
+  let samples=[{t:0,p:a.clone()},{t:1,p:b.clone()}];
+  for(let pass=0;pass<4;pass++){
+    const next=[samples[0]];
+    for(let i=0;i<samples.length-1;i++){
+      const L=samples[i],R=samples[i+1];
+      const tm=(L.t+R.t)/2;
+      const linear=L.p.clone().lerp(R.p,.5);
+      const projected=projectSample(linear);
+      const deviation=projected.distanceTo(linear);
+      const segment=L.p.distanceTo(R.p);
+      if((deviation>.012 || segment>.20) && next.length<70){
+        next.push({t:tm,p:linear.clone().lerp(projected,tight*.88)});
+      }
+      next.push(R);
+    }
+    samples=next.sort((x,y)=>x.t-y.t);
+  }
+
+  // Final surface projection for interior points.
+  const supports=samples.map((s,i)=>{
+    if(i===0||i===samples.length-1)return s.p;
+    const projected=projectSample(s.p);
+    return s.p.clone().lerp(projected,tight*.82);
+  });
+
+  // Guarantee enough smooth samples even on flat areas.
+  if(supports.length<7){
+    supports.length=0;
+    const straight=new THREE.LineCurve3(a,b);
+    for(let i=0;i<9;i++){
+      let p=straight.getPoint(i/8);
+      if(i>0&&i<8)p.lerp(projectSample(p),tight*.82);
+      supports.push(p);
+    }
+  }
+
   const curve=new THREE.CatmullRomCurve3(supports,false,'centripetal',.5);
-  c.baseCurve=curve;c.renderCurve=curve;return curve;
+  c.baseCurve=curve;
+  c.renderCurve=curve;
+  return curve;
 }
 
 function strapNodesOn(c){return nodes.filter(n=>n.source==='strap'&&n.parent===c).sort((x,y)=>x.t-y.t)}
@@ -577,9 +704,7 @@ function splitConnectionAtNode(node){
   const pi=connections.indexOf(parent);if(pi>=0)connections.splice(pi,1);
   node.source='split';
   node.parent=null;
-  node.group.position.copy(node.surfacePoint)
-    .addScaledVector(node.normal,surfaceOffsetScene()+ringTube(node));
-  node.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),node.normal.clone().normalize());
+  seatRingOnSurface(node);
   const left=createConnection(originalA,node,true),right=createConnection(node,originalB,true);
   left.widthMM=right.widthMM=width;left.slack=right.slack=slack;
   node._split={left,right,originalA,originalB,originalT:splitT};
@@ -796,10 +921,7 @@ canvas.addEventListener('pointermove',e=>{
         if(node.source==='split'){
           // A split-ring is now a real spatial node: its two straps simply use
           // its current position as their shared endpoint.
-          node.group.position.copy(node.surfacePoint)
-            .addScaledVector(node.normal,surfaceOffsetScene()+ringTube(node));
-          if(Math.abs(node.surfacePoint.x)<MIRROR_AXIS_SNAP)node.group.position.x=0;
-          node.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),node.normal.clone().normalize());
+          seatRingOnSurface(node);
         }
 
         if(node.mirrorPartner&&Math.abs(node.surfacePoint.x)>.012){
@@ -808,8 +930,7 @@ canvas.addEventListener('pointermove',e=>{
             node.mirrorPartner.surfacePoint=mh.point.clone();
             node.mirrorPartner.normal=worldNormal(mh);
             if(node.mirrorPartner.source==='split'){
-              node.mirrorPartner.group.position.copy(node.mirrorPartner.surfacePoint)
-                .addScaledVector(node.mirrorPartner.normal,surfaceOffsetScene()+ringTube(node.mirrorPartner));
+              seatRingOnSurface(node.mirrorPartner);
             }
           }
         }
@@ -870,6 +991,13 @@ surfaceOffsetSlider.addEventListener('input',()=>{surfaceOffsetMM=+surfaceOffset
 envelopeSmoothSlider.addEventListener('input',()=>{envelopeSmoothPct=+envelopeSmoothSlider.value;envelopeSmoothValue.textContent=envelopeSmoothSlider.value;rebuildEnvelope();updateAllGeometry()});
 envelopeInflateSlider.addEventListener('input',()=>{envelopeInflateMM=+envelopeInflateSlider.value;envelopeInflateValue.textContent=envelopeInflateSlider.value;rebuildEnvelope();updateAllGeometry()});
 envelopeVisibleToggle.addEventListener('click',()=>setEnvelopeVisible(!envelopeVisible));
+symmetricEnvelopeToggle?.addEventListener('click',()=>{
+  symmetricEnvelope=!symmetricEnvelope;
+  symmetricEnvelopeToggle.classList.toggle('active',symmetricEnvelope);
+  symmetricEnvelopeToggle.setAttribute('aria-pressed',symmetricEnvelope?'true':'false');
+  symmetricEnvelopeToggle.textContent=symmetricEnvelope?'An':'Aus';
+  showToast(symmetricEnvelope?'Symmetrische Arbeitshülle an':'Symmetrische Arbeitshülle aus');
+});
 
 function hideAllUI(){chrome.classList.add('ui-hidden');restoreUI.classList.remove('hidden')}
 function installSheetPhysics(el){
