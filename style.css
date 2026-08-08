@@ -791,3 +791,120 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
   right:7px!important;
   font-size:8px!important;
 }
+
+/* V0.10i — ONLY the two requested layout fixes */
+
+/* 1) Ring | Verbinden into the SAME top row.
+   Center it vertically with the left/right tool bubbles. */
+.mode-switch{
+  top:calc(env(safe-area-inset-top) + 7px)!important;
+  left:50%!important;
+  transform:translateX(-50%)!important;
+  width:222px!important;
+  height:36px!important;
+  min-height:36px!important;
+  max-height:36px!important;
+  padding:2px!important;
+  border-radius:18px!important;
+  z-index:32!important;
+}
+.mode-switch .tool,
+.mode-switch button{
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 10px!important;
+  border-radius:16px!important;
+  font-size:12px!important;
+}
+
+/* Keep outer tool groups exactly on that same row. */
+.history-bubbles{
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+}
+.utility-bubbles{
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+}
+.more-bubble{
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+}
+
+/* 2) Force the selection header to be ONE line:
+   RING · N1 | lock | delete */
+#selectionPanel .sheet-row{
+  position:relative!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 36px 36px!important;
+  column-gap:6px!important;
+  align-items:center!important;
+  min-height:38px!important;
+  height:38px!important;
+  padding:0!important;
+  margin:0 0 4px!important;
+}
+
+/* Object name occupies column 1 only */
+#selectionPanel .sheet-row > div:first-child{
+  grid-column:1!important;
+  grid-row:1!important;
+  position:static!important;
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:center!important;
+  gap:7px!important;
+  min-width:0!important;
+  width:auto!important;
+  height:38px!important;
+  padding:0!important;
+  margin:0!important;
+}
+
+/* Lock container occupies column 2 */
+#selectionPanel .quick-actions{
+  grid-column:2!important;
+  grid-row:1!important;
+  position:static!important;
+  display:block!important;
+  width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  inset:auto!important;
+}
+#selectionPanel #lockSelectedBtn{
+  position:relative!important;
+  display:block!important;
+  width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  inset:auto!important;
+}
+
+/* Delete occupies column 3 */
+#selectionPanel #deleteSelectedBtn{
+  grid-column:3!important;
+  grid-row:1!important;
+  position:relative!important;
+  display:block!important;
+  width:36px!important;
+  min-width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  inset:auto!important;
+}
+
+/* Ensure hidden legacy actions cannot reserve any space. */
+#selectionPanel #hideSelectedBtn,
+#selectionPanel #isolateSelectedBtn{
+  display:none!important;
+  width:0!important;
+  height:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+/* No stray offsets from earlier versions. */
+#selectionPanel .sheet-row > div:first-child{
+  padding-right:0!important;
+}

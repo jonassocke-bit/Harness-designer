@@ -1,12 +1,8 @@
-# Harness Designer V0.10h
+# Harness Designer V0.10i
 
-Final UI alignment pass based on working V0.10g.
+Only two changes from V0.10h:
+1. Ring / Verbinden is moved into the same top row as the other build controls.
+2. Selection header is forced into one row: type/name | lock | delete.
 
-- Ring / Verbinden moved into the same top toolbar row as Undo/Redo and mirror/rotate
-- top toolbar uses strict left / center / right zones
-- all toolbar bubbles slightly smaller to fit iPhone width
-- selection header uses an actual 3-column grid:
-  object name | lock | delete
-- lock and delete are guaranteed side-by-side and same size
-- bottom Bauen/Accessoires/Foto pill reduced again to 38 px height / 254 px width
-- no 3D, node, ring, strap, crossing or model-loading logic changed
+No other UI behavior, geometry, model loading, straps, rings, crossings, presets,
+panel sizing or navigation logic changed.
