@@ -233,3 +233,200 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
 .control.has-inline-tools{display:grid!important;grid-template-columns:minmax(82px,1fr) auto!important;align-items:center!important;column-gap:6px!important}
 .control.has-inline-tools>span:first-child{grid-column:1;grid-row:1}.control.has-inline-tools>.param-inline-tools{grid-column:2;grid-row:1}.control.has-inline-tools>input[type=range]{grid-column:1/-1;grid-row:2;width:100%;margin:3px 0 1px!important}
 .node-point-only .ring-only{display:none!important}.node-ring-only .point-only{display:none!important}
+
+/* V0.10f — UI stability pass only. No geometry code changes. */
+
+/* Keep legacy topbar invisible; overflow button remains available. */
+.topbar{height:0!important;min-height:0!important;padding:0!important;margin:0!important}
+.topbar .eyebrow,.topbar .title,.model-btn,.reset-btn{display:none!important}
+
+/* Fixed, predictable toolbar geometry */
+.history-bubbles{
+  position:absolute!important;
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+  left:max(12px,env(safe-area-inset-left))!important;
+  z-index:26!important;
+}
+.utility-bubbles{
+  position:absolute!important;
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+  right:max(58px,env(safe-area-inset-right) + 46px)!important;
+  z-index:26!important;
+}
+.more-bubble{
+  position:absolute!important;
+  top:calc(env(safe-area-inset-top) + 8px)!important;
+  right:max(10px,env(safe-area-inset-right))!important;
+  z-index:30!important;
+}
+.mode-switch{
+  position:absolute!important;
+  top:calc(env(safe-area-inset-top) + 60px)!important;
+  left:50%!important;
+  transform:translateX(-50%)!important;
+  z-index:25!important;
+}
+
+/* Bottom mode pill must NEVER inherit sheet dimensions/grid. */
+#modePill,.mode-pill{
+  position:absolute!important;
+  left:50%!important;
+  right:auto!important;
+  bottom:calc(env(safe-area-inset-bottom) + 12px)!important;
+  top:auto!important;
+  transform:translateX(-50%)!important;
+  width:auto!important;
+  min-width:300px!important;
+  max-width:calc(100vw - 32px)!important;
+  height:52px!important;
+  min-height:52px!important;
+  max-height:52px!important;
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:5px!important;
+  border-radius:26px!important;
+  overflow:hidden!important;
+  z-index:24!important;
+}
+#modePill button,.mode-pill button{
+  flex:1 1 0!important;
+  width:auto!important;
+  min-width:88px!important;
+  height:42px!important;
+  padding:0 14px!important;
+  border-radius:21px!important;
+  white-space:nowrap!important;
+}
+
+/* Editor sheet stays independent of bottom navigation. */
+#selectionPanel.sheet{
+  bottom:calc(env(safe-area-inset-bottom) + 72px)!important;
+}
+.sheet-scroll{
+  padding-top:0!important;
+}
+
+/* One compact object header: RING N1 | lock | delete */
+#selectionPanel .sheet-row{
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:center!important;
+  gap:6px!important;
+  min-height:38px!important;
+  padding:2px 0 5px!important;
+}
+#selectionPanel .sheet-row>div:first-child{
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:baseline!important;
+  gap:7px!important;
+  flex:1 1 auto!important;
+  min-width:0!important;
+}
+#selectionPanel .sheet-label{
+  flex:none!important;
+  font-size:9px!important;
+  letter-spacing:.13em!important;
+}
+#selectionPanel .sheet-title{
+  flex:none!important;
+  font-size:16px!important;
+  line-height:1!important;
+}
+
+/* Move the lock control into the same header row visually without changing JS DOM. */
+#selectionPanel .quick-actions{
+  position:absolute!important;
+  top:8px!important;
+  right:50px!important;
+  width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  z-index:8!important;
+}
+#selectionPanel #lockSelectedBtn{
+  width:36px!important;
+  height:32px!important;
+  padding:0!important;
+  border-radius:10px!important;
+  font-size:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+}
+#selectionPanel #hideSelectedBtn,
+#selectionPanel #isolateSelectedBtn{display:none!important}
+
+/* Delete remains the final header action. */
+#selectionPanel #deleteSelectedBtn{
+  width:36px!important;
+  min-width:36px!important;
+  height:32px!important;
+  padding:0!important;
+  margin-right:42px!important;
+  border-radius:10px!important;
+  font-size:0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+}
+
+/* No emoji: crisp CSS outline icons. */
+#selectionPanel #lockSelectedBtn::after{
+  content:""!important;
+  display:block;
+  width:12px;
+  height:10px;
+  border:1.6px solid currentColor;
+  border-radius:2px;
+  box-sizing:border-box;
+  transform:translateY(2px);
+}
+#selectionPanel #lockSelectedBtn::before{
+  content:""!important;
+  position:absolute;
+  width:8px;
+  height:8px;
+  border:1.6px solid currentColor;
+  border-bottom:0;
+  border-radius:7px 7px 0 0;
+  box-sizing:border-box;
+  transform:translateY(-5px);
+}
+#selectionPanel #deleteSelectedBtn::after{
+  content:""!important;
+  display:block;
+  width:10px;
+  height:12px;
+  border:1.5px solid currentColor;
+  border-top:0;
+  border-radius:0 0 2px 2px;
+  box-sizing:border-box;
+}
+#selectionPanel #deleteSelectedBtn::before{
+  content:""!important;
+  position:absolute;
+  width:12px;
+  height:1.5px;
+  background:currentColor;
+  border-radius:2px;
+  transform:translateY(-7px);
+}
+
+/* Override the previous emoji pseudo-icons completely. */
+.quick-actions #lockSelectedBtn:after,
+.quick-actions #lockSelectedBtn.active:after,
+.small-danger:after{font-size:0!important}
+
+/* Slightly narrower numeric field; keep presets inline. */
+.param-number{width:48px!important}
+.inline-preset{min-width:29px!important;padding-left:3px!important;padding-right:3px!important}
+
+/* Large panel resize target retained. */
+.sheet>.grabber::before{
+  width:220px!important;
+  height:52px!important;
+}

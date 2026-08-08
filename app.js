@@ -827,7 +827,7 @@ function redo(){
   if(!future.length)return;
   const item=future.pop();history.push(item);applyState(item.state);updateHistoryUI();saveProject();vibrate();
 }
-function updateQuickActions(){if(!selected)return;lockSelectedBtn.classList.toggle('active',!!selected.locked);lockSelectedBtn.textContent=selected.locked?'🔒 Gesperrt':'🔓 Sperren';}
+function updateQuickActions(){if(!selected)return;lockSelectedBtn.classList.toggle('active',!!selected.locked);lockSelectedBtn.textContent='';}
 function clearIsolation(){
   isolatedObject=null;document.body.classList.remove('object-isolated');
   for(const n of nodes)setObjectVisibility(n,!n.hiddenByUser);
@@ -1279,7 +1279,7 @@ function installSheetPhysics(el){
   const finish=e=>{if(!tracking||e.pointerId!==pid)return;tracking=false;localStorage.setItem('harnessSheetHeight',String(el.getBoundingClientRect().height))};
   el.addEventListener('pointerup',finish);el.addEventListener('pointercancel',finish);
 }
-[selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
+[selectionPanel,rotationPanel,accessoryPanel,photoPanel].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
 
 function resize(){

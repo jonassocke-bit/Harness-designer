@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.10e</title>
+  <title>Harness Designer V0.10f</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -60,11 +60,11 @@
           <div class="sheet-label" id="selectionLabel">AUSWAHL</div>
           <div class="sheet-title" id="selectionTitle">Element</div>
         </div>
-        <button id="deleteSelectedBtn" class="small-danger">Löschen</button>
+        <button id="deleteSelectedBtn" class="small-danger clean-delete-btn" aria-label="Löschen">Löschen</button>
       </div>
 
       <div class="quick-actions">
-        <button id="lockSelectedBtn" class="quick-btn" aria-pressed="false">🔓 Sperren</button>
+        <button id="lockSelectedBtn" class="quick-btn clean-lock-btn" aria-label="Sperren" aria-pressed="false">🔓 Sperren</button>
         
         
       </div>
@@ -192,6 +192,6 @@
 </div>
 
 <script type="module" src="./app.js"></script>
-<div class="version-badge">v0.10e</div>
+<div class="version-badge">v0.10f</div>
 </body>
 </html>
