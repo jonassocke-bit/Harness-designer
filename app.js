@@ -70,25 +70,22 @@ modelInput.addEventListener('change',async()=>{
   try{
     const gltf=await new GLTFLoader().loadAsync(url),obj=gltf.scene;
 
-    // Auto-orient imported human models:
-    // The longest bounding-box axis is assumed to be body height.
-    // Rotate that axis onto world Y before scaling/centering so mirror logic
-    // always uses the same sagittal plane x = 0.
+    // Normalize a typical human base mesh so its longest axis becomes world Y.
     obj.updateMatrixWorld(true);
-    let rawBox=new THREE.Box3().setFromObject(obj);
-    let rawSize=rawBox.getSize(new THREE.Vector3());
+    let box=new THREE.Box3().setFromObject(obj);
+    let size=box.getSize(new THREE.Vector3());
 
-    if(rawSize.x>=rawSize.y && rawSize.x>=rawSize.z){
-      // Height lies on X -> rotate X into Y.
-      obj.rotation.z += Math.PI/2;
-    }else if(rawSize.z>=rawSize.x && rawSize.z>=rawSize.y){
-      // Height lies on Z -> rotate Z into Y.
-      obj.rotation.x -= Math.PI/2;
+    if(size.x>size.y*1.15 && size.x>size.z*1.15){
+      obj.rotation.z+=Math.PI/2;
+      obj.updateMatrixWorld(true);
+    }else if(size.z>size.y*1.15 && size.z>size.x*1.15){
+      obj.rotation.x-=Math.PI/2;
+      obj.updateMatrixWorld(true);
     }
 
-    obj.updateMatrixWorld(true);
-    const box=new THREE.Box3().setFromObject(obj),size=box.getSize(new THREE.Vector3());
-    const scale=3.25/Math.max(size.y,.0001);
+    box=new THREE.Box3().setFromObject(obj);
+    size=box.getSize(new THREE.Vector3());
+    const scale=3.25/Math.max(size.y,.001);
     obj.scale.setScalar(scale);
     obj.updateMatrixWorld(true);
 
@@ -164,20 +161,17 @@ function updateStrapAnchor(sa){
   const curve=connectionCurve(sa.connection);
   const t=THREE.MathUtils.clamp(sa.t,0,1);
   const p=curve.getPoint(t);
+  const eps=.004;
+  const tangent=curve.getPoint(Math.min(1,t+eps))
+    .sub(curve.getPoint(Math.max(0,t-eps))).normalize();
 
-  const eps=.005;
-  const t0=Math.max(0,t-eps),t1=Math.min(1,t+eps);
-  const tangent=curve.getPoint(t1).sub(curve.getPoint(t0)).normalize();
-
-  // Use the local visible strap frame and lift the anchor a tiny amount so it
-  // sits clearly on the leather surface.
   const viewNormal=camera.getWorldDirection(new THREE.Vector3()).negate();
   let side=new THREE.Vector3().crossVectors(viewNormal,tangent);
   if(side.lengthSq()<1e-6)side.set(1,0,0);
   side.normalize();
   const normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
 
-  sa.group.position.copy(p).addScaledVector(normal,.012);
+  sa.group.position.copy(p).addScaledVector(normal,.010);
   sa.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
 }
 function makeStrapAnchor(connection,t=.5,mirrorPartner=null){
@@ -545,7 +539,7 @@ function setHelpers(v){
   connections.forEach(c=>{
     if(c.handle)c.handle.visible=v && buildTool!=='connect';
   });
-});}
+}
 function showSelection(){
   selectionPanel.classList.remove('hidden');
   ringControls.classList.toggle('hidden',selected?.kind!=='anchor');
@@ -619,13 +613,10 @@ function interactiveHit(x,y){
 }
 
 function refreshBuildToolVisibility(){
-  // In connect mode, strap midpoints must not cover strap anchors/rings.
   connections.forEach(c=>{
     if(c.handle)c.handle.visible=(mode==='build' && buildTool!=='connect');
   });
-  strapAnchors.forEach(sa=>{
-    sa.group.visible=(mode==='build');
-  });
+  strapAnchors.forEach(sa=>sa.group.visible=(mode==='build'));
 }
 
 function setBuildTool(t){
@@ -750,25 +741,13 @@ canvas.addEventListener('pointerup',e=>{
       const ih=single.hit;
       if(ih?.kind==='anchor'){
         if(buildTool==='connect'){
-          if(!connectStart){
-            connectStart=ih.owner;
-            selectObject(ih.owner);
-            showToast('Zweiten Ring antippen');
-          }else{
-            makeConnection(connectStart,ih.owner);
-            connectStart=null;
-          }
-        }else{
-          // Ring editing always wins on a clean tap.
-          selectObject(ih.owner);
-        }
-      }else if(ih?.kind==='connection'){
-        if(buildTool!=='connect')selectObject(ih.owner);
-      }else if(ih?.kind==='strapAnchor'){
-        selectObject(ih.owner);
-      }else if(!ih&&buildTool==='ring'){
-        const h=bodyHitXY(e.clientX,e.clientY);
-        if(h)selectObject(makeAnchor(h));
+          if(!connectStart){connectStart=ih.owner;selectObject(ih.owner);showToast('Zweiten Ring antippen')}
+          else{makeConnection(connectStart,ih.owner);connectStart=null}
+        }else selectObject(ih.owner);
+      }else if(ih?.kind==='connection'){selectObject(ih.owner)}
+      else if(ih?.kind==='strapAnchor'){selectObject(ih.owner)}
+      else if(!ih&&buildTool==='ring'){
+        const h=bodyHitXY(e.clientX,e.clientY);if(h)selectObject(makeAnchor(h));
       }
     }
   }
