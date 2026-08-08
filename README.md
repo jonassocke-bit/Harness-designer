@@ -1,12 +1,14 @@
-# Harness Designer V0.10f
-UI-only stability pass based on working V0.10e.
+# Harness Designer V0.10g
 
-- fixes giant vertical Bauen/Accessoires/Foto regression
-- bottom mode pill is no longer handled as a resizable sheet
-- stable fixed top toolbar positions
-- object name, lock and delete visually share one compact row
-- lock/delete use clean CSS outline icons, not emoji
-- model/reset remain hidden from main canvas
-- compact inline numeric values and presets retained
-- large editor resize hot-zone retained
-- no harness geometry/model/ring/strap logic changed
+UI-only cleanup based on working V0.10f.
+
+- model/reset controls forcibly hidden from canvas
+- top utility bubbles get strict non-overlapping positions
+- Ring/Verbinden remains on its own row
+- object header keeps RING/N1 + lock + delete on one clean line
+- lock and delete sit side-by-side
+- tighter parameter spacing
+- bottom Bauen/Accessoires/Foto pill reduced to 42 px height / 280 px width
+- editor sits slightly lower because bottom navigation is smaller
+- resize hotspot enlarged again
+- no geometry/model/ring/strap logic changed

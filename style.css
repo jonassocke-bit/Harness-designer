@@ -430,3 +430,173 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
   width:220px!important;
   height:52px!important;
 }
+
+/* V0.10g — final UI cleanup pass */
+
+/* Ensure old model/reset controls can never peek into the viewport. */
+#modelBtn,#resetBtn{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+.top-actions{display:none!important}
+
+/* Top toolbars: strict non-overlapping zones */
+.history-bubbles{
+  top:calc(env(safe-area-inset-top) + 10px)!important;
+  left:12px!important;
+  gap:7px!important;
+}
+.utility-bubbles{
+  top:calc(env(safe-area-inset-top) + 10px)!important;
+  right:58px!important;
+  gap:7px!important;
+}
+.more-bubble{
+  top:calc(env(safe-area-inset-top) + 10px)!important;
+  right:12px!important;
+}
+.history-bubbles .utility-bubble,
+.utility-bubbles .utility-bubble,
+.more-bubble{
+  width:36px!important;
+  height:36px!important;
+  min-width:36px!important;
+  min-height:36px!important;
+  border-radius:18px!important;
+}
+
+/* Ring / Verbinden line: its own row with safe margins */
+.mode-switch{
+  top:calc(env(safe-area-inset-top) + 58px)!important;
+  width:auto!important;
+  max-width:calc(100vw - 110px)!important;
+  z-index:23!important;
+}
+
+/* Selection sheet: clean single-row header.
+   Lock + delete side by side, never stacked. */
+#selectionPanel{
+  overflow:hidden!important;
+}
+#selectionPanel .sheet-row{
+  position:relative!important;
+  display:flex!important;
+  align-items:center!important;
+  min-height:40px!important;
+  padding:2px 0 5px!important;
+  gap:6px!important;
+}
+#selectionPanel .sheet-row>div:first-child{
+  flex:1 1 auto!important;
+  min-width:0!important;
+  padding-right:86px!important;
+}
+#selectionPanel .quick-actions{
+  position:absolute!important;
+  right:42px!important;
+  top:4px!important;
+  width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  display:block!important;
+}
+#selectionPanel #lockSelectedBtn{
+  position:static!important;
+  width:36px!important;
+  height:32px!important;
+  margin:0!important;
+}
+#selectionPanel #deleteSelectedBtn{
+  position:absolute!important;
+  right:0!important;
+  top:4px!important;
+  width:36px!important;
+  min-width:36px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+/* Cleaner outline lock icon */
+#selectionPanel #lockSelectedBtn::before{
+  width:8px!important;
+  height:7px!important;
+  transform:translateY(-5px)!important;
+}
+#selectionPanel #lockSelectedBtn::after{
+  width:12px!important;
+  height:10px!important;
+  transform:translateY(3px)!important;
+}
+
+/* Parameters slightly tighter */
+#selectionPanel .panel-group{
+  gap:0!important;
+}
+#selectionPanel .control{
+  padding:2px 0!important;
+}
+#selectionPanel input[type="range"]{
+  margin-top:2px!important;
+  margin-bottom:0!important;
+}
+.param-inline-tools{
+  gap:2px!important;
+}
+.param-number{
+  width:46px!important;
+  padding:4px 3px!important;
+}
+.inline-presets{
+  gap:2px!important;
+}
+.inline-preset{
+  min-width:28px!important;
+  height:31px!important;
+  padding:0 3px!important;
+}
+
+/* Bottom navigation: substantially smaller */
+#modePill,.mode-pill{
+  bottom:calc(env(safe-area-inset-bottom) + 8px)!important;
+  min-width:0!important;
+  width:280px!important;
+  max-width:calc(100vw - 40px)!important;
+  height:42px!important;
+  min-height:42px!important;
+  max-height:42px!important;
+  padding:3px!important;
+  border-radius:21px!important;
+}
+#modePill button,.mode-pill button{
+  height:36px!important;
+  min-width:0!important;
+  padding:0 11px!important;
+  border-radius:18px!important;
+  font-size:13px!important;
+}
+
+/* Keep editor safely above the smaller bottom nav */
+#selectionPanel.sheet{
+  bottom:calc(env(safe-area-inset-bottom) + 58px)!important;
+}
+
+/* Version small and unobtrusive */
+.version-badge{
+  bottom:calc(env(safe-area-inset-bottom) + 54px)!important;
+  right:8px!important;
+  font-size:8px!important;
+  opacity:.65!important;
+}
+
+/* Bigger resize hotspot but visible grabber stays subtle */
+.sheet>.grabber{
+  width:40px!important;
+  height:4px!important;
+}
+.sheet>.grabber::before{
+  width:240px!important;
+  height:56px!important;
+}
