@@ -1,16 +1,10 @@
-# Harness Designer V0.10m
+# Harness Designer V0.10n
 
-Built from known-good V0.10j.
+Based directly on V0.10m.
 
-Menu:
-- complete intact selection header is moved structurally into `.sheet-scroll`
-- Ring/N1, Lock and Delete can scroll fully out of sight
-- no HTML string-fragment surgery
-
-Drag performance:
-- NO strap ribbon geometry is rebuilt while dragging
-- each connection uses one reusable BoxGeometry preview
-- pointer movement only changes preview transform (position / quaternion / scale)
-- final ribbon, crossings, wraps and surface following are rebuilt exactly once on release
-
-This specifically targets the slowdown that occurs only while moving a strap/end node.
+Restored model controls in the rotation/model settings:
+- `Eigenes 3D-Modell laden` opens the existing GLB/GLTF file input and therefore
+  uses the same established import logic as the former top `3D Modell` button.
+- `Modell neu laden` restores the built-in mannequin and rebuilds its envelope.
+- Existing rotation, surface offset and envelope controls remain unchanged.
+- Main workspace stays uncluttered; no 3D/harness/drag logic changed.

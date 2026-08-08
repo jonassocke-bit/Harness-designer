@@ -1028,3 +1028,23 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
 
 /* Remove old offsets inherited from prior experimental CSS. */
 #selectionPanel .sheet-row > div:first-child{padding-right:0!important}
+
+/* V0.10n — model controls restored inside rotation/model panel */
+.model-file-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:8px 0 6px;
+}
+.model-file-actions .secondary-btn{
+  min-width:0;
+  height:38px;
+  padding:0 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.075);
+  color:#fff;
+  font:inherit;
+  font-size:12px;
+  font-weight:650;
+}

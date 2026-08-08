@@ -168,6 +168,23 @@ function setEnvelopeVisible(v){
   if(envelopeVisibleToggle)envelopeVisibleToggle.textContent=v?'An':'Aus';
 }
 
+
+rotationModelUploadBtn?.addEventListener('click',()=>modelInput.click());
+
+rotationModelReloadBtn?.addEventListener('click',()=>{
+  // Restore the built-in mannequin, matching the original model workflow.
+  clearEnvelope();
+  if(mannequin)scene.remove(mannequin);
+  mannequin=new THREE.Group();
+  scene.add(mannequin);
+  importedModel=null;
+  buildFallback();
+  collisionMeshes=bodyMeshes;
+  rebuildEnvelope();
+  resetHarness();
+  showToast('Standardmodell neu geladen');
+});
+
 modelBtn.addEventListener('click',()=>modelInput.click());
 modelInput.addEventListener('change',async()=>{
   const file=modelInput.files?.[0];if(!file)return;
