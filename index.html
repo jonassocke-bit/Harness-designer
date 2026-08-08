@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0b0d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Harness Designer" />
+  <title>Harness Designer Prototype</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">PROTOTYPE 01</div>
+        <div class="title">Harness Designer</div>
+      </div>
+      <button id="resetBtn" class="icon-btn" aria-label="Zurücksetzen">↺</button>
+    </header>
+
+    <main id="viewport">
+      <canvas id="scene"></canvas>
+
+      <div class="hint" id="hint">
+        <strong>Bauen</strong>
+        <span>Tippe zwei Punkte auf das Mannequin. Danach kannst du den Riemen in der Mitte greifen und verschieben.</span>
+      </div>
+
+      <div class="mode-pill">
+        <button class="mode active">Bauen</button>
+        <button class="mode" disabled>Accessoires</button>
+        <button class="mode" disabled>Foto</button>
+      </div>
+
+      <section id="strapPanel" class="sheet hidden">
+        <div class="grabber"></div>
+        <div class="sheet-row">
+          <div>
+            <div class="sheet-label">Ausgewählter Riemen</div>
+            <div class="sheet-title">Strap 01</div>
+          </div>
+          <div class="value-badge"><span id="widthValue">30</span> mm</div>
+        </div>
+
+        <label class="control">
+          <span>Breite</span>
+          <input id="widthSlider" type="range" min="12" max="60" value="30" step="1" />
+        </label>
+
+        <label class="control">
+          <span>Lockerheit</span>
+          <div class="control-meta"><span>Straff</span><span>Locker</span></div>
+          <input id="slackSlider" type="range" min="0" max="100" value="8" step="1" />
+        </label>
+
+        <button id="deleteStrapBtn" class="danger-btn">Riemen löschen</button>
+      </section>
+    </main>
+
+    <footer class="bottom-safe"></footer>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
