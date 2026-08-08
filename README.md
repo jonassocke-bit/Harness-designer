@@ -1,20 +1,19 @@
-# Harness Designer V0.11 — Strap Engine 2.0
+# Harness Designer V0.11a — Live Bezier Preview
 
-The old adaptive surface-following strap solver has been removed.
+Based on V0.11 Strap Engine 2.0.
 
-New strap model:
-- logical path: Ring/Node A -> one automatic control point -> Ring/Node B
-- one midpoint surface query only
-- QuadraticBezierCurve3 for a clean, predictable strap path
-- slack moves the automatic control point away from the body and slightly down
-- rendered endpoints are still trimmed dynamically to the ring edge
-- ring wraps remain dynamic
-- no per-ribbon-point body raycasts
-- ribbon orientation uses a continuous raycast-free transported frame
-- only ~16 render samples per full strap
-- no iterative 3–5 pass surface solver
-- dynamic strap nodes / split rings / crossings remain connected to the new curve
-- drag preview from V0.10M/N remains: no full strap rebuild during finger movement
+During drag:
+- shows the actual quadratic Bezier strap shape live
+- updates once per animation frame
+- 16 curve samples
+- uses the same ribbonGeometry as the final strap
+- skips body midpoint projection, crossings, ring-wrap rebuilds and full topology work
+- final strap group is hidden only while the live preview is shown
 
-This intentionally favors design stability, speed and visual cleanliness over
-physical leather simulation accuracy.
+On release:
+- preview disappears
+- one full V0.11 quality rebuild runs, including the single midpoint body query,
+  crossings, wraps and all final topology
+
+This restores WYSIWYG-style live editing while keeping the new lightweight
+Strap Engine 2.0.

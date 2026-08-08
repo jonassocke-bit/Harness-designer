@@ -762,64 +762,103 @@ function renderConnection(c){
 }
 
 
-const dragPreviewMaterial=new THREE.MeshBasicMaterial({
-  color:0x171718,
-  side:THREE.DoubleSide,
-  depthTest:true,
-  depthWrite:true
-});
-const dragPreviewGeometry=new THREE.BoxGeometry(1,1,1);
 
-function ensureDragPreview(c){
-  if(c._dragPreview)return c._dragPreview;
-  const mesh=new THREE.Mesh(dragPreviewGeometry,dragPreviewMaterial);
+let dragPreviewActive=false;
+let dragPreviewFrame=0;
+
+const livePreviewMaterial=new THREE.MeshStandardMaterial({
+  color:0x171718,
+  roughness:.5,
+  metalness:0,
+  side:THREE.DoubleSide,
+  emissive:0x000000,
+  emissiveIntensity:0
+});
+
+function ensureLivePreview(c){
+  if(c._livePreview)return c._livePreview;
+  const mesh=new THREE.Mesh(new THREE.BufferGeometry(),livePreviewMaterial.clone());
   mesh.visible=false;
+  mesh.castShadow=false;
+  mesh.receiveShadow=false;
+  mesh.userData={kind:'connectionPreview',owner:c};
   scene.add(mesh);
-  c._dragPreview=mesh;
+  c._livePreview=mesh;
   return mesh;
 }
 
-function updateDragPreviewConnection(c){
-  const mesh=ensureDragPreview(c);
+function liveControlPoint(c){
   const A=nodePosition(c.a),B=nodePosition(c.b);
-  const a=visibleEndpoint(c.a,B);
-  const b=visibleEndpoint(c.b,A);
-  const delta=b.clone().sub(a);
-  const len=delta.length();
-  if(len<1e-5){mesh.visible=false;return}
+  const mid=A.clone().lerp(B,.5);
 
+  // Live path uses the SAME conceptual Bezier model as the final strap,
+  // but skips body projection entirely for speed.
+  const slack=THREE.MathUtils.clamp(c.slack/100,0,1);
+
+  // Use averaged endpoint normal as the body-outward direction.
+  const avgN=averageNormal(c.a,c.b);
+  const ctrl=mid.clone()
+    .addScaledVector(avgN,slack*.18)
+    .add(new THREE.Vector3(0,-slack*.20,0));
+
+  return ctrl;
+}
+
+function buildLivePreviewPoints(c,count=16){
+  const A=nodePosition(c.a),B=nodePosition(c.b);
+  const ctrl=liveControlPoint(c);
+  const a=visibleEndpoint(c.a,ctrl);
+  const b=visibleEndpoint(c.b,ctrl);
+  const curve=new THREE.QuadraticBezierCurve3(a,ctrl,b);
+
+  const pts=[];
+  for(let i=0;i<=count;i++)pts.push(curve.getPoint(i/count));
+  return pts;
+}
+
+function updateLivePreviewConnection(c){
+  const mesh=ensureLivePreview(c);
+  const pts=buildLivePreviewPoints(c,16);
+
+  const newGeom=ribbonGeometry(pts,c.widthMM,2.5);
+  const oldGeom=mesh.geometry;
+  mesh.geometry=newGeom;
+  oldGeom?.dispose?.();
+
+  mesh.material.emissive.setHex(selected===c?0x2c271d:0x000000);
+  mesh.material.emissiveIntensity=selected===c?.75:0;
   mesh.visible=true;
-  mesh.position.copy(a).lerp(b,.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(1,0,0),delta.normalize());
-  mesh.scale.set(len,Math.max(.002,.15*(c.widthMM/30)),.018);
 
-  // The final high-quality ribbon is simply hidden while dragging.
+  // Hide only the final heavy ribbon while preview is active.
   c.group.visible=false;
 }
 
-function updateDragPreview(){
-  for(const c of connections)updateDragPreviewConnection(c);
+function updateLivePreview(){
+  for(const c of connections)updateLivePreviewConnection(c);
 }
 
-function scheduleDragPreview(){
+function scheduleLivePreview(){
   if(dragPreviewFrame)return;
   dragPreviewFrame=requestAnimationFrame(()=>{
     dragPreviewFrame=0;
-    updateDragPreview();
+    updateLivePreview();
   });
 }
 
-function finishDragPreview(){
+function finishLivePreview(){
   dragPreviewActive=false;
+
   if(dragPreviewFrame){
     cancelAnimationFrame(dragPreviewFrame);
     dragPreviewFrame=0;
   }
+
   for(const c of connections){
-    if(c._dragPreview)c._dragPreview.visible=false;
+    if(c._livePreview)c._livePreview.visible=false;
     c.group.visible=true;
   }
-  // One expensive rebuild only after the finger is released.
+
+  // One full quality rebuild after release.
   updateAllGeometry();
 }
 
@@ -1014,7 +1053,7 @@ function mergeSplitNode(node){
   const leftNodes=nodes.filter(n=>n.source==='strap'&&n.parent===left);
   const rightNodes=nodes.filter(n=>n.source==='strap'&&n.parent===right);
   const width=left?.widthMM??right?.widthMM??30,slack=left?.slack??right?.slack??8;
-  for(const c of [left,right]){if(!c)continue;if(c._dragPreview){scene.remove(c._dragPreview);c._dragPreview=null}
+  for(const c of [left,right]){if(!c)continue;if(c._livePreview){c._livePreview.geometry?.dispose?.();c._livePreview.material?.dispose?.();scene.remove(c._livePreview);c._livePreview=null}
   scene.remove(c.group);const i=connections.indexOf(c);if(i>=0)connections.splice(i,1);}
   const merged=createConnection(originalA,originalB,true);merged.widthMM=width;merged.slack=slack;
   for(const s of leftNodes){s.parent=merged;s.t=s.t*originalT;}
@@ -1273,7 +1312,7 @@ canvas.addEventListener('pointermove',e=>{
           }
         }
         dragPreviewActive=true;
-        scheduleDragPreview();
+        scheduleLivePreview();
       }
       single.lx=e.clientX;single.ly=e.clientY;return;
     }
@@ -1283,7 +1322,7 @@ canvas.addEventListener('pointermove',e=>{
       node.t=closestTOnConnectionScreen(node.parent,e.clientX,e.clientY);
       if(paired(node))node.mirrorPartner.t=node.t;
       dragPreviewActive=true;
-      scheduleDragPreview();
+      scheduleLivePreview();
       showSelection();
       single.lx=e.clientX;single.ly=e.clientY;return;
     }
@@ -1293,7 +1332,7 @@ canvas.addEventListener('pointermove',e=>{
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
 });
 canvas.addEventListener('pointerup',e=>{
-  if(dragPreviewActive)finishDragPreview();
+  if(dragPreviewActive)finishLivePreview();
   rememberState();
   pointers.delete(e.pointerId);if(pointers.size<2)twoStart=null;
   if(single&&single.id===e.pointerId&&Math.hypot(e.clientX-single.sx,e.clientY-single.sy)<=TAP&&mode==='build'){
@@ -1314,7 +1353,7 @@ canvas.addEventListener('pointerup',e=>{
 });
 canvas.addEventListener('pointercancel',e=>{
   pointers.delete(e.pointerId);
-  if(dragPreviewActive)finishDragPreview();
+  if(dragPreviewActive)finishLivePreview();
   single=null;twoStart=null;
 });
 
