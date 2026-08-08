@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.10c</title>
+  <title>Harness Designer V0.10d</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -25,8 +25,15 @@
 
   <div id="chrome">
     <header class="topbar minimal-topbar">
+      <span id="modeTitle" hidden>Build</span>
       <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
     </header>
+
+    <button id="moreBtn" class="utility-bubble more-bubble" aria-label="Mehr">•••</button>
+    <div id="moreMenu" class="more-menu hidden">
+      <button id="modelBtn" class="menu-action">3D Modell laden</button>
+      <button id="resetBtn" class="menu-action">Projekt zurücksetzen</button>
+    </div>
 
     <div class="history-bubbles"><button id="undoBtn" class="utility-bubble" aria-label="Rückgängig">↶</button><button id="redoBtn" class="utility-bubble" aria-label="Wiederholen">↷</button></div>
     <div class="utility-bubbles">
@@ -181,6 +188,6 @@
 </div>
 
 <script type="module" src="./app.js"></script>
-  <div id="versionBadge" class="version-badge">v0.10c</div>
+  <div id="versionBadge" class="version-badge">v0.10d</div>
 </body>
 </html>

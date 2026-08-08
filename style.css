@@ -203,3 +203,37 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
 .param-value-edit{width:72px;border:0;border-radius:10px;background:rgba(255,255,255,.10);color:#fff;padding:6px 7px;text-align:right;font:inherit}
 .preset-row{display:flex;gap:5px;margin:1px 0 4px}.preset-chip{min-width:40px;padding:5px 7px;border-radius:9px;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.065);color:#fff;font-size:11px}
 .node-point-only .ring-only{display:none!important}.node-ring-only .point-only{display:none!important}
+
+/* V0.10d startup hotfix: required controls live in overflow menu */
+.more-bubble{
+  position:absolute;
+  right:max(12px,env(safe-area-inset-right));
+  top:calc(env(safe-area-inset-top) + 8px);
+  z-index:30;
+}
+.more-menu{
+  position:absolute;
+  right:12px;
+  top:calc(env(safe-area-inset-top) + 52px);
+  z-index:31;
+  width:190px;
+  padding:7px;
+  background:rgba(22,22,25,.88);
+  -webkit-backdrop-filter:blur(22px);
+  backdrop-filter:blur(22px);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:16px;
+  box-shadow:0 12px 36px rgba(0,0,0,.28);
+}
+.more-menu.hidden{display:none}
+.menu-action{
+  display:block;
+  width:100%;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#fff;
+  padding:11px 10px;
+  text-align:left;
+}
+.menu-action:active{background:rgba(255,255,255,.1)}
