@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.6bb</title>
+  <title>Harness Designer V0.7</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.6b</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.7</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -63,6 +63,15 @@
       </div>
 
       <div id="ringControls" class="panel-group hidden">
+        <div class="inline-toggle-row">
+          <span>Ring</span>
+          <button id="surfaceNodeRingToggle" class="mini-toggle active" aria-pressed="true">An</button>
+        </div>
+        <label class="control">
+          <span>Punktgröße</span>
+          <div class="value-badge"><span id="surfaceNodeSizeValue">10</span> mm</div>
+          <input id="surfaceNodeSizeSlider" type="range" min="2" max="30" value="10" step="1">
+        </label>
         <label class="control">
           <span>Ringdurchmesser</span>
           <div class="value-badge"><span id="ringDiameterValue">40</span> mm</div>
@@ -90,6 +99,10 @@
       </div>
 
       <div id="strapAnchorControls" class="panel-group hidden">
+        <div class="inline-toggle-row">
+          <span>Ring</span>
+          <button id="strapNodeRingToggle" class="mini-toggle" aria-pressed="false">Aus</button>
+        </div>
         <label class="control">
           <span>Ankerposition</span>
           <div class="value-badge"><span id="strapAnchorValue">50</span> %</div>

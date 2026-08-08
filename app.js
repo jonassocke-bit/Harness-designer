@@ -4,13 +4,15 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const $=id=>document.getElementById(id);
 const canvas=$('scene'),viewport=$('viewport'),chrome=$('chrome'),restoreUI=$('restoreUI');
-const buildTools=$('buildTools'),selectionPanel=$('selectionPanel'),ringControls=$('ringControls'),strapControls=$('strapControls'),strapAnchorControls=$('strapAnchorControls');
+const buildTools=$('buildTools'),selectionPanel=$('selectionPanel');
+const ringControls=$('ringControls'),strapControls=$('strapControls'),strapAnchorControls=$('strapAnchorControls');
 const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle'),deleteSelectedBtn=$('deleteSelectedBtn');
 const widthSlider=$('widthSlider'),widthValue=$('widthValue'),slackSlider=$('slackSlider');
 const ringDiameterSlider=$('ringDiameterSlider'),ringDiameterValue=$('ringDiameterValue');
 const ringThicknessSlider=$('ringThicknessSlider'),ringThicknessValue=$('ringThicknessValue');
+const surfaceNodeRingToggle=$('surfaceNodeRingToggle'),surfaceNodeSizeSlider=$('surfaceNodeSizeSlider'),surfaceNodeSizeValue=$('surfaceNodeSizeValue');
 const addStrapAnchorBtn=$('addStrapAnchorBtn'),strapAnchorSlider=$('strapAnchorSlider'),strapAnchorValue=$('strapAnchorValue');
-const strapAnchorSizeSlider=$('strapAnchorSizeSlider'),strapAnchorSizeValue=$('strapAnchorSizeValue');
+const strapAnchorSizeSlider=$('strapAnchorSizeSlider'),strapAnchorSizeValue=$('strapAnchorSizeValue'),strapNodeRingToggle=$('strapNodeRingToggle');
 const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn');
 const accessoryPanel=$('accessoryPanel'),photoPanel=$('photoPanel'),rotationPanel=$('rotationPanel');
 const rotateModelBtn=$('rotateModelBtn'),closeRotationBtn=$('closeRotationBtn'),rotationResetBtn=$('rotationResetBtn');
@@ -23,77 +25,83 @@ const envelopeVisibleToggle=$('envelopeVisibleToggle');
 const resetBtn=$('resetBtn'),modelBtn=$('modelBtn'),modelInput=$('modelInput'),toast=$('toast'),modeTitle=$('modeTitle');
 const modeButtons=[...document.querySelectorAll('.mode')],toolButtons=[...document.querySelectorAll('.tool')];
 
-let mode='build',buildTool='ring',mirrorMode=false;
-let surfaceOffsetMM=2;
-let envelopeSmoothPct=35;
-let envelopeInflateMM=4;
-let envelopeVisible=false;
-let envelopeRoot=null;
-let envelopeMeshes=[];
-let collisionMeshes=[];
-
-function kindOf(obj){
-  if(!obj)return null;
-  return obj.kind || obj.userData?.kind || null;
-}
-
+const MM_TO_SCENE=.0037;
+const MIRROR_AXIS_SNAP=.045;
 const scene=new THREE.Scene();
 scene.fog=new THREE.Fog(0x09090b,6.2,10);
-envelopeRoot=new THREE.Group();
-scene.add(envelopeRoot);
+
 const camera=new THREE.PerspectiveCamera(31,1,.01,50);
-let camAz=0,camEl=.02,camDist=5.25;const target=new THREE.Vector3(0,.08,0);
+let camAz=0,camEl=.02,camDist=5.25;
+const target=new THREE.Vector3(0,.08,0);
 
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;
-renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 
 scene.add(new THREE.HemisphereLight(0xffffff,0x303038,2.0));
-const key=new THREE.DirectionalLight(0xffffff,3.15);key.position.set(2.7,4.4,3.4);key.castShadow=true;scene.add(key);
-const fill=new THREE.DirectionalLight(0xd8ddff,1);fill.position.set(-3,2,2);scene.add(fill);
-const rim=new THREE.DirectionalLight(0xa7b4ff,1.25);rim.position.set(-3,2.8,-3.2);scene.add(rim);
+const key=new THREE.DirectionalLight(0xffffff,3.15); key.position.set(2.7,4.4,3.4); key.castShadow=true; scene.add(key);
+const fill=new THREE.DirectionalLight(0xd8ddff,1); fill.position.set(-3,2,2); scene.add(fill);
+const rim=new THREE.DirectionalLight(0xa7b4ff,1.25); rim.position.set(-3,2.8,-3.2); scene.add(rim);
+
 const floor=new THREE.Mesh(new THREE.CircleGeometry(2.35,96),new THREE.MeshStandardMaterial({color:0x141418,roughness:1}));
-floor.rotation.x=-Math.PI/2;floor.position.y=-1.81;floor.receiveShadow=true;scene.add(floor);
+floor.rotation.x=-Math.PI/2; floor.position.y=-1.81; floor.receiveShadow=true; scene.add(floor);
 
-// Visual guide for the mirror plane x = 0 on the base floor.
-// The line runs front-to-back through the mannequin centre.
-const axisGeom=new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(0,-1.795,-2.05),
-  new THREE.Vector3(0,-1.795, 2.05)
-]);
-const axisLine=new THREE.Line(
-  axisGeom,
-  new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.55})
-);
-scene.add(axisLine);
-
+const axisGeom=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-1.795,-2.05),new THREE.Vector3(0,-1.795,2.05)]);
+scene.add(new THREE.Line(axisGeom,new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.55})));
 const axisMarkerMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.62});
-for(const z of [-1.5,-1.0,-.5,0,.5,1.0,1.5]){
+for(const z of [-1.5,-1,-.5,0,.5,1,1.5]){
   const mark=new THREE.Mesh(new THREE.PlaneGeometry(.12,.012),axisMarkerMat);
-  mark.rotation.x=-Math.PI/2;
-  mark.position.set(0,-1.79,z);
-  scene.add(mark);
+  mark.rotation.x=-Math.PI/2; mark.position.set(0,-1.79,z); scene.add(mark);
 }
 
 function updateCamera(){
   const ce=Math.cos(camEl);
-  camera.position.set(target.x+Math.sin(camAz)*ce*camDist,target.y+Math.sin(camEl)*camDist,target.z+Math.cos(camAz)*ce*camDist);
+  camera.position.set(
+    target.x+Math.sin(camAz)*ce*camDist,
+    target.y+Math.sin(camEl)*camDist,
+    target.z+Math.cos(camAz)*ce*camDist
+  );
   camera.lookAt(target);
 }
 updateCamera();
 
-let mannequin=new THREE.Group();scene.add(mannequin);
-let importedModel=null;
-let bodyMeshes=[];
+let mode='build',buildTool='ring',mirrorMode=false;
+let selected=null,connectStart=null;
+let surfaceOffsetMM=2,envelopeSmoothPct=35,envelopeInflateMM=4,envelopeVisible=false;
+
+const nodes=[];
+const connections=[];
+
+function kindOf(o){return o?.kind||null}
+function showToast(msg){
+  toast.textContent=msg; toast.classList.remove('hidden');
+  clearTimeout(showToast.t); showToast.t=setTimeout(()=>toast.classList.add('hidden'),1600);
+}
+function surfaceOffsetScene(){return surfaceOffsetMM*MM_TO_SCENE}
+
+let mannequin=new THREE.Group(); scene.add(mannequin);
+let bodyMeshes=[],collisionMeshes=[],importedModel=null;
 const bodyMat=new THREE.MeshStandardMaterial({color:0xd7d5d0,roughness:.78,metalness:0});
-function registerMesh(m,override=true){if(override)m.material=bodyMat;m.castShadow=true;m.receiveShadow=true;bodyMeshes.push(m)}
+
+function registerMesh(m,override=true){
+  if(override)m.material=bodyMat;
+  m.castShadow=true;m.receiveShadow=true;bodyMeshes.push(m);
+}
 function addMesh(m){registerMesh(m,true);mannequin.add(m);return m}
-function ellipsoid(rx,ry,rz,x,y,z=0){const m=addMesh(new THREE.Mesh(new THREE.SphereGeometry(1,64,44)));m.scale.set(rx,ry,rz);m.position.set(x,y,z);return m}
-function limb(rt,rb,len,x,y,rz,z=0){const m=addMesh(new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,len,48,12,false)));m.position.set(x,y,z);m.rotation.z=rz;return m}
+function ellipsoid(rx,ry,rz,x,y,z=0){
+  const m=addMesh(new THREE.Mesh(new THREE.SphereGeometry(1,56,38)));
+  m.scale.set(rx,ry,rz);m.position.set(x,y,z);return m;
+}
+function limb(rt,rb,len,x,y,rz,z=0){
+  const m=addMesh(new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,len,40,10,false)));
+  m.position.set(x,y,z);m.rotation.z=rz;return m;
+}
 function buildFallback(){
   bodyMeshes=[];mannequin.clear();
   ellipsoid(.245,.325,.235,0,1.50,.012);ellipsoid(.225,.115,.215,0,1.30,.025);
-  const neck=addMesh(new THREE.Mesh(new THREE.CylinderGeometry(.115,.145,.25,48,6)));neck.position.set(0,1.16,0);
+  const neck=addMesh(new THREE.Mesh(new THREE.CylinderGeometry(.115,.145,.25,40,6)));neck.position.set(0,1.16,0);
   ellipsoid(.48,.57,.27,0,.71,.012);ellipsoid(.41,.38,.235,0,.30,.012);ellipsoid(.445,.30,.28,0,-.12,.015);
   ellipsoid(.19,.155,.205,-.37,.84,.012);ellipsoid(.19,.155,.205,.37,.84,.012);
   limb(.135,.112,.60,-.55,.54,-.12);ellipsoid(.125,.145,.125,-.59,.20,0);limb(.112,.09,.59,-.63,-.10,-.025);ellipsoid(.095,.155,.065,-.65,-.47,.02);
@@ -102,1181 +110,565 @@ function buildFallback(){
   limb(.185,.145,.70,-.20,-.83,.018);limb(.185,.145,.70,.20,-.83,-.018);
   ellipsoid(.15,.15,.145,-.20,-1.20,.01);ellipsoid(.15,.15,.145,.20,-1.20,.01);
   limb(.14,.098,.66,-.20,-1.53,-.005);limb(.14,.098,.66,.20,-1.53,.005);
+  collisionMeshes=bodyMeshes;
 }
 buildFallback();
-collisionMeshes=bodyMeshes;
 
-function showToast(msg){toast.textContent=msg;toast.classList.remove('hidden');clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.classList.add('hidden'),1800)}
-
-
+const envelopeRoot=new THREE.Group();scene.add(envelopeRoot);
+let envelopeMeshes=[];
 function clearEnvelope(){
-  if(!envelopeRoot)return;
-  envelopeMeshes.forEach(m=>{
-    envelopeRoot.remove(m);
-    m.geometry?.dispose?.();
-    m.material?.dispose?.();
-  });
+  for(const m of envelopeMeshes){envelopeRoot.remove(m);m.geometry?.dispose?.();m.material?.dispose?.()}
   envelopeMeshes=[];
 }
-
-function smoothGeometryClone(sourceGeom, smoothPct, inflateMM){
-  const geom=sourceGeom.clone();
-  const pos=geom.getAttribute('position');
-  if(!pos)return geom;
-
-  // Keep iPhone performance predictable: use a lightweight neighbourhood-free
-  // shrink/smooth pass toward the local bounding-volume centre, then inflate
-  // along recomputed normals. It produces a collision envelope rather than
-  // altering the visible model.
-  geom.computeVertexNormals();
-  const normal=geom.getAttribute('normal');
-  const box=new THREE.Box3().setFromBufferAttribute(pos);
+function smoothGeometryClone(sourceGeom,smoothPct,inflateMM){
+  const g=sourceGeom.clone();
+  const p=g.getAttribute('position'); if(!p)return g;
+  g.computeVertexNormals();
+  const nAttr=g.getAttribute('normal');
+  const box=new THREE.Box3().setFromBufferAttribute(p);
   const center=box.getCenter(new THREE.Vector3());
   const smooth=THREE.MathUtils.clamp(smoothPct/100,0,1);
   const inflate=inflateMM*MM_TO_SCENE;
-
-  const v=new THREE.Vector3();
-  const n=new THREE.Vector3();
-  for(let i=0;i<pos.count;i++){
-    v.fromBufferAttribute(pos,i);
-    n.fromBufferAttribute(normal,i).normalize();
-
-    // Gentle radial averaging effect. Max movement is intentionally small;
-    // the envelope should ignore fine detail, not change body proportions.
-    const toward=center.clone().sub(v);
-    const radial=Math.min(toward.length(),.08)*smooth*.16;
+  const v=new THREE.Vector3(),n=new THREE.Vector3(),toward=new THREE.Vector3();
+  for(let i=0;i<p.count;i++){
+    v.fromBufferAttribute(p,i); n.fromBufferAttribute(nAttr,i).normalize();
+    toward.copy(center).sub(v);
+    const radial=Math.min(toward.length(),.11)*smooth*.22;
     if(toward.lengthSq()>1e-8)v.addScaledVector(toward.normalize(),radial);
-
     v.addScaledVector(n,inflate);
-    pos.setXYZ(i,v.x,v.y,v.z);
+    p.setXYZ(i,v.x,v.y,v.z);
   }
-  pos.needsUpdate=true;
-  geom.computeVertexNormals();
-  geom.computeBoundingBox();
-  geom.computeBoundingSphere();
-  return geom;
+  p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();return g;
 }
-
 function rebuildEnvelope(){
-  if(!envelopeRoot || !mannequin)return;
   clearEnvelope();
-
-  const sourceMeshes=[];
-  mannequin.traverse(n=>{
-    if(n.isMesh && !n.userData?.isEnvelope)sourceMeshes.push(n);
-  });
-
   try{
-  sourceMeshes.forEach(src=>{
-    const geom=smoothGeometryClone(src.geometry,envelopeSmoothPct,envelopeInflateMM);
-    const mat=new THREE.MeshStandardMaterial({
-      color:0xffffff,
-      transparent:true,
-      opacity:.16,
-      roughness:.25,
-      metalness:0,
-      wireframe:false,
-      depthWrite:false,
-      side:THREE.DoubleSide
-    });
-    const m=new THREE.Mesh(geom,mat);
-    m.userData.isEnvelope=true;
-
-    // Match source world transform inside a world-space helper group.
-    src.updateMatrixWorld(true);
-    m.matrixAutoUpdate=false;
-    m.matrix.copy(src.matrixWorld);
-    m.visible=envelopeVisible;
-    envelopeRoot.add(m);
-    envelopeMeshes.push(m);
-  });
+    const sources=[];mannequin.traverse(n=>{if(n.isMesh)sources.push(n)});
+    for(const src of sources){
+      const m=new THREE.Mesh(
+        smoothGeometryClone(src.geometry,envelopeSmoothPct,envelopeInflateMM),
+        new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.15,roughness:.3,depthWrite:false,side:THREE.DoubleSide})
+      );
+      src.updateMatrixWorld(true);m.matrixAutoUpdate=false;m.matrix.copy(src.matrixWorld);m.visible=envelopeVisible;
+      envelopeRoot.add(m);envelopeMeshes.push(m);
+    }
+    collisionMeshes=(envelopeMeshes.length&&(envelopeSmoothPct>0||envelopeInflateMM>0))?envelopeMeshes:bodyMeshes;
   }catch(err){
-    console.error('Envelope rebuild failed:',err);
-    clearEnvelope();
-    collisionMeshes=bodyMeshes;
-    return;
+    console.error('Envelope disabled',err);clearEnvelope();collisionMeshes=bodyMeshes;
   }
-
-  // If smoothing/inflate are both zero, original mesh remains the collision source.
-  const useEnvelope=envelopeMeshes.length>0 && (envelopeSmoothPct>0 || envelopeInflateMM>0);
-  collisionMeshes=useEnvelope?envelopeMeshes:bodyMeshes;
-
-  refreshSurfaceOffset();
 }
-
 function setEnvelopeVisible(v){
-  envelopeVisible=v;
-  envelopeMeshes.forEach(m=>m.visible=v);
-  if(envelopeVisibleToggle){
-    envelopeVisibleToggle.classList.toggle('active',v);
-    envelopeVisibleToggle.setAttribute('aria-pressed',v?'true':'false');
-    envelopeVisibleToggle.textContent=v?'An':'Aus';
-  }
+  envelopeVisible=v;envelopeMeshes.forEach(m=>m.visible=v);
+  envelopeVisibleToggle?.classList.toggle('active',v);
+  envelopeVisibleToggle?.setAttribute('aria-pressed',v?'true':'false');
+  if(envelopeVisibleToggle)envelopeVisibleToggle.textContent=v?'An':'Aus';
 }
 
 modelBtn.addEventListener('click',()=>modelInput.click());
 modelInput.addEventListener('change',async()=>{
-  const file=modelInput.files?.[0];if(!file)return;const url=URL.createObjectURL(file);
+  const file=modelInput.files?.[0];if(!file)return;
+  const url=URL.createObjectURL(file);
   try{
     const gltf=await new GLTFLoader().loadAsync(url),obj=gltf.scene;
-
-    // V0.5d: no automatic orientation. The user controls model rotation manually.
     obj.updateMatrixWorld(true);
-    let box=new THREE.Box3().setFromObject(obj);
-    let size=box.getSize(new THREE.Vector3());
-    const scale=3.25/Math.max(size.y,.001);
-    obj.scale.setScalar(scale);
-    obj.updateMatrixWorld(true);
-
-    const b2=new THREE.Box3().setFromObject(obj),c=b2.getCenter(new THREE.Vector3());
-    obj.position.x-=c.x;
-    obj.position.z-=c.z;
-    obj.position.y+=(-1.75-b2.min.y);
-    obj.updateMatrixWorld(true);
+    let box=new THREE.Box3().setFromObject(obj),size=box.getSize(new THREE.Vector3());
+    obj.scale.setScalar(3.25/Math.max(size.y,.001));obj.updateMatrixWorld(true);
+    box=new THREE.Box3().setFromObject(obj);
+    const c=box.getCenter(new THREE.Vector3());
+    obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y+=(-1.75-box.min.y);obj.updateMatrixWorld(true);
     scene.remove(mannequin);mannequin=new THREE.Group();mannequin.add(obj);scene.add(mannequin);importedModel=obj;
     bodyMeshes=[];obj.traverse(n=>{if(n.isMesh)registerMesh(n,false)});
-    collisionMeshes=bodyMeshes;
-    rebuildEnvelope();
-    resetHarness();rotationPanel.classList.add('hidden');rotateModelBtn.classList.remove('active');showToast('3D-Modell geladen');
-  }catch(e){console.error(e);showToast('Modell konnte nicht geladen werden')}
+    collisionMeshes=bodyMeshes;rebuildEnvelope();resetHarness();showToast('3D-Modell geladen');
+  }catch(err){console.error(err);showToast('Modell konnte nicht geladen werden')}
   finally{URL.revokeObjectURL(url);modelInput.value=''}
 });
 
 const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();
-function setPointerXY(x,y){const r=canvas.getBoundingClientRect();pointer.x=((x-r.left)/r.width)*2-1;pointer.y=-((y-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera)}
-function bodyHitXY(x,y){setPointerXY(x,y);return raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0]||null}
-function worldNormal(hit){const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);return hit.face.normal.clone().applyMatrix3(nm).normalize()}
-
-function ringMajorRadius(anchor){
-  return Math.max(.001,(anchor.userData.diameterMM*MM_TO_SCENE)/2);
+function setPointerXY(x,y){
+  const r=canvas.getBoundingClientRect();
+  pointer.x=((x-r.left)/r.width)*2-1;pointer.y=-((y-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
 }
-function ringTubeRadius(anchor){
-  return Math.max(.001,(anchor.userData.thicknessMM*MM_TO_SCENE)/2);
+function bodyHitXY(x,y){
+  setPointerXY(x,y);
+  return raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0]||null;
 }
-function rebuildRingGeometry(anchor){
-  const ring=anchor.children.find(ch=>ch.userData?.kind==='anchorRing');
-  if(!ring)return;
-  ring.geometry?.dispose?.();
-  ring.geometry=new THREE.TorusGeometry(ringMajorRadius(anchor),ringTubeRadius(anchor),16,64);
-  const disc=anchor.children.find(ch=>ch.userData?.kind==='anchorHit');
-  if(disc){
-    disc.geometry?.dispose?.();
-    disc.geometry=new THREE.CircleGeometry(Math.max(ringMajorRadius(anchor)*1.28,.055),32);
-  }
-  if(anchor.userData.surfacePoint && anchor.userData.normal){
-    anchor.position.copy(anchor.userData.surfacePoint)
-      .addScaledVector(anchor.userData.normal,surfaceOffsetScene()+ringTubeRadius(anchor));
-  }
-  rebuildRingWraps(anchor);
+function worldNormal(hit){
+  const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+  return hit.face.normal.clone().applyMatrix3(nm).normalize();
 }
-function mirrorWorldPoint(worldPoint){
-  return new THREE.Vector3(-worldPoint.x,worldPoint.y,worldPoint.z);
-}
-function findMirroredBodyHitFromPoint(worldPoint){
-  const mirrored=mirrorWorldPoint(worldPoint);
-  const camDir=camera.getWorldDirection(new THREE.Vector3());
-  const origin=mirrored.clone().addScaledVector(camDir,-3);
-  raycaster.set(origin,camDir);
-  const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
-  if(hits.length)return hits.reduce((best,h)=>h.point.distanceTo(mirrored)<best.point.distanceTo(mirrored)?h:best,hits[0]);
-  return null;
-}
-
-const anchorMat=new THREE.MeshStandardMaterial({color:0xfff2bb,emissive:0x44380c,emissiveIntensity:.8,roughness:.34,metalness:.18});
-const anchorSelectedMat=anchorMat.clone();anchorSelectedMat.color.set(0xffffff);anchorSelectedMat.emissive.set(0x555555);
-anchorSelectedMat.emissiveIntensity=1.15;
-const DEFAULT_RING_DIAMETER_MM=40;
-const DEFAULT_RING_THICKNESS_MM=6;
-const MM_TO_SCENE=.0037;
-
-function surfaceOffsetScene(){return surfaceOffsetMM*MM_TO_SCENE;}
-
-const MIRROR_AXIS_SNAP=.045;
-
-function snapSurfacePointToMirrorAxis(hit){
-  if(!hit)return hit;
-  if(Math.abs(hit.point.x)<=MIRROR_AXIS_SNAP)hit.point.x=0;
+function snapHitToAxis(hit){
+  if(hit&&Math.abs(hit.point.x)<MIRROR_AXIS_SNAP)hit.point.x=0;
   return hit;
 }
 
-function isOnMirrorAxis(obj){
-  const k=kindOf(obj);
-  const p=k==='anchor'?obj.position:(k==='strapAnchor'?obj.group.position:null);
-  return !!p && Math.abs(p.x)<=.012;
-}
-const anchors=[],connections=[],strapAnchors=[];
-let selected=null,connectStart=null;
+const metalMat=new THREE.MeshStandardMaterial({color:0xb8b8bc,roughness:.26,metalness:.75});
+const metalSelected=metalMat.clone();metalSelected.emissive.setHex(0x454545);metalSelected.emissiveIntensity=.8;
+const pointMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.28,emissive:0x222222,emissiveIntensity:.3});
+const pointSelected=pointMat.clone();pointSelected.emissive.setHex(0x777777);pointSelected.emissiveIntensity=1;
 
-function connectionCurve(c){
-  if(c.renderCurve)return c.renderCurve;
-  const points=surfaceSampledPath(c);
-  c.renderPoints=points.map(p=>p.clone());
-  c.renderCurve=new THREE.CatmullRomCurve3(c.renderPoints,false,'centripetal',.5);
-  return c.renderCurve;
-}
-function strapAnchorWorld(sa){
-  const curve=connectionCurve(sa.connection);
-  return curve.getPoint(THREE.MathUtils.clamp(sa.t,0,1));
-}
-function updateStrapAnchor(sa){
-  const curve=connectionCurve(sa.connection);
-  const t=THREE.MathUtils.clamp(sa.t,0,1);
-  const p=curve.getPoint(t);
-  sa.group.position.copy(p);
-  sa.group.quaternion.identity();
-}
-function makeStrapAnchor(connection,t=.5,mirrorPartner=null){
-  const g=new THREE.Group();
+function nodePosition(n){return n.group.position.clone()}
+function nodeNormal(n){return n.normal?.clone()||new THREE.Vector3(0,0,1)}
+function ringMajor(n){return Math.max(.001,n.diameterMM*MM_TO_SCENE/2)}
+function ringTube(n){return Math.max(.001,n.thicknessMM*MM_TO_SCENE/2)}
+function nodePointRadius(n){return Math.max(.006,n.sizeMM*MM_TO_SCENE/2)}
 
-  const sphere=new THREE.Mesh(
-    new THREE.SphereGeometry(.020,24,18),
-    new THREE.MeshStandardMaterial({
-      color:0xffffff,
-      emissive:0x222222,
-      emissiveIntensity:.35,
-      roughness:.3,
-      metalness:0
-    })
-  );
-  sphere.userData.kind='strapAnchorSphere';
-  g.add(sphere);
-
-  const hitSphere=new THREE.Mesh(
-    new THREE.SphereGeometry(.030,18,14),
-    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.001})
-  );
-  hitSphere.userData.kind='strapAnchorHit';
-  g.add(hitSphere);
-
-  const sa={
-    kind:'strapAnchor',
-    id:`RA${strapAnchors.length+1}`,
-    connection,
-    t,
-    group:g,
-    mirrorPartner,
-    sizeMM:10
-  };
-
-  g.userData.owner=sa;
-  scene.add(g);
-  strapAnchors.push(sa);
-  updateStrapAnchorGeometry(sa);
-  updateStrapAnchor(sa);
-  return sa;
-}
-
-function updateStrapAnchorGeometry(sa){
-  const visual=sa.group.children.find(ch=>ch.userData?.kind==='strapAnchorSphere');
-  const hit=sa.group.children.find(ch=>ch.userData?.kind==='strapAnchorHit');
-  const r=Math.max(.006,(sa.sizeMM*MM_TO_SCENE)/2);
-  if(visual){
-    visual.geometry?.dispose?.();
-    visual.geometry=new THREE.SphereGeometry(r,24,18);
+function rebuildNodeVisual(n){
+  while(n.group.children.length){
+    const q=n.group.children.pop();q.geometry?.dispose?.();if(q.material!==metalMat&&q.material!==metalSelected&&q.material!==pointMat&&q.material!==pointSelected)q.material?.dispose?.();
   }
-  if(hit){
-    hit.geometry?.dispose?.();
-    hit.geometry=new THREE.SphereGeometry(Math.max(r*2.0,.032),18,14);
-  }
-}
-function removeStrapAnchor(sa){
-  connections.filter(c=>c.a===sa||c.b===sa).slice().forEach(removeConnection);
-  if(sa.mirrorPartner)sa.mirrorPartner.mirrorPartner=null;
-  scene.remove(sa.group);
-  const i=strapAnchors.indexOf(sa);if(i>=0)strapAnchors.splice(i,1);
-}
-
-function isConnectable(obj){
-  const k=kindOf(obj);
-  return k==='anchor' || k==='strapAnchor';
-}
-
-function endpointWorld(obj){
-  const k=kindOf(obj);
-  if(k==='anchor')return obj.position.clone();
-  if(k==='strapAnchor')return obj.group.position.clone();
-  return new THREE.Vector3();
-}
-
-function endpointLabel(obj){
-  const k=kindOf(obj);
-  if(k==='anchor')return obj.userData.id;
-  if(k==='strapAnchor')return obj.id;
-  return '?';
-}
-
-function endpointMirror(obj){
-  const k=kindOf(obj);
-  if(k==='anchor')return obj.userData.mirrorPartner || null;
-  if(k==='strapAnchor')return obj.mirrorPartner || null;
-  return null;
-}
-
-
-function getMirrorPartner(obj){
-  const k=kindOf(obj);
-  if(k==='anchor')return obj.userData.mirrorPartner||null;
-  if(k==='connection')return obj.mirrorPartner||null;
-  if(k==='strapAnchor')return obj.mirrorPartner||null;
-  return null;
-}
-
-function setMirrorPartners(a,b){
-  const ka=kindOf(a),kb=kindOf(b);
-  if(ka!==kb)return;
-  if(ka==='anchor'){
-    a.userData.mirrorPartner=b;
-    b.userData.mirrorPartner=a;
+  if(n.ringVisible){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),ringTube(n),16,64),selected===n?metalSelected:metalMat);
+    ring.userData={kind:'nodeVisual',owner:n};n.group.add(ring);
+    const hit=new THREE.Mesh(new THREE.SphereGeometry(Math.max(ringMajor(n)+ringTube(n),.055),18,12),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
+    hit.userData={kind:'nodeHit',owner:n};n.group.add(hit);
   }else{
-    a.mirrorPartner=b;
-    b.mirrorPartner=a;
+    const sphere=new THREE.Mesh(new THREE.SphereGeometry(nodePointRadius(n),24,16),selected===n?pointSelected:pointMat);
+    sphere.userData={kind:'nodeVisual',owner:n};n.group.add(sphere);
+    const hit=new THREE.Mesh(new THREE.SphereGeometry(Math.max(nodePointRadius(n)*2,.035),18,12),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
+    hit.userData={kind:'nodeHit',owner:n};n.group.add(hit);
   }
 }
 
-function refreshMirrorSelectedBubble(){
-  if(!mirrorSelectedBtn)return;
-  mirrorSelectedBtn.classList.toggle('paired',!!getMirrorPartner(selected));
+function createSurfaceNode(hit,ringVisible=true,skipMirror=false){
+  hit=snapHitToAxis(hit);
+  const n={
+    kind:'node',id:`N${nodes.length+1}`,source:'surface',group:new THREE.Group(),
+    ringVisible,diameterMM:40,thicknessMM:6,sizeMM:10,
+    surfacePoint:hit.point.clone(),normal:worldNormal(hit),parent:null,t:0,mirrorPartner:null
+  };
+  updateSurfaceNodeTransform(n);scene.add(n.group);nodes.push(n);rebuildNodeVisual(n);
+
+  if(mirrorMode&&!skipMirror&&Math.abs(n.group.position.x)>.012){
+    const mate=createMirroredSurfaceNode(n);
+    if(mate){n.mirrorPartner=mate;mate.mirrorPartner=n}
+  }
+  return n;
+}
+function updateSurfaceNodeTransform(n){
+  n.group.position.copy(n.surfacePoint).addScaledVector(n.normal,surfaceOffsetScene()+(n.ringVisible?ringTube(n):0));
+  if(Math.abs(n.surfacePoint.x)<MIRROR_AXIS_SNAP){n.surfacePoint.x=0;n.group.position.x=0}
+  n.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n.normal.clone().normalize());
+}
+function createStrapNode(parent,t=.5,skipMirror=false){
+  const n={
+    kind:'node',id:`N${nodes.length+1}`,source:'strap',group:new THREE.Group(),
+    ringVisible:false,diameterMM:40,thicknessMM:6,sizeMM:10,parent,t,normal:new THREE.Vector3(0,0,1),mirrorPartner:null
+  };
+  nodes.push(n);scene.add(n.group);rebuildNodeVisual(n);updateAllGeometry();
+  if(mirrorMode&&!skipMirror&&parent.mirrorPartner){
+    const mate=createStrapNode(parent.mirrorPartner,t,true);
+    mate.sizeMM=n.sizeMM;n.mirrorPartner=mate;mate.mirrorPartner=n;rebuildNodeVisual(mate);
+  }
+  return n;
 }
 
-function findExistingMirroredAnchor(source){
-  const target=mirrorWorldPoint(source.position);
-  let best=null,bestD=.08;
-  for(const a of anchors){
-    if(a===source)continue;
-    const d=a.position.distanceTo(target);
-    if(d<bestD){best=a;bestD=d;}
+function mirrorPoint(p){return new THREE.Vector3(-p.x,p.y,p.z)}
+function mirroredBodyHit(p){
+  const targetP=mirrorPoint(p);
+  const dir=new THREE.Vector3(1,0,0);
+  const origins=[targetP.clone().add(new THREE.Vector3(2,0,0)),targetP.clone().add(new THREE.Vector3(-2,0,0))];
+  let best=null,bestD=Infinity;
+  for(let j=0;j<2;j++){
+    raycaster.set(origins[j],j===0?new THREE.Vector3(-1,0,0):new THREE.Vector3(1,0,0));
+    const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
+    for(const h of hits){
+      const d=h.point.distanceTo(targetP);if(d<bestD){best=h;bestD=d}
+    }
   }
   return best;
 }
-
-function createOrGetMirroredAnchor(source){
-  if(isOnMirrorAxis(source))return source;
-  if(source.userData.mirrorPartner)return source.userData.mirrorPartner;
-
-  const existing=findExistingMirroredAnchor(source);
-  if(existing){
-    existing.userData.diameterMM=source.userData.diameterMM;
-    existing.userData.thicknessMM=source.userData.thicknessMM;
-    rebuildRingGeometry(existing);
-    setMirrorPartners(source,existing);
-    return existing;
+function findNearbySurfaceNode(p,except=null){
+  let best=null,bestD=.075;
+  for(const n of nodes){
+    if(n===except||n.source!=='surface')continue;
+    const d=n.group.position.distanceTo(p);if(d<bestD){best=n;bestD=d}
   }
-
-  const mh=findMirroredBodyHitFromPoint(source.position);
-  if(!mh)return null;
-  const partner=makeAnchor(mh,source);
-  partner.userData.diameterMM=source.userData.diameterMM;
-  partner.userData.thicknessMM=source.userData.thicknessMM;
-  rebuildRingGeometry(partner);
-  setMirrorPartners(source,partner);
-  return partner;
+  return best;
+}
+function createMirroredSurfaceNode(src){
+  if(Math.abs(src.group.position.x)<.012)return src;
+  if(src.mirrorPartner)return src.mirrorPartner;
+  const target=mirrorPoint(src.group.position),existing=findNearbySurfaceNode(target,src);
+  if(existing){existing.ringVisible=src.ringVisible;existing.diameterMM=src.diameterMM;existing.thicknessMM=src.thicknessMM;existing.sizeMM=src.sizeMM;rebuildNodeVisual(existing);return existing}
+  const h=mirroredBodyHit(src.group.position);if(!h)return null;
+  const m=createSurfaceNode(h,src.ringVisible,true);
+  m.diameterMM=src.diameterMM;m.thicknessMM=src.thicknessMM;m.sizeMM=src.sizeMM;rebuildNodeVisual(m);return m;
 }
 
-function findConnectionBetween(a,b){
-  return connections.find(c=>
-    (c.a===a&&c.b===b)||(c.a===b&&c.b===a)
-  )||null;
+function connectionBetween(a,b){
+  return connections.find(c=>(c.a===a&&c.b===b)||(c.a===b&&c.b===a))||null;
 }
-
-function ensureMirroredConnection(c){
-  if(c.mirrorPartner)return c.mirrorPartner;
-
-  const ma=ensureMirroredEndpoint(c.a);
-  const mb=ensureMirroredEndpoint(c.b);
-  if(!ma||!mb)return null;
-
-  if(ma===c.a && mb===c.b){
-    c.mirrorPartner=c;
-    return c;
-  }
-
-  const existing=findConnectionBetween(ma,mb);
-  if(existing){
-    existing.widthMM=c.widthMM;
-    existing.slack=c.slack;
-    existing.controlPoint=c.controlPoint?mirrorWorldPoint(c.controlPoint):null;
-    updateConnection(existing);
-    setMirrorPartners(c,existing);
-    return existing;
-  }
-
-  const mc=makeConnection(ma,mb,c);
-  mc.widthMM=c.widthMM;
-  mc.slack=c.slack;
-  mc.controlPoint=c.controlPoint?mirrorWorldPoint(c.controlPoint):null;
-  updateConnection(mc);
-  setMirrorPartners(c,mc);
-  return mc;
-}
-
-function createOrGetMirroredStrapAnchor(sa){
-  if(sa.mirrorPartner)return sa.mirrorPartner;
-  const mc=ensureMirroredConnection(sa.connection);
-  if(!mc)return null;
-
-  const existing=strapAnchors.find(x=>x.connection===mc && Math.abs(x.t-sa.t)<.015);
-  if(existing){
-    existing.sizeMM=sa.sizeMM;
-    updateStrapAnchorGeometry(existing);
-    setMirrorPartners(sa,existing);
-    return existing;
-  }
-
-  const partner=makeStrapAnchor(mc,sa.t,sa);
-  partner.sizeMM=sa.sizeMM;
-  updateStrapAnchorGeometry(partner);
-  setMirrorPartners(sa,partner);
-  return partner;
-}
-
-function ensureMirroredEndpoint(ep){
-  const k=kindOf(ep);
-  if(k==='anchor')return createOrGetMirroredAnchor(ep);
-  if(k==='strapAnchor')return createOrGetMirroredStrapAnchor(ep);
-  return null;
-}
-
-function mirrorSelectedObject(){
-  const k=kindOf(selected);
-  if(k==='anchor')createOrGetMirroredAnchor(selected);
-  else if(k==='connection')ensureMirroredConnection(selected);
-  else if(k==='strapAnchor')createOrGetMirroredStrapAnchor(selected);
-
-  refreshSelectionVisuals();
-  refreshMirrorSelectedBubble();
-}
-
-function findMirrorConnection(c){
-  if(!c?.a?.userData?.mirrorPartner||!c?.b?.userData?.mirrorPartner)return null;
-  return connections.find(x=>
-    (x.a===c.a.userData.mirrorPartner&&x.b===c.b.userData.mirrorPartner)||
-    (x.b===c.a.userData.mirrorPartner&&x.a===c.b.userData.mirrorPartner)
-  )||null;
-}
-
-function makeAnchor(hit,mirrorPartner=null){
-  const g=new THREE.Group();
-  g.userData={
-    kind:'anchor',
-    id:`A${anchors.length+1}`,
-    normal:new THREE.Vector3(),
-    diameterMM:DEFAULT_RING_DIAMETER_MM,
-    thicknessMM:DEFAULT_RING_THICKNESS_MM,
-    mirrorPartner
-  };
-
-  const ring=new THREE.Mesh(
-    new THREE.TorusGeometry(ringMajorRadius(g),ringTubeRadius(g),16,64),
-    anchorMat
-  );
-  ring.userData.kind='anchorRing';
-  g.add(ring);
-
-  const hitDisc=new THREE.Mesh(
-    new THREE.CircleGeometry(Math.max(ringMajorRadius(g)*1.28,.055),32),
-    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.02,side:THREE.DoubleSide})
-  );
-  hitDisc.position.z=-.004;
-  hitDisc.userData.kind='anchorHit';
-  g.add(hitDisc);
-
-  positionAnchor(g,hit);
-  scene.add(g);
-  anchors.push(g);
-
-  if(mirrorMode && !mirrorPartner && Math.abs(g.position.x)>.035){
-    const mirroredHit=findMirroredBodyHitFromPoint(g.position);
-    if(mirroredHit){
-      const partner=makeAnchor(mirroredHit,g);
-      g.userData.mirrorPartner=partner;
-      partner.userData.mirrorPartner=g;
-      partner.userData.diameterMM=g.userData.diameterMM;
-      partner.userData.thicknessMM=g.userData.thicknessMM;
-      rebuildRingGeometry(partner);
-    }
-  }
-  return g;
-}
-function positionAnchor(g,hit){
-  hit=snapSurfacePointToMirrorAxis(hit);
-  const n=worldNormal(hit);
-
-  g.userData.surfacePoint=hit.point.clone();
-  if(Math.abs(g.userData.surfacePoint.x)<=MIRROR_AXIS_SNAP)g.userData.surfacePoint.x=0;
-
-  g.userData.normal.copy(n);
-  g.position.copy(g.userData.surfacePoint)
-    .addScaledVector(n,surfaceOffsetScene()+ringTubeRadius(g));
-
-  if(Math.abs(g.userData.surfacePoint.x)<=MIRROR_AXIS_SNAP)g.position.x=0;
-
-  g.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);
-
-  connections.filter(c=>c.a===g||c.b===g).forEach(updateConnection);
-
-  const mp=g.userData.mirrorPartner;
-  if(mp && !g.userData._syncingMirror && !isOnMirrorAxis(g)){
-    const mh=findMirroredBodyHitFromPoint(g.position);
-    if(mh){
-      g.userData._syncingMirror=true;
-      mp.userData._syncingMirror=true;
-      positionAnchor(mp,mh);
-      mp.userData._syncingMirror=false;
-      g.userData._syncingMirror=false;
-    }
-  }
-}
-function ringPlaneDirection(anchor,worldDirection){
-  // Convert the incoming world-space direction into the local XY plane of the ring.
-  const qInv=anchor.quaternion.clone().invert();
-  const local=worldDirection.clone().applyQuaternion(qInv);
-  local.z=0;
-  if(local.lengthSq()<1e-8)local.set(1,0,0);
-  local.normalize();
-  return local;
-}
-
-function ringEdgePoint(anchor,otherAnchor){
-  // Every strap aims at the ring centre; the visible leather ends at the near
-  // outside edge of the torus rather than entering the hole.
-  const worldDir=endpointWorld(otherAnchor).sub(anchor.position).normalize();
-  const localDir=ringPlaneDirection(anchor,worldDir);
-  const localPoint=localDir.multiplyScalar(ringMajorRadius(anchor)+ringTubeRadius(anchor)*.45);
-  return anchor.localToWorld(localPoint.clone());
-}
-
-function wrapArcGeometry(anchor,otherAnchor,widthMM,color=0x171718){
-  // Short leather-coloured arc on the metal ring to visually represent
-  // the strap wrapping around the ring.
-  const worldDir=endpointWorld(otherAnchor).sub(anchor.position).normalize();
-  const localDir=ringPlaneDirection(anchor,worldDir);
-  const centerAngle=Math.atan2(localDir.y,localDir.x);
-
-  // Wider straps cover a slightly larger ring segment.
-  const strapFactor=THREE.MathUtils.clamp(widthMM/30,.5,2);
-  const arcHalf=THREE.MathUtils.clamp(.32*strapFactor,.24,.62);
-
-  const curve=new THREE.Curve();
-  curve.getPoint=function(t){
-    const a=centerAngle-arcHalf+t*(arcHalf*2);
-    return new THREE.Vector3(
-      Math.cos(a)*ringMajorRadius(anchor),
-      Math.sin(a)*ringMajorRadius(anchor),
-      .004
-    );
-  };
-
-  const tubeRadius=Math.min(ringTubeRadius(anchor)*1.18,.024);
-  const geom=new THREE.TubeGeometry(curve,24,tubeRadius,10,false);
-  const mat=new THREE.MeshStandardMaterial({
-    color,
-    roughness:.48,
-    metalness:0,
-    polygonOffset:true,
-    polygonOffsetFactor:-1,
-    polygonOffsetUnits:-1
-  });
-  const mesh=new THREE.Mesh(geom,mat);
-  mesh.userData.kind='wrapArc';
-  return mesh;
-}
-
-function rebuildRingWraps(anchor){
-  // Remove previous leather wrap overlays.
-  const old=anchor.children.filter(ch=>ch.userData?.kind==='wrapArc');
-  old.forEach(ch=>{
-    anchor.remove(ch);
-    ch.geometry?.dispose?.();
-    ch.material?.dispose?.();
-  });
-
-  // One wrap segment per connected strap.
-  connections.filter(c=>c.a===anchor||c.b===anchor).forEach(c=>{
-    const other=c.a===anchor?c.b:c.a;
-    const wrap=wrapArcGeometry(anchor,other,c.widthMM,0x171718);
-    anchor.add(wrap);
-  });
-}
-
-function makeConnection(a,b,mirrorPartner=null){
-  if(a===b)return;
-  if(!isConnectable(a)||!isConnectable(b))return;
-
+function createConnection(a,b,skipMirror=false){
+  if(!a||!b||a===b)return null;
+  const existing=connectionBetween(a,b);if(existing)return existing;
   const c={
-    kind:'connection',
-    id:`S${connections.length+1}`,
-    a,b,
-    widthMM:30,
-    slack:8,
-    controlPoint:null,
-    group:new THREE.Group(),
-    mirrorPartner
+    kind:'connection',id:`S${connections.length+1}`,a,b,group:new THREE.Group(),
+    widthMM:30,slack:8,bendSide:0,bendNormal:0,bendAlong:0,
+    baseCurve:null,renderCurve:null,handle:null,handleHit:null,mirrorPartner:null
   };
-  scene.add(c.group);
-  connections.push(c);
-  updateConnection(c);
+  connections.push(c);scene.add(c.group);updateAllGeometry();
 
-  if(mirrorMode && !mirrorPartner){
-    const ma=endpointMirror(a), mb=endpointMirror(b);
-    if(ma && mb){
-      const mc=makeConnection(ma,mb,c);
-      c.mirrorPartner=mc;
+  if(mirrorMode&&!skipMirror){
+    const ma=ensureMirrorNode(a),mb=ensureMirrorNode(b);
+    if(ma&&mb&&!(ma===a&&mb===b)){
+      const mc=createConnection(ma,mb,true);
+      c.mirrorPartner=mc;mc.mirrorPartner=c;
     }
   }
-
-  selectObject(c);
-  showToast(`${endpointLabel(a)} → ${endpointLabel(b)}`);
   return c;
 }
-function surfaceMidpoint(c){
-  const p1=kindOf(c.a)==='anchor'?ringEdgePoint(c.a,c.b):endpointWorld(c.a);
-  const p2=kindOf(c.b)==='anchor'?ringEdgePoint(c.b,c.a):endpointWorld(c.b);
-  const mid=p1.clone().lerp(p2,.5);
-  const ndc=mid.clone().project(camera);raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
-  const h=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0];
-  return h?h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008):mid;
+function ensureMirrorNode(n){
+  if(n.mirrorPartner)return n.mirrorPartner;
+  if(n.source==='surface'){
+    const m=createMirroredSurfaceNode(n);if(m!==n){n.mirrorPartner=m;m.mirrorPartner=n}return m;
+  }
+  if(n.source==='strap'){
+    const pc=n.parent?.mirrorPartner;if(!pc)return null;
+    const existing=nodes.find(x=>x.source==='strap'&&x.parent===pc&&Math.abs(x.t-n.t)<.012);
+    const m=existing||createStrapNode(pc,n.t,true);m.sizeMM=n.sizeMM;m.ringVisible=n.ringVisible;m.diameterMM=n.diameterMM;m.thicknessMM=n.thicknessMM;rebuildNodeVisual(m);
+    n.mirrorPartner=m;m.mirrorPartner=n;return m;
+  }
+  return null;
+}
+function mirrorSelectedObject(){
+  if(!selected)return;
+  if(selected.kind==='node'){
+    const m=ensureMirrorNode(selected);
+    if(m&&m!==selected){selected.mirrorPartner=m;m.mirrorPartner=selected;showToast('Knoten gespiegelt & gekoppelt')}
+  }else if(selected.kind==='connection'){
+    const ma=ensureMirrorNode(selected.a),mb=ensureMirrorNode(selected.b);
+    if(ma&&mb){
+      const mc=createConnection(ma,mb,true);
+      mc.widthMM=selected.widthMM;mc.slack=selected.slack;
+      mc.bendSide=-selected.bendSide;mc.bendNormal=selected.bendNormal;mc.bendAlong=selected.bendAlong;
+      selected.mirrorPartner=mc;mc.mirrorPartner=selected;updateAllGeometry();showToast('Riemen gespiegelt & gekoppelt');
+    }
+  }
+  refreshSelectionVisuals();
 }
 
-function projectPointToBodyFromCamera(point, offset=.045){
-  const ndc=point.clone().project(camera);
-  raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
+function averageNormal(a,b){
+  const n=nodeNormal(a).add(nodeNormal(b));
+  return n.lengthSq()>1e-8?n.normalize():new THREE.Vector3(0,0,1);
+}
+function castToSurfaceFrom(mid,normal){
+  const origin=mid.clone().addScaledVector(normal,1.2);
+  raycaster.set(origin,normal.clone().negate());
   const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
-  if(!hits.length) return point.clone();
-  const h=hits[0];
-  return h.point.clone().addScaledVector(worldNormal(h),Math.max(.001,surfaceOffsetScene()+offset*.25));
+  if(hits.length)return {point:hits[0].point.clone(),normal:worldNormal(hits[0])};
+  return {point:mid.clone(),normal:normal.clone()};
 }
-
-function surfaceSampledPath(c){
-  const p1=kindOf(c.a)==='anchor'?ringEdgePoint(c.a,c.b):endpointWorld(c.a);
-  const p2=kindOf(c.b)==='anchor'?ringEdgePoint(c.b,c.a):endpointWorld(c.b);
-
-  if(!c.controlPoint)c.controlPoint=surfaceMidpoint(c);
-
-  const cp=c.controlPoint.clone();
-  cp.y-=(c.slack/100)*.20;
-
-  const guide=new THREE.CatmullRomCurve3([p1,cp,p2],false,'centripetal',.55);
-
-  // Important: use only a few surface support points. V0.4b used many
-  // individual projections, which reproduced every tiny mesh/raycast wobble.
+function controlFrame(c){
+  const A=nodePosition(c.a),B=nodePosition(c.b),mid=A.clone().lerp(B,.5);
+  const avgN=averageNormal(c.a,c.b),surf=castToSurfaceFrom(mid,avgN);
+  const base=surf.point.clone().addScaledVector(surf.normal,surfaceOffsetScene()+.008);
+  const tangent=B.clone().sub(A).normalize();
+  let side=new THREE.Vector3().crossVectors(surf.normal,tangent);
+  if(side.lengthSq()<1e-8)side=new THREE.Vector3(1,0,0);
+  side.normalize();
+  const normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
+  return {base,tangent,side,normal};
+}
+function controlPoint(c){
+  const f=controlFrame(c);
+  return f.base.clone()
+    .addScaledVector(f.tangent,c.bendAlong)
+    .addScaledVector(f.side,c.bendSide)
+    .addScaledVector(f.normal,c.bendNormal)
+    .add(new THREE.Vector3(0,-(c.slack/100)*.22,0));
+}
+function visibleEndpoint(node,toward){
+  const center=nodePosition(node);
+  if(!node.ringVisible)return center;
+  const qInv=node.group.quaternion.clone().invert();
+  const d=toward.clone().sub(center).applyQuaternion(qInv);d.z=0;
+  if(d.lengthSq()<1e-8)d.set(1,0,0);d.normalize();
+  return node.group.localToWorld(d.multiplyScalar(ringMajor(node)+ringTube(node)*.45));
+}
+function buildBaseCurve(c){
+  const ctrl=controlPoint(c);
+  const a=visibleEndpoint(c.a,ctrl),b=visibleEndpoint(c.b,ctrl);
+  const guide=new THREE.CatmullRomCurve3([a,ctrl,b],false,'centripetal',.55);
+  const tight=1-THREE.MathUtils.clamp(c.slack/100,0,1);
   const supports=[];
-  const SUPPORTS=7;
-  const hug=1-THREE.MathUtils.clamp(c.slack/100,0,1);
-
-  for(let i=0;i<SUPPORTS;i++){
-    const t=i/(SUPPORTS-1);
-    let p=guide.getPoint(t);
-
-    if(i!==0 && i!==SUPPORTS-1 && hug>.08){
-      const snapped=projectPointToBodyFromCamera(p,.010);
-
-      // Ignore implausible jumps to another body part/occluding limb.
-      if(snapped.distanceTo(p)<.34){
-        p=p.clone().lerp(snapped,hug*.72);
+  const N=9;
+  for(let i=0;i<N;i++){
+    const t=i/(N-1);let p=guide.getPoint(t);
+    if(i>0&&i<N-1&&tight>.08){
+      const normal=averageNormal(c.a,c.b);
+      const origin=p.clone().addScaledVector(normal,.8);
+      raycaster.set(origin,normal.clone().negate());
+      const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
+      if(hits.length&&hits[0].point.distanceTo(p)<.42){
+        const snap=hits[0].point.clone().addScaledVector(worldNormal(hits[0]),surfaceOffsetScene()+.008);
+        p.lerp(snap,tight*.62);
       }
     }
     supports.push(p);
   }
-
-  // Mild moving-average pass on internal support points.
-  const relaxed=supports.map(p=>p.clone());
-  for(let i=1;i<supports.length-1;i++){
-    relaxed[i]
-      .multiplyScalar(.62)
-      .addScaledVector(supports[i-1],.19)
-      .addScaledVector(supports[i+1],.19);
-  }
-  relaxed[0].copy(p1);
-  relaxed[relaxed.length-1].copy(p2);
-
-  // Then fit one genuinely smooth curve through those few supports.
-  const smoothCurve=new THREE.CatmullRomCurve3(relaxed,false,'centripetal',.5);
-  return smoothCurve.getPoints(40);
+  const curve=new THREE.CatmullRomCurve3(supports,false,'centripetal',.5);
+  c.baseCurve=curve;c.renderCurve=curve;return curve;
 }
 
-function buildRibbonGeometry(points,widthMM,thicknessMM=2.5){
-  const halfW=.15*(widthMM/30)*.5;
-  const halfT=.018*(thicknessMM/2.5)*.5;
+function strapNodesOn(c){return nodes.filter(n=>n.source==='strap'&&n.parent===c).sort((x,y)=>x.t-y.t)}
+function updateStrapNode(n){
+  if(!n.parent?.baseCurve)return;
+  const t=THREE.MathUtils.clamp(n.t,0,1),curve=n.parent.baseCurve;
+  const p=curve.getPoint(t),tan=curve.getTangent(t).normalize();
+  const avgN=averageNormal(n.parent.a,n.parent.b);
+  let side=new THREE.Vector3().crossVectors(avgN,tan);if(side.lengthSq()<1e-8)side.set(1,0,0);side.normalize();
+  n.normal=new THREE.Vector3().crossVectors(tan,side).normalize();
+  n.group.position.copy(p);n.group.quaternion.identity();
+}
 
-  const verts=[];
-  const indices=[];
-  const uvs=[];
-
-  const upFallback=new THREE.Vector3(0,1,0);
-
+function ribbonGeometry(points,widthMM,thicknessMM=2.5){
+  const halfW=Math.max(.0002,.15*(widthMM/30)*.5),halfT=.009*(thicknessMM/2.5);
+  const verts=[],idx=[],uv=[];
   const frames=[];
   for(let i=0;i<points.length;i++){
-    const prev=points[Math.max(0,i-1)];
-    const next=points[Math.min(points.length-1,i+1)];
+    const prev=points[Math.max(0,i-1)],next=points[Math.min(points.length-1,i+1)];
     const tangent=next.clone().sub(prev).normalize();
-
-    // Approximate surface normal by raycasting the current point from camera.
-    const ndc=points[i].clone().project(camera);
-    raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
-    const h=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0];
-
-    let normal=h?worldNormal(h):camera.getWorldDirection(new THREE.Vector3()).negate();
-    normal.normalize();
-
-    // Width axis lies tangent to the body surface and perpendicular to strap direction.
-    let side=new THREE.Vector3().crossVectors(normal,tangent);
-    if(side.lengthSq()<1e-6) side=new THREE.Vector3().crossVectors(upFallback,tangent);
-    side.normalize();
-
-    // Recompute normal for a stable orthogonal frame.
-    normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
-
-    if(i>0 && side.dot(frames[i-1].side)<0){
-      side.negate();
-      normal.negate();
-    }
-    frames.push({tangent,side,normal});
+    const normal=averageNormal({normal:new THREE.Vector3(0,0,1)},{normal:new THREE.Vector3(0,0,1)});
+    let viewN=camera.getWorldDirection(new THREE.Vector3()).negate();
+    let side=new THREE.Vector3().crossVectors(viewN,tangent);if(side.lengthSq()<1e-8)side.set(1,0,0);side.normalize();
+    const n=new THREE.Vector3().crossVectors(tangent,side).normalize();
+    if(i&&side.dot(frames[i-1].side)<0){side.negate();n.negate()}frames.push({side,normal:n});
   }
-
-  // 4 vertices per path point: top-left, top-right, bottom-left, bottom-right
   for(let i=0;i<points.length;i++){
-    const p=points[i], {side,normal}=frames[i];
-    const l=p.clone().addScaledVector(side,-halfW);
-    const r=p.clone().addScaledVector(side, halfW);
+    const p=points[i],f=frames[i],l=p.clone().addScaledVector(f.side,-halfW),r=p.clone().addScaledVector(f.side,halfW);
+    const tl=l.clone().addScaledVector(f.normal,halfT),tr=r.clone().addScaledVector(f.normal,halfT),bl=l.clone().addScaledVector(f.normal,-halfT),br=r.clone().addScaledVector(f.normal,-halfT);
+    [tl,tr,bl,br].forEach(v=>verts.push(v.x,v.y,v.z));const u=i/(points.length-1);uv.push(0,u,1,u,0,u,1,u);
+  }
+  for(let i=0;i<points.length-1;i++){const a=i*4,b=(i+1)*4;idx.push(a,a+1,b,a+1,b+1,b,a+2,b+2,a+3,a+3,b+2,b+3,a+2,a,b+2,a,b,b+2,a+1,a+3,b+1,a+3,b+3,b+1)}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();return g;
+}
+function addRibbon(c,points){
+  if(points.length<2)return;
+  const mesh=new THREE.Mesh(ribbonGeometry(points,c.widthMM),new THREE.MeshStandardMaterial({
+    color:0x171718,roughness:.5,metalness:0,side:THREE.DoubleSide,
+    emissive:selected===c?0x2c271d:0x000000,emissiveIntensity:selected===c?.75:0
+  }));
+  mesh.castShadow=true;mesh.userData={kind:'connectionMesh',owner:c};c.group.add(mesh);
+}
+function renderConnection(c){
+  while(c.group.children.length){const q=c.group.children.pop();q.geometry?.dispose?.();q.material?.dispose?.()}
+  const curve=c.baseCurve;if(!curve)return;
 
-    const tl=l.clone().addScaledVector(normal, halfT);
-    const tr=r.clone().addScaledVector(normal, halfT);
-    const bl=l.clone().addScaledVector(normal,-halfT);
-    const br=r.clone().addScaledVector(normal,-halfT);
+  const split=strapNodesOn(c).filter(n=>n.ringVisible);
+  const breaks=[{t:0,node:c.a,start:true},...split.map(n=>({t:n.t,node:n})),{t:1,node:c.b,end:true}];
 
-    [tl,tr,bl,br].forEach(v=>verts.push(v.x,v.y,v.z));
-    const u=i/(points.length-1);
-    uvs.push(0,u, 1,u, 0,u, 1,u);
+  for(let s=0;s<breaks.length-1;s++){
+    const L=breaks[s],R=breaks[s+1],pts=[];
+    const count=Math.max(8,Math.ceil((R.t-L.t)*42));
+    for(let i=0;i<=count;i++)pts.push(curve.getPoint(THREE.MathUtils.lerp(L.t,R.t,i/count)));
+
+    if(L.t>0&&L.node?.ringVisible&&pts.length>1){
+      pts[0]=visibleEndpoint(L.node,pts[1]);
+    }
+    if(R.t<1&&R.node?.ringVisible&&pts.length>1){
+      pts[pts.length-1]=visibleEndpoint(R.node,pts[pts.length-2]);
+    }
+    addRibbon(c,pts);
   }
 
-  for(let i=0;i<points.length-1;i++){
-    const a=i*4,b=(i+1)*4;
-
-    // top
-    indices.push(a,a+1,b, a+1,b+1,b);
-    // bottom
-    indices.push(a+2,b+2,a+3, a+3,b+2,b+3);
-    // left side
-    indices.push(a+2,a,b+2, a,b,b+2);
-    // right side
-    indices.push(a+1,a+3,b+1, a+3,b+3,b+1);
-  }
-
-  // end caps
-  const s=0,e=(points.length-1)*4;
-  indices.push(s+2,s+1,s, s+2,s+3,s+1);
-  indices.push(e,e+1,e+2, e+1,e+3,e+2);
-
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
-  g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
-  g.setIndex(indices);
-  g.computeVertexNormals();
-  return g;
+  const cp=controlPoint(c);
+  const h=new THREE.Mesh(new THREE.SphereGeometry(.058,22,14),new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.24}));
+  h.position.copy(cp);h.userData={kind:'strapHandle',owner:c};c.group.add(h);c.handle=h;
+  const hh=new THREE.Mesh(new THREE.SphereGeometry(.115,16,10),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
+  hh.position.copy(cp);hh.userData={kind:'strapHandleHit',owner:c};c.group.add(hh);c.handleHit=hh;
 }
 
-function updateConnection(c){
-  if(!c||!c.group)return;
-
-  const points=surfaceSampledPath(c);
-
-  while(c.group.children.length){
-    const q=c.group.children.pop();
-    q.geometry?.dispose?.();
-    q.material?.dispose?.();
+function updateAllGeometry(){
+  for(const n of nodes)if(n.source==='surface')updateSurfaceNodeTransform(n);
+  for(let pass=0;pass<5;pass++){
+    for(const c of connections)buildBaseCurve(c);
+    for(const n of nodes)if(n.source==='strap')updateStrapNode(n);
   }
-
-  const geom=buildRibbonGeometry(points,c.widthMM,2.5);
-  const mesh=new THREE.Mesh(
-    geom,
-    new THREE.MeshStandardMaterial({
-      color:0x171718,
-      roughness:.50,
-      metalness:0,
-      side:THREE.DoubleSide,
-      emissive: selected===c ? 0x26221a : 0x000000,
-      emissiveIntensity: selected===c ? .65 : 0
-    })
-  );
-  mesh.castShadow=true;
-  mesh.userData={kind:'connectionMesh',owner:c};
-  c.group.add(mesh);
-
-  const h=new THREE.Mesh(
-    new THREE.SphereGeometry(.062,24,16),
-    new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.24})
-  );
-  h.position.copy(c.controlPoint);
-  h.userData={kind:'strapHandle',owner:c};
-  c.group.add(h);
-
-  const hh=new THREE.Mesh(
-    new THREE.SphereGeometry(.115,18,12),
-    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.001})
-  );
-  hh.position.copy(c.controlPoint);
-  hh.userData={kind:'strapHandleHit',owner:c};
-  c.group.add(hh);
-
-  c.handle=h;
-  c.handleHit=hh;
-  if(kindOf(c.a)==='anchor')rebuildRingWraps(c.a);
-  if(kindOf(c.b)==='anchor')rebuildRingWraps(c.b);
-  strapAnchors.filter(sa=>sa.connection===c).forEach(updateStrapAnchor);
+  for(const c of connections)renderConnection(c);
+  for(const n of nodes)rebuildNodeVisual(n);
   refreshSelectionVisuals();
+}
+function paired(o){return o?.mirrorPartner&&o.mirrorPartner!==o}
+
+function selectObject(o){
+  selected=o;refreshSelectionVisuals();showSelection();
+}
+function refreshSelectionVisuals(){
+  for(const n of nodes)rebuildNodeVisual(n);
+  for(const c of connections){
+    for(const child of c.group.children){
+      if(child.userData?.kind==='connectionMesh'&&child.material){
+        child.material.emissive.setHex(selected===c?0x2c271d:0x000000);
+        child.material.emissiveIntensity=selected===c?.75:0;
+      }
+    }
+  }
+  mirrorSelectedBtn?.classList.toggle('paired',paired(selected));
+}
+function hideSelection(){
+  selectionPanel.classList.add('hidden');ringControls.classList.add('hidden');strapControls.classList.add('hidden');strapAnchorControls.classList.add('hidden');
+}
+function setMiniToggle(btn,on){btn.classList.toggle('active',on);btn.setAttribute('aria-pressed',on?'true':'false');btn.textContent=on?'An':'Aus'}
+function showSelection(){
+  if(mode!=='build'||!selected){hideSelection();return}
+  selectionPanel.classList.remove('hidden');
+  ringControls.classList.add('hidden');strapControls.classList.add('hidden');strapAnchorControls.classList.add('hidden');
+
+  if(selected.kind==='node'){
+    if(selected.source==='surface'){
+      ringControls.classList.remove('hidden');
+      selectionLabel.textContent='KNOTEN';selectionTitle.textContent=selected.id;
+      ringDiameterSlider.value=selected.diameterMM;ringDiameterValue.textContent=selected.diameterMM;
+      ringThicknessSlider.value=selected.thicknessMM;ringThicknessValue.textContent=selected.thicknessMM;
+      surfaceNodeSizeSlider.value=selected.sizeMM;surfaceNodeSizeValue.textContent=selected.sizeMM;
+      setMiniToggle(surfaceNodeRingToggle,selected.ringVisible);
+    }else{
+      strapAnchorControls.classList.remove('hidden');
+      selectionLabel.textContent='RIEMEN-KNOTEN';selectionTitle.textContent=selected.id;
+      strapAnchorSlider.value=Math.round(selected.t*100);strapAnchorValue.textContent=Math.round(selected.t*100);
+      strapAnchorSizeSlider.value=selected.sizeMM;strapAnchorSizeValue.textContent=selected.sizeMM;
+      setMiniToggle(strapNodeRingToggle,selected.ringVisible);
+    }
+  }else{
+    strapControls.classList.remove('hidden');
+    selectionLabel.textContent='RIEMEN';selectionTitle.textContent=selected.id;
+    widthSlider.value=selected.widthMM;widthValue.textContent=selected.widthMM;slackSlider.value=selected.slack;
+  }
 }
 
 function removeConnection(c){
-  const a=c.a,b=c.b;
-  strapAnchors.filter(sa=>sa.connection===c).slice().forEach(removeStrapAnchor);
-  if(c.mirrorPartner)c.mirrorPartner.mirrorPartner=null;
-  scene.remove(c.group);
-  const i=connections.indexOf(c);
-  if(i>=0)connections.splice(i,1);
-  if(kindOf(a)==='anchor')rebuildRingWraps(a);
-  if(kindOf(b)==='anchor')rebuildRingWraps(b);
+  const attached=nodes.filter(n=>n.source==='strap'&&n.parent===c).slice();
+  attached.forEach(removeNode);
+  if(c.mirrorPartner&&c.mirrorPartner!==c)c.mirrorPartner.mirrorPartner=null;
+  scene.remove(c.group);const i=connections.indexOf(c);if(i>=0)connections.splice(i,1);
 }
-function removeAnchor(a){
-  connections.filter(c=>c.a===a||c.b===a).slice().forEach(removeConnection);
-  if(a.userData.mirrorPartner)a.userData.mirrorPartner.userData.mirrorPartner=null;
-  scene.remove(a);const i=anchors.indexOf(a);if(i>=0)anchors.splice(i,1);
-}
-function resetHarness(){strapAnchors.slice().forEach(removeStrapAnchor);connections.slice().forEach(removeConnection);anchors.slice().forEach(a=>scene.remove(a));anchors.length=0;selected=null;connectStart=null;hideSelection();refreshMirrorSelectedBubble();}
-function setHelpers(v){
-  anchors.forEach(a=>a.visible=v);
-  strapAnchors.forEach(sa=>sa.group.visible=v);
-  connections.forEach(c=>{
-    if(c.handle)c.handle.visible=v;if(c.handleHit)c.handleHit.visible=v;
-  });
-}
-function showSelection(){
-  if(mode!=='build'){hideSelection();return;}
-
-  const k=kindOf(selected);
-  const showRing=(buildTool==='ring' && k==='anchor');
-  const showStrap=(buildTool==='connect' && k==='connection');
-  const showStrapAnchor=(buildTool==='connect' && k==='strapAnchor');
-
-  ringControls.classList.toggle('hidden',!showRing);
-  strapControls.classList.toggle('hidden',!showStrap);
-  strapAnchorControls.classList.toggle('hidden',!showStrapAnchor);
-
-  if(showRing){
-    selectionPanel.classList.remove('hidden');
-    selectionLabel.textContent='RING';
-    selectionTitle.textContent=selected.userData.id;
-    ringDiameterSlider.value=selected.userData.diameterMM;
-    ringDiameterValue.textContent=selected.userData.diameterMM;
-    ringThicknessSlider.value=selected.userData.thicknessMM;
-    ringThicknessValue.textContent=selected.userData.thicknessMM;
-  }else if(showStrap){
-    selectionPanel.classList.remove('hidden');
-    selectionLabel.textContent='RIEMEN';
-    selectionTitle.textContent=selected.id;
-    widthSlider.value=selected.widthMM;
-    widthValue.textContent=selected.widthMM;
-    slackSlider.value=selected.slack;
-  }else if(showStrapAnchor){
-    selectionPanel.classList.remove('hidden');
-    selectionLabel.textContent='RIEMEN-ANKER';
-    selectionTitle.textContent=selected.id;
-    strapAnchorSlider.value=Math.round(selected.t*100);
-    strapAnchorValue.textContent=Math.round(selected.t*100);
-    strapAnchorSizeSlider.value=selected.sizeMM;
-    strapAnchorSizeValue.textContent=selected.sizeMM;
-  }else{
-    selectionPanel.classList.add('hidden');
+function removeNode(n){
+  connections.filter(c=>c.a===n||c.b===n).slice().forEach(removeConnection);
+  if(n.source==='strap'){
+    // removing a strap node simply restores a continuous parent strap
   }
+  if(n.mirrorPartner&&n.mirrorPartner!==n)n.mirrorPartner.mirrorPartner=null;
+  scene.remove(n.group);const i=nodes.indexOf(n);if(i>=0)nodes.splice(i,1);
 }
-function hideSelection(){selectionPanel.classList.add('hidden');ringControls.classList.add('hidden');strapControls.classList.add('hidden');strapAnchorControls.classList.add('hidden');}
-function refreshSelectionVisuals(){
-  anchors.forEach(a=>{
-    a.children[0].material=(selected===a)?anchorSelectedMat:anchorMat;
-  });
-
-  strapAnchors.forEach(sa=>{
-    sa.group.children[0].material=(selected===sa)?anchorSelectedMat:anchorMat;
-  });
-
-  connections.forEach(c=>{
-    const mesh=c.group.children.find(ch=>ch.userData?.kind==='connectionMesh');
-    if(mesh?.material){
-      const active=selected===c;
-      mesh.material.emissive.setHex(active?0x2c271d:0x000000);
-      mesh.material.emissiveIntensity=active ? .75 : 0;
-      mesh.material.needsUpdate=true;
-    }
-  });
+function resetHarness(){
+  connections.slice().forEach(removeConnection);
+  nodes.slice().forEach(n=>{scene.remove(n.group)});
+  nodes.length=0;selected=null;connectStart=null;hideSelection();refreshSelectionVisuals();
 }
+resetBtn.addEventListener('click',resetHarness);
+deleteSelectedBtn.addEventListener('click',()=>{
+  if(!selected)return;
+  if(selected.kind==='node')removeNode(selected);else removeConnection(selected);
+  selected=null;hideSelection();updateAllGeometry();
+});
 
-function selectObject(obj){
-  selected=obj;
-  refreshSelectionVisuals();
-  refreshMirrorSelectedBubble();
-  showSelection();
-}
+ringDiameterSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='node')return;
+  selected.diameterMM=+ringDiameterSlider.value;ringDiameterValue.textContent=ringDiameterSlider.value;
+  if(paired(selected)){selected.mirrorPartner.diameterMM=selected.diameterMM}
+  updateAllGeometry();
+});
+ringThicknessSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='node')return;
+  selected.thicknessMM=+ringThicknessSlider.value;ringThicknessValue.textContent=ringThicknessSlider.value;
+  if(paired(selected))selected.mirrorPartner.thicknessMM=selected.thicknessMM;
+  updateAllGeometry();
+});
+surfaceNodeSizeSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='node')return;
+  selected.sizeMM=+surfaceNodeSizeSlider.value;surfaceNodeSizeValue.textContent=surfaceNodeSizeSlider.value;
+  if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;updateAllGeometry();
+});
+surfaceNodeRingToggle.addEventListener('click',()=>{
+  if(selected?.kind!=='node')return;
+  selected.ringVisible=!selected.ringVisible;
+  if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
+  setMiniToggle(surfaceNodeRingToggle,selected.ringVisible);updateAllGeometry();
+});
+strapNodeRingToggle.addEventListener('click',()=>{
+  if(selected?.kind!=='node'||selected.source!=='strap')return;
+  selected.ringVisible=!selected.ringVisible;
+  if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
+  setMiniToggle(strapNodeRingToggle,selected.ringVisible);updateAllGeometry();
+});
+widthSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='connection')return;
+  selected.widthMM=+widthSlider.value;widthValue.textContent=widthSlider.value;
+  if(paired(selected))selected.mirrorPartner.widthMM=selected.widthMM;updateAllGeometry();
+});
+slackSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='connection')return;
+  selected.slack=+slackSlider.value;
+  if(paired(selected))selected.mirrorPartner.slack=selected.slack;updateAllGeometry();
+});
+addStrapAnchorBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='connection')return;
+  const n=createStrapNode(selected,.5);
+  selectObject(n);
+});
+strapAnchorSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='node'||selected.source!=='strap')return;
+  selected.t=+strapAnchorSlider.value/100;strapAnchorValue.textContent=strapAnchorSlider.value;
+  if(paired(selected))selected.mirrorPartner.t=selected.t;updateAllGeometry();
+});
+strapAnchorSizeSlider.addEventListener('input',()=>{
+  if(selected?.kind!=='node'||selected.source!=='strap')return;
+  selected.sizeMM=+strapAnchorSizeSlider.value;strapAnchorSizeValue.textContent=strapAnchorSizeSlider.value;
+  if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;updateAllGeometry();
+});
+
 function interactiveHit(x,y){
   setPointerXY(x,y);
+  const nodeObjects=[];for(const n of nodes)nodeObjects.push(...n.group.children);
+  const h1=raycaster.intersectObjects(nodeObjects,true)[0];
+  if(h1?.object?.userData?.owner)return {kind:'node',owner:h1.object.userData.owner};
 
-  const ringObjs=[];
-  anchors.forEach(a=>ringObjs.push(...a.children.filter(ch=>ch.userData?.kind==='anchorRing'||ch.userData?.kind==='anchorHit')));
-
-  const strapAnchorObjs=[];
-  strapAnchors.forEach(sa=>strapAnchorObjs.push(...sa.group.children));
-
-  const strapObjs=[];
-  connections.forEach(c=>{
-    c.group.children.forEach(ch=>{
-      strapObjs.push(ch);
-    });
-  });
-
-  let groups=buildTool==='ring'
-    ? [ringObjs,strapAnchorObjs,strapObjs]
-    : [strapAnchorObjs,strapObjs,ringObjs];
-
-  for(const objs of groups){
-    if(!objs.length)continue;
-    const h=raycaster.intersectObjects(objs,true)[0];
-    if(!h)continue;
-    const a=anchors.find(a=>a.children.includes(h.object));
-    if(a)return{kind:'anchor',owner:a};
-    const sa=strapAnchors.find(sa=>sa.group.children.includes(h.object));
-    if(sa)return{kind:'strapAnchor',owner:sa};
-    if(h.object.userData.kind==='strapHandle' || h.object.userData.kind==='strapHandleHit')
-      return{kind:'strapHandle',owner:h.object.userData.owner};
-    if(h.object.userData.kind==='connectionMesh')return{kind:'connection',owner:h.object.userData.owner};
+  const handleObjects=[],meshObjects=[];
+  for(const c of connections){
+    for(const ch of c.group.children){
+      if(ch.userData?.kind==='strapHandle'||ch.userData?.kind==='strapHandleHit')handleObjects.push(ch);
+      if(ch.userData?.kind==='connectionMesh')meshObjects.push(ch);
+    }
   }
+  const hh=raycaster.intersectObjects(handleObjects,true)[0];
+  if(hh)return {kind:'handle',owner:hh.object.userData.owner};
+  const hm=raycaster.intersectObjects(meshObjects,true)[0];
+  if(hm)return {kind:'connection',owner:hm.object.userData.owner};
   return null;
 }
 
-function refreshBuildToolVisibility(){
-  connections.forEach(c=>{
-    if(c.handle)c.handle.visible=(mode==='build');if(c.handleHit)c.handleHit.visible=(mode==='build');
-  });
-  strapAnchors.forEach(sa=>{
-    sa.group.visible=(mode==='build');
-  });
-}
-
 function setBuildTool(t){
-  buildTool=t;
-  toolButtons.forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
-  connectStart=null;
-  refreshBuildToolVisibility();
-
-  // Keep selection only if it belongs to the editor of the chosen tool.
-  const k=kindOf(selected);
-  if(t==='ring' && k!=='anchor')selected=null;
-  if(t==='connect' && k!=='connection' && k!=='strapAnchor')selected=null;
-
-  refreshSelectionVisuals();
-  refreshMirrorSelectedBubble();
-  showSelection();
-
-  if(t==='connect')showToast('Ringe verbinden oder Riemen bearbeiten');
+  buildTool=t;toolButtons.forEach(b=>b.classList.toggle('active',b.dataset.tool===t));connectStart=null;
 }
 toolButtons.forEach(b=>b.addEventListener('click',()=>setBuildTool(b.dataset.tool)));
 
-widthSlider.addEventListener('input',()=>{
-  if(kindOf(selected)==='connection'){
-    selected.widthMM=+widthSlider.value;widthValue.textContent=widthSlider.value;updateConnection(selected);
-    if(selected.mirrorPartner){selected.mirrorPartner.widthMM=selected.widthMM;updateConnection(selected.mirrorPartner)}
-  }
+mirrorToggle.addEventListener('click',()=>{
+  mirrorMode=!mirrorMode;mirrorToggle.classList.toggle('active',mirrorMode);mirrorToggle.setAttribute('aria-pressed',mirrorMode?'true':'false');showToast(mirrorMode?'Spiegelmodus an':'Spiegelmodus aus');
 });
-slackSlider.addEventListener('input',()=>{
-  if(kindOf(selected)==='connection'){
-    selected.slack=+slackSlider.value;updateConnection(selected);
-    if(selected.mirrorPartner){selected.mirrorPartner.slack=selected.slack;updateConnection(selected.mirrorPartner)}
-  }
-});
-ringDiameterSlider.addEventListener('input',()=>{
-  if(kindOf(selected)==='anchor'){
-    selected.userData.diameterMM=+ringDiameterSlider.value;ringDiameterValue.textContent=ringDiameterSlider.value;rebuildRingGeometry(selected);
-    connections.filter(c=>c.a===selected||c.b===selected).forEach(updateConnection);
-    const mp=selected.userData.mirrorPartner;
-    if(mp){mp.userData.diameterMM=selected.userData.diameterMM;rebuildRingGeometry(mp);connections.filter(c=>c.a===mp||c.b===mp).forEach(updateConnection)}
-  }
-});
-ringThicknessSlider.addEventListener('input',()=>{
-  if(kindOf(selected)==='anchor'){
-    selected.userData.thicknessMM=+ringThicknessSlider.value;ringThicknessValue.textContent=ringThicknessSlider.value;rebuildRingGeometry(selected);
-    connections.filter(c=>c.a===selected||c.b===selected).forEach(updateConnection);
-    const mp=selected.userData.mirrorPartner;
-    if(mp){mp.userData.thicknessMM=selected.userData.thicknessMM;rebuildRingGeometry(mp);connections.filter(c=>c.a===mp||c.b===mp).forEach(updateConnection)}
-  }
-});
-addStrapAnchorBtn.addEventListener('click',()=>{
-  if(kindOf(selected)!=='connection')return;
-  const sa=makeStrapAnchor(selected,.5);
-  if(mirrorMode){
-    const mc=selected.mirrorPartner||findMirrorConnection(selected);
-    if(mc){
-      const msa=makeStrapAnchor(mc,.5,sa);
-      sa.mirrorPartner=msa;
-    }
-  }
-  selectObject(sa);
-});
-strapAnchorSlider.addEventListener('input',()=>{
-  if(kindOf(selected)==='strapAnchor'){
-    selected.t=+strapAnchorSlider.value/100;
-    strapAnchorValue.textContent=strapAnchorSlider.value;
-    updateStrapAnchor(selected);
-    connections.filter(c=>c.a===selected||c.b===selected).forEach(updateConnection);
-    if(selected.mirrorPartner){
-      selected.mirrorPartner.t=selected.t;
-      updateStrapAnchor(selected.mirrorPartner);
-      connections.filter(c=>c.a===selected.mirrorPartner||c.b===selected.mirrorPartner).forEach(updateConnection);
-    }
-  }
-});
-strapAnchorSizeSlider.addEventListener('input',()=>{
-  if(kindOf(selected)==='strapAnchor'){
-    selected.sizeMM=+strapAnchorSizeSlider.value;
-    strapAnchorSizeValue.textContent=strapAnchorSizeSlider.value;
-    updateStrapAnchorGeometry(selected);
-    if(selected.mirrorPartner){
-      selected.mirrorPartner.sizeMM=selected.sizeMM;
-      updateStrapAnchorGeometry(selected.mirrorPartner);
-    }
-  }
-});
+mirrorSelectedBtn.addEventListener('click',()=>{if(!selected)return showToast('Erst Objekt auswählen');mirrorSelectedObject()});
 
-mirrorSelectedBtn.addEventListener('click',e=>{
-  e.preventDefault();
-  e.stopPropagation();
-  if(!selected){
-    showToast('Erst ein Objekt auswählen');
-    return;
-  }
-  mirrorSelectedObject();
-  if(getMirrorPartner(selected))showToast('Auswahl gespiegelt und gekoppelt');
-});
-
-mirrorToggle.addEventListener('click',e=>{
-  e.preventDefault();
-  e.stopPropagation();
-  mirrorMode=!mirrorMode;
-  mirrorToggle.classList.toggle('active',mirrorMode);
-  mirrorToggle.setAttribute('aria-pressed',mirrorMode?'true':'false');
-  showToast(mirrorMode?'Spiegelmodus an':'Spiegelmodus aus');
-});
-deleteSelectedBtn.addEventListener('click',()=>{
-  if(!selected)return;
-  const k=kindOf(selected);
-  if(k==='anchor')removeAnchor(selected);
-  else if(k==='connection')removeConnection(selected);
-  else if(k==='strapAnchor')removeStrapAnchor(selected);
-  selected=null;
-  hideSelection();
-  refreshSelectionVisuals();
-  refreshMirrorSelectedBubble();
-});
-resetBtn.addEventListener('click',resetHarness);
-
-
-
-function refreshSurfaceOffset(){
-  anchors.forEach(a=>{
-    if(a.userData.surfacePoint && a.userData.normal){
-      a.position.copy(a.userData.surfacePoint)
-        .addScaledVector(a.userData.normal,surfaceOffsetScene()+ringTubeRadius(a));
-    }
-  });
-  connections.forEach(c=>{
-    c.controlPoint=null;
-    updateConnection(c);
-  });
-  strapAnchors.forEach(updateStrapAnchor);
+function switchMode(next){
+  mode=next;modeButtons.forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));modeTitle.textContent=mode==='build'?'Build':mode==='accessories'?'Accessories':'Photo';
+  selectionPanel.classList.add('hidden');accessoryPanel.classList.add('hidden');photoPanel.classList.add('hidden');
+  buildTools.style.display=mode==='build'?'flex':'none';
+  const helpers=mode==='build';nodes.forEach(n=>n.group.visible=helpers);connections.forEach(c=>{if(c.handle)c.handle.visible=helpers;if(c.handleHit)c.handleHit.visible=helpers});
+  if(mode==='build')showSelection();if(mode==='accessories')accessoryPanel.classList.remove('hidden');if(mode==='photo')photoPanel.classList.remove('hidden');
 }
+modeButtons.forEach(b=>b.addEventListener('click',()=>switchMode(b.dataset.mode)));
 
-
-envelopeSmoothSlider.addEventListener('input',()=>{
-  envelopeSmoothPct=+envelopeSmoothSlider.value;
-  envelopeSmoothValue.textContent=envelopeSmoothSlider.value;
-  rebuildEnvelope();
-});
-
-envelopeInflateSlider.addEventListener('input',()=>{
-  envelopeInflateMM=+envelopeInflateSlider.value;
-  envelopeInflateValue.textContent=envelopeInflateSlider.value;
-  rebuildEnvelope();
-});
-
-envelopeVisibleToggle.addEventListener('click',e=>{
-  e.preventDefault();
-  e.stopPropagation();
-  setEnvelopeVisible(!envelopeVisible);
-});
-
-surfaceOffsetSlider.addEventListener('input',()=>{
-  surfaceOffsetMM=+surfaceOffsetSlider.value;
-  surfaceOffsetValue.textContent=surfaceOffsetSlider.value;
-  refreshSurfaceOffset();
-});
-
-function syncRotationUI(){
-  const d=180/Math.PI;
-  rotXSlider.value=Math.round(mannequin.rotation.x*d);
-  rotYSlider.value=Math.round(mannequin.rotation.y*d);
-  rotZSlider.value=Math.round(mannequin.rotation.z*d);
-  rotXValue.textContent=rotXSlider.value;
-  rotYValue.textContent=rotYSlider.value;
-  rotZValue.textContent=rotZSlider.value;
-  surfaceOffsetSlider.value=surfaceOffsetMM;
-  surfaceOffsetValue.textContent=surfaceOffsetMM;
-  envelopeSmoothSlider.value=envelopeSmoothPct;
-  envelopeSmoothValue.textContent=envelopeSmoothPct;
-  envelopeInflateSlider.value=envelopeInflateMM;
-  envelopeInflateValue.textContent=envelopeInflateMM;
-  setEnvelopeVisible(envelopeVisible);
-}
-function applyManualRotation(){
-  const r=Math.PI/180;
-  mannequin.rotation.set(+rotXSlider.value*r,+rotYSlider.value*r,+rotZSlider.value*r);
-  rotXValue.textContent=rotXSlider.value;
-  rotYValue.textContent=rotYSlider.value;
-  rotZValue.textContent=rotZSlider.value;
-  mannequin.updateMatrixWorld(true);
-  rebuildEnvelope();
-  resetHarness();
-}
-rotateModelBtn.addEventListener('click',e=>{
-  e.preventDefault();e.stopPropagation();
-  rotationPanel.classList.toggle('hidden');
-  rotateModelBtn.classList.toggle('active',!rotationPanel.classList.contains('hidden'));
-  syncRotationUI();
-});
-closeRotationBtn.addEventListener('click',()=>{
-  rotationPanel.classList.add('hidden');
-  rotateModelBtn.classList.remove('active');
-});
-[rotXSlider,rotYSlider,rotZSlider].forEach(s=>s.addEventListener('input',applyManualRotation));
-rotationResetBtn.addEventListener('click',()=>{
-  mannequin.rotation.set(0,0,0);
-  mannequin.updateMatrixWorld(true);
-  rebuildEnvelope();
-  syncRotationUI();
-  resetHarness();
-});
-
-// gestures
 const pointers=new Map();let single=null,twoStart=null;const TAP=9;
 function pinfo(e){return{x:e.clientX,y:e.clientY,px:e.clientX,py:e.clientY}}
 canvas.addEventListener('pointerdown',e=>{
   canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,pinfo(e));
   if(pointers.size===1){
     const hit=mode==='build'?interactiveHit(e.clientX,e.clientY):null;
-    // Immediate subtle feedback when touching a selectable object.
-    if(buildTool==='ring' && hit?.kind==='anchor')selectObject(hit.owner);
-    if(buildTool==='connect' && hit?.kind==='connection')selectObject(hit.owner);
-    if(buildTool==='connect' && hit?.kind==='strapAnchor')selectObject(hit.owner);
-    if(buildTool==='connect' && hit?.kind==='strapHandle')selectObject(hit.owner);
+    if(hit?.kind==='node')selectObject(hit.owner);
+    if(hit?.kind==='connection'||hit?.kind==='handle')selectObject(hit.owner);
     single={id:e.pointerId,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,hit};
   }else if(pointers.size===2){
     single=null;const[a,b]=[...pointers.values()];
-    twoStart={dist:Math.hypot(b.x-a.x,b.y-a.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,az:camAz,d:camDist,ty:target.y}
+    twoStart={dist:Math.hypot(b.x-a.x,b.y-a.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,az:camAz,d:camDist,ty:target.y};
   }
 });
 canvas.addEventListener('pointermove',e=>{
@@ -1286,75 +678,83 @@ canvas.addEventListener('pointermove',e=>{
     camDist=THREE.MathUtils.clamp(twoStart.d*(twoStart.dist/dist),3.1,7.2);camAz=twoStart.az-(cx-twoStart.cx)*.006;target.y=THREE.MathUtils.clamp(twoStart.ty+(cy-twoStart.cy)*.004,-.75,.85);updateCamera();return;
   }
   if(!single||single.id!==e.pointerId)return;
-  if(buildTool==='ring' && single.hit?.kind==='anchor'){
-    const moveDist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
-    if(moveDist>6){
-      const h=bodyHitXY(e.clientX,e.clientY);
-      if(h)positionAnchor(single.hit.owner,h);
-    }
-    single.lx=e.clientX;single.ly=e.clientY;return;
-  }
-  if(buildTool==='connect' && single.hit?.kind==='strapHandle'){
-    const h=bodyHitXY(e.clientX,e.clientY);
-    if(h){
-      const c=single.hit.owner;
-      c.controlPoint=h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008);
-      updateConnection(c);
 
-      const mc=c.mirrorPartner;
-      if(mc && mc!==c){
-        mc.controlPoint=mirrorWorldPoint(c.controlPoint);
-        updateConnection(mc);
+  if(single.hit?.kind==='node'&&single.hit.owner.source==='surface'){
+    const d=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
+    if(d>6){
+      let h=bodyHitXY(e.clientX,e.clientY);if(h){
+        h=snapHitToAxis(h);
+        const n=single.hit.owner;
+        n.surfacePoint=h.point.clone();
+        n.normal=worldNormal(h);
+        updateSurfaceNodeTransform(n);
+
+        if(n.mirrorPartner&&Math.abs(n.surfacePoint.x)>.012){
+          const mh=mirroredBodyHit(n.group.position);
+          if(mh){
+            n.mirrorPartner.surfacePoint=mh.point.clone();
+            n.mirrorPartner.normal=worldNormal(mh);
+          }
+        }
+        updateAllGeometry();
       }
     }
     single.lx=e.clientX;single.ly=e.clientY;return;
   }
+
+  if(single.hit?.kind==='handle'){
+    const c=single.hit.owner,h=bodyHitXY(e.clientX,e.clientY);
+    if(h){
+      const f=controlFrame(c),targetP=h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008),delta=targetP.sub(f.base);
+      c.bendAlong=delta.dot(f.tangent);c.bendSide=delta.dot(f.side);c.bendNormal=delta.dot(f.normal);
+      if(paired(c)){c.mirrorPartner.bendAlong=c.bendAlong;c.mirrorPartner.bendSide=-c.bendSide;c.mirrorPartner.bendNormal=c.bendNormal}
+      updateAllGeometry();
+    }
+    single.lx=e.clientX;single.ly=e.clientY;return;
+  }
+
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
 });
 canvas.addEventListener('pointerup',e=>{
   pointers.delete(e.pointerId);if(pointers.size<2)twoStart=null;
-  if(single&&single.id===e.pointerId){
-    const dist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
-    if(dist<=TAP&&mode==='build'){
-      const ih=single.hit;
-      if(ih?.kind==='anchor' || ih?.kind==='strapAnchor'){
-        if(buildTool==='connect'){
-          if(!connectStart){
-            connectStart=ih.owner;
-            selectObject(ih.owner);
-            showToast('Zweites Ziel antippen');
-          }else{
-            makeConnection(connectStart,ih.owner);
-            connectStart=null;
-          }
-        }else if(ih.kind==='anchor'){
-          selectObject(ih.owner);
-        }
-      }else if(ih?.kind==='connection'){
-        if(buildTool==='connect')selectObject(ih.owner);
-      }else if(!ih&&buildTool==='ring'){
-        const h=bodyHitXY(e.clientX,e.clientY);
-        if(h)selectObject(makeAnchor(h));
+  if(single&&single.id===e.pointerId&&Math.hypot(e.clientX-single.sx,e.clientY-single.sy)<=TAP&&mode==='build'){
+    const ih=single.hit;
+    if(ih?.kind==='node'){
+      selectObject(ih.owner);
+      if(buildTool==='connect'){
+        if(!connectStart){connectStart=ih.owner;showToast('Zweiten Knoten antippen')}
+        else{const c=createConnection(connectStart,ih.owner);connectStart=null;if(c)selectObject(c)}
       }
+    }else if(ih?.kind==='connection'||ih?.kind==='handle'){
+      selectObject(ih.owner);
+    }else if(buildTool==='ring'){
+      const h=bodyHitXY(e.clientX,e.clientY);if(h)selectObject(createSurfaceNode(h,true));
     }
   }
   single=null;try{canvas.releasePointerCapture(e.pointerId)}catch{}
 });
 canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);single=null;twoStart=null});
 
-// modes
-function switchMode(next){
-  mode=next;modeButtons.forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
-  modeTitle.textContent=mode==='build'?'Build':mode==='accessories'?'Accessories':'Photo';
-  selectionPanel.classList.add('hidden');accessoryPanel.classList.add('hidden');photoPanel.classList.add('hidden');
-  buildTools.style.display=mode==='build'?'flex':'none';
-  if(mode==='build'){setHelpers(true);refreshBuildToolVisibility();if(selected)showSelection()}
-  if(mode==='accessories'){setHelpers(false);accessoryPanel.classList.remove('hidden')}
-  if(mode==='photo'){setHelpers(false);photoPanel.classList.remove('hidden')}
+function syncRotationUI(){
+  const d=180/Math.PI;rotXSlider.value=Math.round(mannequin.rotation.x*d);rotYSlider.value=Math.round(mannequin.rotation.y*d);rotZSlider.value=Math.round(mannequin.rotation.z*d);
+  rotXValue.textContent=rotXSlider.value;rotYValue.textContent=rotYSlider.value;rotZValue.textContent=rotZSlider.value;
+  surfaceOffsetSlider.value=surfaceOffsetMM;surfaceOffsetValue.textContent=surfaceOffsetMM;
+  envelopeSmoothSlider.value=envelopeSmoothPct;envelopeSmoothValue.textContent=envelopeSmoothPct;
+  envelopeInflateSlider.value=envelopeInflateMM;envelopeInflateValue.textContent=envelopeInflateMM;setEnvelopeVisible(envelopeVisible);
 }
-modeButtons.forEach(b=>b.addEventListener('click',()=>switchMode(b.dataset.mode)));
+rotateModelBtn.addEventListener('click',()=>{rotationPanel.classList.toggle('hidden');rotateModelBtn.classList.toggle('active',!rotationPanel.classList.contains('hidden'));syncRotationUI()});
+closeRotationBtn.addEventListener('click',()=>{rotationPanel.classList.add('hidden');rotateModelBtn.classList.remove('active')});
+function applyRotation(){
+  const r=Math.PI/180;mannequin.rotation.set(+rotXSlider.value*r,+rotYSlider.value*r,+rotZSlider.value*r);mannequin.updateMatrixWorld(true);rebuildEnvelope();resetHarness();
+  rotXValue.textContent=rotXSlider.value;rotYValue.textContent=rotYSlider.value;rotZValue.textContent=rotZSlider.value;
+}
+[rotXSlider,rotYSlider,rotZSlider].forEach(s=>s.addEventListener('input',applyRotation));
+rotationResetBtn.addEventListener('click',()=>{mannequin.rotation.set(0,0,0);mannequin.updateMatrixWorld(true);rebuildEnvelope();resetHarness();syncRotationUI()});
+surfaceOffsetSlider.addEventListener('input',()=>{surfaceOffsetMM=+surfaceOffsetSlider.value;surfaceOffsetValue.textContent=surfaceOffsetSlider.value;updateAllGeometry()});
+envelopeSmoothSlider.addEventListener('input',()=>{envelopeSmoothPct=+envelopeSmoothSlider.value;envelopeSmoothValue.textContent=envelopeSmoothSlider.value;rebuildEnvelope();updateAllGeometry()});
+envelopeInflateSlider.addEventListener('input',()=>{envelopeInflateMM=+envelopeInflateSlider.value;envelopeInflateValue.textContent=envelopeInflateSlider.value;rebuildEnvelope();updateAllGeometry()});
+envelopeVisibleToggle.addEventListener('click',()=>setEnvelopeVisible(!envelopeVisible));
 
-// swipe down
 function hideAllUI(){chrome.classList.add('ui-hidden');restoreUI.classList.remove('hidden')}
 function installSheetPhysics(el){
   let sy=0,dy=0,tracking=false;
@@ -1366,15 +766,10 @@ function installSheetPhysics(el){
 [selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
 
-requestAnimationFrame(()=>{
-  try{
-    rebuildEnvelope();
-  }catch(err){
-    console.error('Envelope startup disabled:',err);
-    collisionMeshes=bodyMeshes;
-  }
-});
-
-function resize(){const w=viewport.clientWidth,h=viewport.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}
+function resize(){
+  const w=viewport.clientWidth,h=viewport.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);
+}
 addEventListener('resize',resize);resize();
+
+requestAnimationFrame(()=>{try{rebuildEnvelope();updateAllGeometry()}catch(err){console.error(err);collisionMeshes=bodyMeshes}});
 function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)}animate();

@@ -170,3 +170,9 @@ input[type=range]{margin-top:5px}
   background:#fff;
   color:#111;
 }
+
+/* V0.7 Node Core */
+.node-toggle-note{
+  color:#aaa;
+  font-size:9px;
+}
