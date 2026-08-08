@@ -38,9 +38,9 @@ function kindOf(obj){
 }
 
 const scene=new THREE.Scene();
-scene.fog=new THREE.Fog(0x09090b,6.2,
+scene.fog=new THREE.Fog(0x09090b,6.2,10);
 envelopeRoot=new THREE.Group();
-scene.add(envelopeRoot);10);
+scene.add(envelopeRoot);
 const camera=new THREE.PerspectiveCamera(31,1,.01,50);
 let camAz=0,camEl=.02,camDist=5.25;const target=new THREE.Vector3(0,.08,0);
 
@@ -166,6 +166,7 @@ function rebuildEnvelope(){
     if(n.isMesh && !n.userData?.isEnvelope)sourceMeshes.push(n);
   });
 
+  try{
   sourceMeshes.forEach(src=>{
     const geom=smoothGeometryClone(src.geometry,envelopeSmoothPct,envelopeInflateMM);
     const mat=new THREE.MeshStandardMaterial({
@@ -189,6 +190,12 @@ function rebuildEnvelope(){
     envelopeRoot.add(m);
     envelopeMeshes.push(m);
   });
+  }catch(err){
+    console.error('Envelope rebuild failed:',err);
+    clearEnvelope();
+    collisionMeshes=bodyMeshes;
+    return;
+  }
 
   // If smoothing/inflate are both zero, original mesh remains the collision source.
   const useEnvelope=envelopeMeshes.length>0 && (envelopeSmoothPct>0 || envelopeInflateMM>0);
@@ -200,9 +207,11 @@ function rebuildEnvelope(){
 function setEnvelopeVisible(v){
   envelopeVisible=v;
   envelopeMeshes.forEach(m=>m.visible=v);
-  envelopeVisibleToggle.classList.toggle('active',v);
-  envelopeVisibleToggle.setAttribute('aria-pressed',v?'true':'false');
-  envelopeVisibleToggle.textContent=v?'An':'Aus';
+  if(envelopeVisibleToggle){
+    envelopeVisibleToggle.classList.toggle('active',v);
+    envelopeVisibleToggle.setAttribute('aria-pressed',v?'true':'false');
+    envelopeVisibleToggle.textContent=v?'An':'Aus';
+  }
 }
 
 modelBtn.addEventListener('click',()=>modelInput.click());
@@ -1357,7 +1366,14 @@ function installSheetPhysics(el){
 [selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
 
-rebuildEnvelope();
+requestAnimationFrame(()=>{
+  try{
+    rebuildEnvelope();
+  }catch(err){
+    console.error('Envelope startup disabled:',err);
+    collisionMeshes=bodyMeshes;
+  }
+});
 
 function resize(){const w=viewport.clientWidth,h=viewport.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}
 addEventListener('resize',resize);resize();
