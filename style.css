@@ -600,3 +600,194 @@ body.object-isolated .tool,body.object-isolated .mode-pill{opacity:.45}
   width:240px!important;
   height:56px!important;
 }
+
+/* V0.10h — strict single-row toolbar + clean object header */
+
+/* === SINGLE TOP TOOLBAR ROW ===
+   Undo/Redo left — Ring/Connect centre — mirror/selection/rotate right */
+.history-bubbles{
+  top:calc(env(safe-area-inset-top) + 9px)!important;
+  left:10px!important;
+  right:auto!important;
+  display:flex!important;
+  gap:5px!important;
+  z-index:30!important;
+}
+
+.mode-switch{
+  top:calc(env(safe-area-inset-top) + 9px)!important;
+  left:50%!important;
+  right:auto!important;
+  transform:translateX(-50%)!important;
+  height:38px!important;
+  min-height:38px!important;
+  max-height:38px!important;
+  padding:3px!important;
+  border-radius:19px!important;
+  z-index:29!important;
+  max-width:none!important;
+  width:244px!important;
+}
+
+.mode-switch .tool,
+.mode-switch button{
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 12px!important;
+  border-radius:16px!important;
+  font-size:13px!important;
+  white-space:nowrap!important;
+}
+
+.utility-bubbles{
+  top:calc(env(safe-area-inset-top) + 9px)!important;
+  right:50px!important;
+  left:auto!important;
+  display:flex!important;
+  gap:5px!important;
+  z-index:30!important;
+}
+
+.more-bubble{
+  top:calc(env(safe-area-inset-top) + 9px)!important;
+  right:9px!important;
+  z-index:31!important;
+}
+
+/* Slightly smaller bubbles so the whole row fits iPhone width */
+.history-bubbles .utility-bubble,
+.utility-bubbles .utility-bubble,
+.more-bubble{
+  width:34px!important;
+  height:34px!important;
+  min-width:34px!important;
+  min-height:34px!important;
+  border-radius:17px!important;
+  font-size:15px!important;
+}
+
+/* Guarantee hidden legacy top controls never leak through */
+#modelBtn,#resetBtn,.top-actions,.topbar .title,.topbar .eyebrow{
+  display:none!important;
+}
+
+/* === OBJECT HEADER === */
+#selectionPanel .sheet-row{
+  position:relative!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 34px 34px!important;
+  column-gap:6px!important;
+  align-items:center!important;
+  min-height:38px!important;
+  padding:2px 0 5px!important;
+}
+
+#selectionPanel .sheet-row>div:first-child{
+  grid-column:1!important;
+  position:static!important;
+  display:flex!important;
+  flex-direction:row!important;
+  align-items:baseline!important;
+  gap:7px!important;
+  min-width:0!important;
+  padding:0!important;
+}
+
+#selectionPanel .quick-actions{
+  grid-column:2!important;
+  position:static!important;
+  width:34px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  display:block!important;
+}
+
+#selectionPanel #lockSelectedBtn{
+  position:relative!important;
+  width:34px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  border-radius:10px!important;
+}
+
+#selectionPanel #deleteSelectedBtn{
+  grid-column:3!important;
+  position:relative!important;
+  top:auto!important;
+  right:auto!important;
+  width:34px!important;
+  min-width:34px!important;
+  height:32px!important;
+  margin:0!important;
+  padding:0!important;
+  border-radius:10px!important;
+}
+
+/* Explicitly suppress hidden quick actions so grid cannot be distorted */
+#selectionPanel #hideSelectedBtn,
+#selectionPanel #isolateSelectedBtn{
+  display:none!important;
+}
+
+/* Cleaner alignment of CSS icons inside buttons */
+#selectionPanel #lockSelectedBtn::before,
+#selectionPanel #lockSelectedBtn::after,
+#selectionPanel #deleteSelectedBtn::before,
+#selectionPanel #deleteSelectedBtn::after{
+  left:50%!important;
+  position:absolute!important;
+}
+
+#selectionPanel #lockSelectedBtn::before{
+  margin-left:-4px!important;
+}
+#selectionPanel #lockSelectedBtn::after{
+  margin-left:-6px!important;
+}
+#selectionPanel #deleteSelectedBtn::before{
+  margin-left:-6px!important;
+}
+#selectionPanel #deleteSelectedBtn::after{
+  margin-left:-5px!important;
+}
+
+/* === PARAMETER PANEL === */
+#selectionPanel .panel-group{
+  margin-top:1px!important;
+}
+#selectionPanel .control{
+  padding:2px 0!important;
+}
+
+/* === BOTTOM MODE BAR SMALLER AGAIN === */
+#modePill,.mode-pill{
+  width:254px!important;
+  height:38px!important;
+  min-height:38px!important;
+  max-height:38px!important;
+  padding:3px!important;
+  border-radius:19px!important;
+  bottom:calc(env(safe-area-inset-bottom) + 7px)!important;
+}
+
+#modePill button,.mode-pill button{
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 9px!important;
+  border-radius:16px!important;
+  font-size:12px!important;
+}
+
+/* Editor follows smaller bottom bar */
+#selectionPanel.sheet{
+  bottom:calc(env(safe-area-inset-bottom) + 52px)!important;
+}
+
+/* Version remains tiny */
+.version-badge{
+  bottom:calc(env(safe-area-inset-bottom) + 48px)!important;
+  right:7px!important;
+  font-size:8px!important;
+}

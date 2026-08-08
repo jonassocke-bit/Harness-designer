@@ -1,14 +1,12 @@
-# Harness Designer V0.10g
+# Harness Designer V0.10h
 
-UI-only cleanup based on working V0.10f.
+Final UI alignment pass based on working V0.10g.
 
-- model/reset controls forcibly hidden from canvas
-- top utility bubbles get strict non-overlapping positions
-- Ring/Verbinden remains on its own row
-- object header keeps RING/N1 + lock + delete on one clean line
-- lock and delete sit side-by-side
-- tighter parameter spacing
-- bottom Bauen/Accessoires/Foto pill reduced to 42 px height / 280 px width
-- editor sits slightly lower because bottom navigation is smaller
-- resize hotspot enlarged again
-- no geometry/model/ring/strap logic changed
+- Ring / Verbinden moved into the same top toolbar row as Undo/Redo and mirror/rotate
+- top toolbar uses strict left / center / right zones
+- all toolbar bubbles slightly smaller to fit iPhone width
+- selection header uses an actual 3-column grid:
+  object name | lock | delete
+- lock and delete are guaranteed side-by-side and same size
+- bottom Bauen/Accessoires/Foto pill reduced again to 38 px height / 254 px width
+- no 3D, node, ring, strap, crossing or model-loading logic changed
