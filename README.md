@@ -1,13 +1,10 @@
-# Harness Designer V0.8 — Surface Geometry
+# Harness Designer V0.9
 
-New in V0.8:
-- leather-colored wrap segments are rendered on a ring wherever straps connect
-- wrap direction and arc are recalculated dynamically from the current strap direction
-- visible body rings use multi-point surface seating to reduce sinking / floating
-- converted strap-anchor rings use the same seating logic
-- strap surface following is adaptive: curved / difficult areas receive more support samples
-- construction-envelope smoothing is substantially stronger
-- optional symmetric construction-surface mode added
-- V0.7b node movement, true split/merge and unified ring editor retained
-
-The visible imported mannequin is never modified by the symmetry option.
+- fixed intermittent 90° strap flips by using continuous transported ribbon frames
+- frame orientation is no longer camera-driven after initialization
+- adjacent strap frames are forced to keep the same normal/side hemisphere
+- automatic dynamic crossing nodes are created where two independent straps intersect
+- crossing nodes move automatically when either strap changes
+- stale crossing nodes disappear when the crossing disappears
+- crossing nodes can be converted into physical rings, splitting both crossing straps
+- V0.8 ring wraps, multi-point ring seating, adaptive surface following and envelope controls retained

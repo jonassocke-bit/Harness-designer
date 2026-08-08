@@ -538,6 +538,101 @@ function buildBaseCurve(c){
   return curve;
 }
 
+
+const AUTO_CROSS_EPS=.028;
+let autoCrossingUpdate=false;
+
+function sampledSegments(c,count=36){
+  const curve=c.renderCurve||c.baseCurve;if(!curve)return [];
+  const out=[];let a=curve.getPoint(0);
+  for(let i=1;i<=count;i++){
+    const t=i/count,b=curve.getPoint(t);
+    out.push({a:a.clone(),b:b.clone(),t0:(i-1)/count,t1:t});
+    a=b;
+  }
+  return out;
+}
+
+function closestSegmentPair(p1,q1,p2,q2){
+  const u=q1.clone().sub(p1),v=q2.clone().sub(p2),w=p1.clone().sub(p2);
+  const a=u.dot(u),b=u.dot(v),c=v.dot(v),d=u.dot(w),e=v.dot(w);
+  const D=a*c-b*b;
+  let sc=0,tc=0;
+  if(D<1e-9){
+    sc=0;tc=c>1e-9?THREE.MathUtils.clamp(e/c,0,1):0;
+  }else{
+    sc=THREE.MathUtils.clamp((b*e-c*d)/D,0,1);
+    tc=THREE.MathUtils.clamp((a*e-b*d)/D,0,1);
+  }
+  const P=p1.clone().addScaledVector(u,sc),Q=p2.clone().addScaledVector(v,tc);
+  return {P,Q,sc,tc,dist:P.distanceTo(Q)};
+}
+
+function crossingKey(a,b){return [a.id,b.id].sort().join('|')}
+
+function bestCrossing(c1,c2){
+  if(c1===c2||c1.a===c2.a||c1.a===c2.b||c1.b===c2.a||c1.b===c2.b)return null;
+  let best=null;
+  for(const s1 of sampledSegments(c1)){
+    for(const s2 of sampledSegments(c2)){
+      const cp=closestSegmentPair(s1.a,s1.b,s2.a,s2.b);
+      if(cp.dist>AUTO_CROSS_EPS)continue;
+      const t1=THREE.MathUtils.lerp(s1.t0,s1.t1,cp.sc),t2=THREE.MathUtils.lerp(s2.t0,s2.t1,cp.tc);
+      if(t1<.04||t1>.96||t2<.04||t2>.96)continue;
+      if(!best||cp.dist<best.dist)best={t1,t2,dist:cp.dist,pos:cp.P.clone().lerp(cp.Q,.5)};
+    }
+  }
+  return best;
+}
+
+function updateCrossNode(n,cross=null){
+  if(!n.crossing)return;
+  const {c1,c2}=n.crossing;
+  cross=cross||bestCrossing(c1,c2);
+  if(!cross)return;
+  n.crossing.t1=cross.t1;n.crossing.t2=cross.t2;
+  const p1=c1.renderCurve.getPoint(cross.t1),p2=c2.renderCurve.getPoint(cross.t2);
+  n.group.position.copy(p1).lerp(p2,.5);
+  n.normal=averageNormal(c1.a,c1.b).add(averageNormal(c2.a,c2.b)).normalize();
+  n.group.quaternion.identity();
+}
+
+function createCrossNode(c1,c2,cross){
+  const n={
+    kind:'node',id:`N${nodes.length+1}`,source:'crossing',group:new THREE.Group(),
+    ringVisible:false,diameterMM:40,thicknessMM:6,sizeMM:8,parent:null,t:0,
+    normal:new THREE.Vector3(0,0,1),mirrorPartner:null,
+    crossing:{c1,c2,t1:cross.t1,t2:cross.t2,key:crossingKey(c1,c2)}
+  };
+  nodes.push(n);scene.add(n.group);rebuildNodeVisual(n);updateCrossNode(n,cross);return n;
+}
+
+function refreshAutomaticCrossings(){
+  if(autoCrossingUpdate)return;
+  autoCrossingUpdate=true;
+  try{
+    const wanted=new Map();
+    for(let i=0;i<connections.length;i++)for(let j=i+1;j<connections.length;j++){
+      const c1=connections[i],c2=connections[j],cross=bestCrossing(c1,c2);
+      if(cross)wanted.set(crossingKey(c1,c2),{c1,c2,cross});
+    }
+
+    const autos=nodes.filter(n=>n.source==='crossing');
+    for(const n of autos.slice()){
+      if(!wanted.has(n.crossing.key)){
+        if(selected===n)selected=null;
+        scene.remove(n.group);const k=nodes.indexOf(n);if(k>=0)nodes.splice(k,1);
+      }
+    }
+
+    for(const [key,item] of wanted){
+      let n=nodes.find(x=>x.source==='crossing'&&x.crossing.key===key);
+      if(!n)n=createCrossNode(item.c1,item.c2,item.cross);
+      else updateCrossNode(n,item.cross);
+    }
+  }finally{autoCrossingUpdate=false}
+}
+
 function strapNodesOn(c){return nodes.filter(n=>n.source==='strap'&&n.parent===c).sort((x,y)=>x.t-y.t)}
 function updateStrapNode(n){
   if(!n.parent?.baseCurve)return;
@@ -550,25 +645,82 @@ function updateStrapNode(n){
 }
 
 function ribbonGeometry(points,widthMM,thicknessMM=2.5){
-  const halfW=Math.max(.0002,.15*(widthMM/30)*.5),halfT=.009*(thicknessMM/2.5);
-  const verts=[],idx=[],uv=[];
-  const frames=[];
+  const halfW=Math.max(.0002,.15*(widthMM/30)*.5);
+  const halfT=.009*(thicknessMM/2.5);
+  const verts=[],idx=[],uv=[],frames=[];
+
+  let prevNormal=null,prevSide=null;
   for(let i=0;i<points.length;i++){
-    const prev=points[Math.max(0,i-1)],next=points[Math.min(points.length-1,i+1)];
+    const prev=points[Math.max(0,i-1)];
+    const next=points[Math.min(points.length-1,i+1)];
     const tangent=next.clone().sub(prev).normalize();
-    const normal=averageNormal({normal:new THREE.Vector3(0,0,1)},{normal:new THREE.Vector3(0,0,1)});
-    let viewN=camera.getWorldDirection(new THREE.Vector3()).negate();
-    let side=new THREE.Vector3().crossVectors(viewN,tangent);if(side.lengthSq()<1e-8)side.set(1,0,0);side.normalize();
-    const n=new THREE.Vector3().crossVectors(tangent,side).normalize();
-    if(i&&side.dot(frames[i-1].side)<0){side.negate();n.negate()}frames.push({side,normal:n});
+
+    // Start from a stable construction-surface normal, not the camera.
+    let normal=prevNormal?prevNormal.clone():new THREE.Vector3(0,0,1);
+    const probeBase=prevNormal||averageNormal({normal:new THREE.Vector3(0,0,1)},{normal:new THREE.Vector3(0,0,1)});
+    const origins=[
+      points[i].clone().addScaledVector(probeBase,.35),
+      points[i].clone().addScaledVector(probeBase,-.35)
+    ];
+    let best=null,bestD=Infinity;
+    for(let j=0;j<2;j++){
+      const dir=j===0?probeBase.clone().negate():probeBase.clone();
+      raycaster.set(origins[j],dir);
+      const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
+      if(hits.length){
+        const d=hits[0].point.distanceTo(points[i]);
+        if(d<bestD){bestD=d;best=hits[0]}
+      }
+    }
+    if(best&&bestD<.45)normal=worldNormal(best);
+
+    normal.addScaledVector(tangent,-normal.dot(tangent));
+    if(normal.lengthSq()<1e-8)normal=prevNormal?prevNormal.clone():new THREE.Vector3(0,1,0);
+    normal.normalize();
+
+    // Never permit a sudden normal hemisphere flip.
+    if(prevNormal&&normal.dot(prevNormal)<0)normal.negate();
+
+    let side=new THREE.Vector3().crossVectors(normal,tangent);
+    if(side.lengthSq()<1e-8&&prevSide)side.copy(prevSide);
+    if(side.lengthSq()<1e-8)side.set(1,0,0);
+    side.normalize();
+
+    normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
+
+    // Preserve handedness continuously from one sample to the next.
+    if(prevSide&&side.dot(prevSide)<0){
+      side.negate();normal.negate();
+    }
+    if(prevNormal&&normal.dot(prevNormal)<0){
+      side.negate();normal.negate();
+    }
+
+    frames.push({side:side.clone(),normal:normal.clone()});
+    prevSide=side.clone();prevNormal=normal.clone();
   }
+
   for(let i=0;i<points.length;i++){
-    const p=points[i],f=frames[i],l=p.clone().addScaledVector(f.side,-halfW),r=p.clone().addScaledVector(f.side,halfW);
-    const tl=l.clone().addScaledVector(f.normal,halfT),tr=r.clone().addScaledVector(f.normal,halfT),bl=l.clone().addScaledVector(f.normal,-halfT),br=r.clone().addScaledVector(f.normal,-halfT);
-    [tl,tr,bl,br].forEach(v=>verts.push(v.x,v.y,v.z));const u=i/(points.length-1);uv.push(0,u,1,u,0,u,1,u);
+    const p=points[i],f=frames[i];
+    const l=p.clone().addScaledVector(f.side,-halfW);
+    const r=p.clone().addScaledVector(f.side,halfW);
+    const tl=l.clone().addScaledVector(f.normal,halfT);
+    const tr=r.clone().addScaledVector(f.normal,halfT);
+    const bl=l.clone().addScaledVector(f.normal,-halfT);
+    const br=r.clone().addScaledVector(f.normal,-halfT);
+    [tl,tr,bl,br].forEach(v=>verts.push(v.x,v.y,v.z));
+    const u=i/(points.length-1);uv.push(0,u,1,u,0,u,1,u);
   }
-  for(let i=0;i<points.length-1;i++){const a=i*4,b=(i+1)*4;idx.push(a,a+1,b,a+1,b+1,b,a+2,b+2,a+3,a+3,b+2,b+3,a+2,a,b+2,a,b,b+2,a+1,a+3,b+1,a+3,b+3,b+1)}
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();return g;
+
+  for(let i=0;i<points.length-1;i++){
+    const a=i*4,b=(i+1)*4;
+    idx.push(a,a+1,b,a+1,b+1,b,a+2,b+2,a+3,a+3,b+2,b+3,a+2,a,b+2,a,b,b+2,a+1,a+3,b+1,a+3,b+3,b+1);
+  }
+
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx);g.computeVertexNormals();return g;
 }
 function addRibbon(c,points){
   if(points.length<2)return;
@@ -608,7 +760,11 @@ function updateAllGeometry(){
     for(const n of nodes)if(n.source==='strap')updateStrapNode(n);
   }
   for(const c of connections)renderConnection(c);
-  for(const n of nodes)rebuildNodeVisual(n);
+  refreshAutomaticCrossings();
+  for(const n of nodes){
+    if(n.source==='crossing')updateCrossNode(n);
+    rebuildNodeVisual(n);
+  }
   refreshSelectionVisuals();
 }
 function paired(o){return o?.mirrorPartner&&o.mirrorPartner!==o}
@@ -642,6 +798,7 @@ function showSelection(){
   if(selected.kind==='node'){
     // Every visible ring uses exactly the same ring editor.
     if(selected.ringVisible){
+      strapAnchorSlider.disabled=false;
       ringControls.classList.remove('hidden');
       selectionLabel.textContent='RING';
       selectionTitle.textContent=selected.id;
@@ -652,16 +809,18 @@ function showSelection(){
       surfaceNodeSizeSlider.value=selected.sizeMM;
       surfaceNodeSizeValue.textContent=selected.sizeMM;
       setMiniToggle(surfaceNodeRingToggle,true);
-    }else if(selected.source==='strap'){
+    }else if(selected.source==='strap'||selected.source==='crossing'){
       strapAnchorControls.classList.remove('hidden');
-      selectionLabel.textContent='RIEMEN-ANKER';
+      selectionLabel.textContent=selected.source==='crossing'?'KREUZUNGS-KNOTEN':'RIEMEN-ANKER';
       selectionTitle.textContent=selected.id;
       strapAnchorSlider.value=Math.round(selected.t*100);
-      strapAnchorValue.textContent=Math.round(selected.t*100);
+      strapAnchorSlider.disabled=selected.source==='crossing';
+      strapAnchorValue.textContent=selected.source==='crossing'?'Auto':Math.round(selected.t*100);
       strapAnchorSizeSlider.value=selected.sizeMM;
       strapAnchorSizeValue.textContent=selected.sizeMM;
       setMiniToggle(strapNodeRingToggle,false);
     }else{
+      strapAnchorSlider.disabled=false;
       // Surface node without a visible ring.
       ringControls.classList.remove('hidden');
       selectionLabel.textContent='KNOTEN';
@@ -732,6 +891,8 @@ function mergeSplitNode(node){
 }
 
 function removeConnection(c){
+  const stale=nodes.filter(n=>n.source==='crossing'&&(n.crossing?.c1===c||n.crossing?.c2===c)).slice();
+  for(const n of stale){scene.remove(n.group);const ni=nodes.indexOf(n);if(ni>=0)nodes.splice(ni,1)}
   const attached=nodes.filter(n=>n.source==='strap'&&n.parent===c).slice();
   attached.forEach(removeNode);
   if(c.mirrorPartner&&c.mirrorPartner!==c)c.mirrorPartner.mirrorPartner=null;
@@ -794,11 +955,45 @@ surfaceNodeRingToggle.addEventListener('click',()=>{
   updateAllGeometry();
   showSelection();
 });
+
+function convertCrossingToRing(node){
+  if(node.source!=='crossing'||node.ringVisible)return;
+  const x=node.crossing,c1=x.c1,c2=x.c2;
+  if(!connections.includes(c1)||!connections.includes(c2))return;
+
+  const surface=castToSurfaceFrom(node.group.position.clone(),node.normal.clone());
+  node.surfacePoint=surface.point.clone();
+  node.normal=surface.normal.clone();
+  node.source='crossingRing';
+  node.ringVisible=true;
+
+  function splitConn(c){
+    const A=c.a,B=c.b,w=c.widthMM,s=c.slack;
+    scene.remove(c.group);const ci=connections.indexOf(c);if(ci>=0)connections.splice(ci,1);
+    const l=createConnection(A,node,true),r=createConnection(node,B,true);
+    l.widthMM=r.widthMM=w;l.slack=r.slack=s;
+  }
+  splitConn(c1);splitConn(c2);
+  seatRingOnSurface(node);
+  updateAllGeometry();
+}
+
 strapNodeRingToggle.addEventListener('click',()=>{
-  if(selected?.kind!=='node'||selected.source!=='strap')return;
-  selected.ringVisible=true;
-  splitConnectionAtNode(selected);
-  if(paired(selected))selected.mirrorPartner.ringVisible=true;
+  if(selected?.kind!=='node')return;
+
+  if(selected.source==='crossing'&&!selected.ringVisible){
+    convertCrossingToRing(selected);
+  }else if(selected.source==='strap'&&!selected.ringVisible){
+    selected.ringVisible=true;
+    splitConnectionAtNode(selected);
+  }else if(selected.source==='split'&&selected.ringVisible){
+    selected.ringVisible=false;
+    mergeSplitNode(selected);
+  }else{
+    selected.ringVisible=!selected.ringVisible;
+  }
+
+  if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
   updateAllGeometry();
   showSelection();
 });
@@ -911,14 +1106,14 @@ canvas.addEventListener('pointermove',e=>{
 
     // Body-attached rings, including rings converted from strap anchors,
     // are fully draggable on the construction surface.
-    if((node.source==='surface'||node.source==='split') && d>6){
+    if((node.source==='surface'||node.source==='split'||node.source==='crossingRing') && d>6){
       let h=bodyHitXY(e.clientX,e.clientY);
       if(h){
         h=snapHitToAxis(h);
         node.surfacePoint=h.point.clone();
         node.normal=worldNormal(h);
 
-        if(node.source==='split'){
+        if(node.source==='split'||node.source==='crossingRing'){
           // A split-ring is now a real spatial node: its two straps simply use
           // its current position as their shared endpoint.
           seatRingOnSurface(node);
@@ -929,7 +1124,7 @@ canvas.addEventListener('pointermove',e=>{
           if(mh){
             node.mirrorPartner.surfacePoint=mh.point.clone();
             node.mirrorPartner.normal=worldNormal(mh);
-            if(node.mirrorPartner.source==='split'){
+            if(node.mirrorPartner.source==='split'||node.mirrorPartner.source==='crossingRing'){
               seatRingOnSurface(node.mirrorPartner);
             }
           }
