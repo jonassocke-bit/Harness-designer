@@ -69,10 +69,34 @@ modelInput.addEventListener('change',async()=>{
   const file=modelInput.files?.[0];if(!file)return;const url=URL.createObjectURL(file);
   try{
     const gltf=await new GLTFLoader().loadAsync(url),obj=gltf.scene;
+
+    // Auto-orient imported human models:
+    // The longest bounding-box axis is assumed to be body height.
+    // Rotate that axis onto world Y before scaling/centering so mirror logic
+    // always uses the same sagittal plane x = 0.
+    obj.updateMatrixWorld(true);
+    let rawBox=new THREE.Box3().setFromObject(obj);
+    let rawSize=rawBox.getSize(new THREE.Vector3());
+
+    if(rawSize.x>=rawSize.y && rawSize.x>=rawSize.z){
+      // Height lies on X -> rotate X into Y.
+      obj.rotation.z += Math.PI/2;
+    }else if(rawSize.z>=rawSize.x && rawSize.z>=rawSize.y){
+      // Height lies on Z -> rotate Z into Y.
+      obj.rotation.x -= Math.PI/2;
+    }
+
+    obj.updateMatrixWorld(true);
     const box=new THREE.Box3().setFromObject(obj),size=box.getSize(new THREE.Vector3());
-    const scale=3.25/size.y;obj.scale.setScalar(scale);obj.updateMatrixWorld(true);
+    const scale=3.25/Math.max(size.y,.0001);
+    obj.scale.setScalar(scale);
+    obj.updateMatrixWorld(true);
+
     const b2=new THREE.Box3().setFromObject(obj),c=b2.getCenter(new THREE.Vector3());
-    obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y+=(-1.75-b2.min.y);obj.updateMatrixWorld(true);
+    obj.position.x-=c.x;
+    obj.position.z-=c.z;
+    obj.position.y+=(-1.75-b2.min.y);
+    obj.updateMatrixWorld(true);
     scene.remove(mannequin);mannequin=new THREE.Group();mannequin.add(obj);scene.add(mannequin);
     bodyMeshes=[];obj.traverse(n=>{if(n.isMesh)registerMesh(n,false)});
     resetHarness();showToast('3D-Modell geladen');
@@ -126,25 +150,34 @@ const anchors=[],connections=[],strapAnchors=[];
 let selected=null,connectStart=null;
 
 function connectionCurve(c){
+  if(c.renderCurve)return c.renderCurve;
   const points=surfaceSampledPath(c);
-  return new THREE.CatmullRomCurve3(points,false,'centripetal',.5);
+  c.renderPoints=points.map(p=>p.clone());
+  c.renderCurve=new THREE.CatmullRomCurve3(c.renderPoints,false,'centripetal',.5);
+  return c.renderCurve;
 }
 function strapAnchorWorld(sa){
   const curve=connectionCurve(sa.connection);
   return curve.getPoint(THREE.MathUtils.clamp(sa.t,0,1));
 }
 function updateStrapAnchor(sa){
-  const p=strapAnchorWorld(sa);
-  sa.group.position.copy(p);
-  const eps=.005;
   const curve=connectionCurve(sa.connection);
-  const t0=Math.max(0,sa.t-eps),t1=Math.min(1,sa.t+eps);
+  const t=THREE.MathUtils.clamp(sa.t,0,1);
+  const p=curve.getPoint(t);
+
+  const eps=.005;
+  const t0=Math.max(0,t-eps),t1=Math.min(1,t+eps);
   const tangent=curve.getPoint(t1).sub(curve.getPoint(t0)).normalize();
+
+  // Use the local visible strap frame and lift the anchor a tiny amount so it
+  // sits clearly on the leather surface.
   const viewNormal=camera.getWorldDirection(new THREE.Vector3()).negate();
   let side=new THREE.Vector3().crossVectors(viewNormal,tangent);
   if(side.lengthSq()<1e-6)side.set(1,0,0);
   side.normalize();
   const normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
+
+  sa.group.position.copy(p).addScaledVector(normal,.012);
   sa.group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
 }
 function makeStrapAnchor(connection,t=.5,mirrorPartner=null){
@@ -506,7 +539,13 @@ function removeAnchor(a){
   scene.remove(a);const i=anchors.indexOf(a);if(i>=0)anchors.splice(i,1);
 }
 function resetHarness(){strapAnchors.slice().forEach(removeStrapAnchor);connections.slice().forEach(removeConnection);anchors.slice().forEach(a=>scene.remove(a));anchors.length=0;selected=null;connectStart=null;hideSelection();}
-function setHelpers(v){anchors.forEach(a=>a.visible=v);strapAnchors.forEach(sa=>sa.group.visible=v);connections.forEach(c=>{if(c.handle)c.handle.visible=v});}
+function setHelpers(v){
+  anchors.forEach(a=>a.visible=v);
+  strapAnchors.forEach(sa=>sa.group.visible=v);
+  connections.forEach(c=>{
+    if(c.handle)c.handle.visible=v && buildTool!=='connect';
+  });
+});}
 function showSelection(){
   selectionPanel.classList.remove('hidden');
   ringControls.classList.toggle('hidden',selected?.kind!=='anchor');
@@ -564,7 +603,12 @@ function interactiveHit(x,y){
   const objs=[];
   anchors.forEach(a=>objs.push(...a.children.filter(ch=>ch.userData?.kind==='anchorRing'||ch.userData?.kind==='anchorHit')));
   strapAnchors.forEach(sa=>objs.push(...sa.group.children));
-  connections.forEach(c=>objs.push(...c.group.children));
+  connections.forEach(c=>{
+    c.group.children.forEach(ch=>{
+      if(ch.userData?.kind==='strapHandle' && buildTool==='connect')return;
+      objs.push(ch);
+    });
+  });
   const h=raycaster.intersectObjects(objs,true)[0];if(!h)return null;
 
   const a=anchors.find(a=>a.children.includes(h.object));if(a)return{kind:'anchor',owner:a};
@@ -574,9 +618,21 @@ function interactiveHit(x,y){
   return null;
 }
 
+function refreshBuildToolVisibility(){
+  // In connect mode, strap midpoints must not cover strap anchors/rings.
+  connections.forEach(c=>{
+    if(c.handle)c.handle.visible=(mode==='build' && buildTool!=='connect');
+  });
+  strapAnchors.forEach(sa=>{
+    sa.group.visible=(mode==='build');
+  });
+}
+
 function setBuildTool(t){
-  buildTool=t;toolButtons.forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
+  buildTool=t;
+  toolButtons.forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
   connectStart=null;
+  refreshBuildToolVisibility();
   if(t==='connect')showToast('Ersten Ring antippen');
 }
 toolButtons.forEach(b=>b.addEventListener('click',()=>setBuildTool(b.dataset.tool)));
@@ -667,13 +723,16 @@ canvas.addEventListener('pointermove',e=>{
   }
   if(!single||single.id!==e.pointerId)return;
   if(single.hit?.kind==='anchor'){
-    const h=bodyHitXY(e.clientX,e.clientY);
-    if(h){
-      positionAnchor(single.hit.owner,h);
-      const mp=single.hit.owner.userData.mirrorPartner;
-      if(mp){
-        const mh=findMirroredBodyHitFromPoint(single.hit.owner.position);
-        if(mh)positionAnchor(mp,mh);
+    const moveDist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
+    if(moveDist>6){
+      const h=bodyHitXY(e.clientX,e.clientY);
+      if(h){
+        positionAnchor(single.hit.owner,h);
+        const mp=single.hit.owner.userData.mirrorPartner;
+        if(mp){
+          const mh=findMirroredBodyHitFromPoint(single.hit.owner.position);
+          if(mh)positionAnchor(mp,mh);
+        }
       }
     }
     single.lx=e.clientX;single.ly=e.clientY;return;
@@ -691,13 +750,25 @@ canvas.addEventListener('pointerup',e=>{
       const ih=single.hit;
       if(ih?.kind==='anchor'){
         if(buildTool==='connect'){
-          if(!connectStart){connectStart=ih.owner;selectObject(ih.owner);showToast('Zweiten Ring antippen')}
-          else{makeConnection(connectStart,ih.owner);connectStart=null}
-        }else selectObject(ih.owner);
-      }else if(ih?.kind==='connection'){selectObject(ih.owner)}
-      else if(ih?.kind==='strapAnchor'){selectObject(ih.owner)}
-      else if(!ih&&buildTool==='ring'){
-        const h=bodyHitXY(e.clientX,e.clientY);if(h)selectObject(makeAnchor(h));
+          if(!connectStart){
+            connectStart=ih.owner;
+            selectObject(ih.owner);
+            showToast('Zweiten Ring antippen');
+          }else{
+            makeConnection(connectStart,ih.owner);
+            connectStart=null;
+          }
+        }else{
+          // Ring editing always wins on a clean tap.
+          selectObject(ih.owner);
+        }
+      }else if(ih?.kind==='connection'){
+        if(buildTool!=='connect')selectObject(ih.owner);
+      }else if(ih?.kind==='strapAnchor'){
+        selectObject(ih.owner);
+      }else if(!ih&&buildTool==='ring'){
+        const h=bodyHitXY(e.clientX,e.clientY);
+        if(h)selectObject(makeAnchor(h));
       }
     }
   }
@@ -711,7 +782,7 @@ function switchMode(next){
   modeTitle.textContent=mode==='build'?'Build':mode==='accessories'?'Accessories':'Photo';
   selectionPanel.classList.add('hidden');accessoryPanel.classList.add('hidden');photoPanel.classList.add('hidden');
   buildTools.style.display=mode==='build'?'flex':'none';
-  if(mode==='build'){setHelpers(true);if(selected)showSelection()}
+  if(mode==='build'){setHelpers(true);refreshBuildToolVisibility();if(selected)showSelection()}
   if(mode==='accessories'){setHelpers(false);accessoryPanel.classList.remove('hidden')}
   if(mode==='photo'){setHelpers(false);photoPanel.classList.remove('hidden')}
 }

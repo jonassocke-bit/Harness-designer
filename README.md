@@ -1,30 +1,31 @@
-# Harness Designer V0.5 — Strap Anchors, Ring Sizes & Mirror Mode
+# Harness Designer V0.5b — Interaction & Orientation Fixes
 
-## Riemen-Anker
-- Riemen auswählen → „Anker auf Riemen“
-- Anker wird bei 50 % erzeugt
-- Position per 0–100-%-Slider von Anfang bis Ende verschieben
-- Position bleibt relativ zum Riemenpfad erhalten, wenn Breite, Lockerheit oder Ringpositionen geändert werden
-- mehrere Riemen-Anker pro Riemen möglich
+## Behoben
 
-## Ringparameter
-- Ringdurchmesser 20–100 mm
-- Ringstärke 2–15 mm
-- jeder Ring hat eigene Werte
-- Riemen-Endpunkte und Wrap-Segmente passen sich beim Ändern automatisch an
+### Riemen-Anker
+- Riemen-Anker folgen jetzt der exakt gerenderten Riemenkurve
+- keine separate Neuberechnung mehr, die vom sichtbaren Riemen abweichen kann
+- Position bleibt weiterhin prozentual von 0–100 % gespeichert
+- der Anker sitzt leicht über der Lederoberfläche
 
-## Spiegelmodus
-- optionaler Toggle im Baumodus
-- neuer Ring außerhalb der Körpermittellinie erzeugt automatisch ein Gegenstück
-- Ringbewegung, Durchmesser und Stärke bleiben gekoppelt
-- gespiegelte Verbindungen werden automatisch erzeugt, wenn beide Endringe Mirror-Partner besitzen
-- Breite und Lockerheit werden gekoppelt
-- Riemen-Anker können gespiegelt erzeugt und per Prozentposition gekoppelt werden
-- Mittellinien-Elemente werden nicht dupliziert
+### Verbindungsmodus
+- Riemen-Mittelpunkte/Handles werden im Verbindungsmodus vollständig ausgeblendet
+- sie sind dort auch nicht mehr anklickbar
+- dadurch können sie Ring- oder Riemen-Anker nicht mehr verdecken
 
-## Weiterhin enthalten
-- GLB/GLTF-Mannequin-Import
-- glatte Flat-Straps
-- Ring-Wrap-Segmente
-- Auswahl/Glow
-- Build / Accessories / Photo
+### Ringe auswählen
+- kurzer Tap auf einen Ring öffnet zuverlässig dessen Parameter
+- erst ab einer kleinen tatsächlichen Fingerbewegung wird der Ring verschoben
+- Durchmesser und Ringstärke sind damit einfacher editierbar
+
+### Modellorientierung / Spiegelachse
+- importierte GLB/GLTF-Modelle werden beim Import analysiert
+- die längste Bounding-Box-Achse wird als Körperhöhe angenommen
+- liegt die Figur um 90° auf X oder Z, wird sie automatisch auf Welt-Y aufgerichtet
+- anschließend wird sie zentriert und skaliert
+- dadurch bleibt die Spiegel-Mittellinie bei x = 0 konsistent
+
+## Hinweis
+Die automatische Orientierung ist für typische stehende/liegende Human-Base-Meshes gedacht.
+Bei extremen Posen oder ungewöhnlichen Modellen kann später zusätzlich ein manueller
+Orientierungs-Override sinnvoll sein.
