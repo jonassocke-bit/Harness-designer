@@ -11,17 +11,27 @@ const ringDiameterSlider=$('ringDiameterSlider'),ringDiameterValue=$('ringDiamet
 const ringThicknessSlider=$('ringThicknessSlider'),ringThicknessValue=$('ringThicknessValue');
 const addStrapAnchorBtn=$('addStrapAnchorBtn'),strapAnchorSlider=$('strapAnchorSlider'),strapAnchorValue=$('strapAnchorValue');
 const strapAnchorSizeSlider=$('strapAnchorSizeSlider'),strapAnchorSizeValue=$('strapAnchorSizeValue');
-const mirrorToggle=$('mirrorToggle');
+const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn');
 const accessoryPanel=$('accessoryPanel'),photoPanel=$('photoPanel'),rotationPanel=$('rotationPanel');
 const rotateModelBtn=$('rotateModelBtn'),closeRotationBtn=$('closeRotationBtn'),rotationResetBtn=$('rotationResetBtn');
 const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider');
 const rotXValue=$('rotXValue'),rotYValue=$('rotYValue'),rotZValue=$('rotZValue');
 const surfaceOffsetSlider=$('surfaceOffsetSlider'),surfaceOffsetValue=$('surfaceOffsetValue');
+const envelopeSmoothSlider=$('envelopeSmoothSlider'),envelopeSmoothValue=$('envelopeSmoothValue');
+const envelopeInflateSlider=$('envelopeInflateSlider'),envelopeInflateValue=$('envelopeInflateValue');
+const envelopeVisibleToggle=$('envelopeVisibleToggle');
 const resetBtn=$('resetBtn'),modelBtn=$('modelBtn'),modelInput=$('modelInput'),toast=$('toast'),modeTitle=$('modeTitle');
 const modeButtons=[...document.querySelectorAll('.mode')],toolButtons=[...document.querySelectorAll('.tool')];
 
 let mode='build',buildTool='ring',mirrorMode=false;
 let surfaceOffsetMM=2;
+let envelopeSmoothPct=35;
+let envelopeInflateMM=4;
+let envelopeVisible=false;
+let envelopeRoot=new THREE.Group();
+scene.add(envelopeRoot);
+let envelopeMeshes=[];
+let collisionMeshes=[];
 
 function kindOf(obj){
   if(!obj)return null;
@@ -52,11 +62,11 @@ const axisGeom=new THREE.BufferGeometry().setFromPoints([
 ]);
 const axisLine=new THREE.Line(
   axisGeom,
-  new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.34})
+  new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.55})
 );
 scene.add(axisLine);
 
-const axisMarkerMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.42});
+const axisMarkerMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.62});
 for(const z of [-1.5,-1.0,-.5,0,.5,1.0,1.5]){
   const mark=new THREE.Mesh(new THREE.PlaneGeometry(.12,.012),axisMarkerMat);
   mark.rotation.x=-Math.PI/2;
@@ -93,8 +103,104 @@ function buildFallback(){
   limb(.14,.098,.66,-.20,-1.53,-.005);limb(.14,.098,.66,.20,-1.53,.005);
 }
 buildFallback();
+collisionMeshes=bodyMeshes;
 
 function showToast(msg){toast.textContent=msg;toast.classList.remove('hidden');clearTimeout(showToast.t);showToast.t=setTimeout(()=>toast.classList.add('hidden'),1800)}
+
+
+function clearEnvelope(){
+  envelopeMeshes.forEach(m=>{
+    envelopeRoot.remove(m);
+    m.geometry?.dispose?.();
+    m.material?.dispose?.();
+  });
+  envelopeMeshes=[];
+}
+
+function smoothGeometryClone(sourceGeom, smoothPct, inflateMM){
+  const geom=sourceGeom.clone();
+  const pos=geom.getAttribute('position');
+  if(!pos)return geom;
+
+  // Keep iPhone performance predictable: use a lightweight neighbourhood-free
+  // shrink/smooth pass toward the local bounding-volume centre, then inflate
+  // along recomputed normals. It produces a collision envelope rather than
+  // altering the visible model.
+  geom.computeVertexNormals();
+  const normal=geom.getAttribute('normal');
+  const box=new THREE.Box3().setFromBufferAttribute(pos);
+  const center=box.getCenter(new THREE.Vector3());
+  const smooth=THREE.MathUtils.clamp(smoothPct/100,0,1);
+  const inflate=inflateMM*MM_TO_SCENE;
+
+  const v=new THREE.Vector3();
+  const n=new THREE.Vector3();
+  for(let i=0;i<pos.count;i++){
+    v.fromBufferAttribute(pos,i);
+    n.fromBufferAttribute(normal,i).normalize();
+
+    // Gentle radial averaging effect. Max movement is intentionally small;
+    // the envelope should ignore fine detail, not change body proportions.
+    const toward=center.clone().sub(v);
+    const radial=Math.min(toward.length(),.08)*smooth*.16;
+    if(toward.lengthSq()>1e-8)v.addScaledVector(toward.normalize(),radial);
+
+    v.addScaledVector(n,inflate);
+    pos.setXYZ(i,v.x,v.y,v.z);
+  }
+  pos.needsUpdate=true;
+  geom.computeVertexNormals();
+  geom.computeBoundingBox();
+  geom.computeBoundingSphere();
+  return geom;
+}
+
+function rebuildEnvelope(){
+  clearEnvelope();
+
+  const sourceMeshes=[];
+  mannequin.traverse(n=>{
+    if(n.isMesh && !n.userData?.isEnvelope)sourceMeshes.push(n);
+  });
+
+  sourceMeshes.forEach(src=>{
+    const geom=smoothGeometryClone(src.geometry,envelopeSmoothPct,envelopeInflateMM);
+    const mat=new THREE.MeshStandardMaterial({
+      color:0xffffff,
+      transparent:true,
+      opacity:.16,
+      roughness:.25,
+      metalness:0,
+      wireframe:false,
+      depthWrite:false,
+      side:THREE.DoubleSide
+    });
+    const m=new THREE.Mesh(geom,mat);
+    m.userData.isEnvelope=true;
+
+    // Match source world transform inside a world-space helper group.
+    src.updateMatrixWorld(true);
+    m.matrixAutoUpdate=false;
+    m.matrix.copy(src.matrixWorld);
+    m.visible=envelopeVisible;
+    envelopeRoot.add(m);
+    envelopeMeshes.push(m);
+  });
+
+  // If smoothing/inflate are both zero, original mesh remains the collision source.
+  const useEnvelope=envelopeMeshes.length>0 && (envelopeSmoothPct>0 || envelopeInflateMM>0);
+  collisionMeshes=useEnvelope?envelopeMeshes:bodyMeshes;
+
+  refreshSurfaceOffset();
+}
+
+function setEnvelopeVisible(v){
+  envelopeVisible=v;
+  envelopeMeshes.forEach(m=>m.visible=v);
+  envelopeVisibleToggle.classList.toggle('active',v);
+  envelopeVisibleToggle.setAttribute('aria-pressed',v?'true':'false');
+  envelopeVisibleToggle.textContent=v?'An':'Aus';
+}
 
 modelBtn.addEventListener('click',()=>modelInput.click());
 modelInput.addEventListener('change',async()=>{
@@ -117,6 +223,8 @@ modelInput.addEventListener('change',async()=>{
     obj.updateMatrixWorld(true);
     scene.remove(mannequin);mannequin=new THREE.Group();mannequin.add(obj);scene.add(mannequin);importedModel=obj;
     bodyMeshes=[];obj.traverse(n=>{if(n.isMesh)registerMesh(n,false)});
+    collisionMeshes=bodyMeshes;
+    rebuildEnvelope();
     resetHarness();rotationPanel.classList.add('hidden');rotateModelBtn.classList.remove('active');showToast('3D-Modell geladen');
   }catch(e){console.error(e);showToast('Modell konnte nicht geladen werden')}
   finally{URL.revokeObjectURL(url);modelInput.value=''}
@@ -124,7 +232,7 @@ modelInput.addEventListener('change',async()=>{
 
 const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();
 function setPointerXY(x,y){const r=canvas.getBoundingClientRect();pointer.x=((x-r.left)/r.width)*2-1;pointer.y=-((y-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera)}
-function bodyHitXY(x,y){setPointerXY(x,y);return raycaster.intersectObjects(bodyMeshes,true)[0]||null}
+function bodyHitXY(x,y){setPointerXY(x,y);return raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0]||null}
 function worldNormal(hit){const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);return hit.face.normal.clone().applyMatrix3(nm).normalize()}
 
 function ringMajorRadius(anchor){
@@ -141,7 +249,7 @@ function rebuildRingGeometry(anchor){
   const disc=anchor.children.find(ch=>ch.userData?.kind==='anchorHit');
   if(disc){
     disc.geometry?.dispose?.();
-    disc.geometry=new THREE.CircleGeometry(ringMajorRadius(anchor)*.88,32);
+    disc.geometry=new THREE.CircleGeometry(Math.max(ringMajorRadius(anchor)*1.28,.055),32);
   }
   if(anchor.userData.surfacePoint && anchor.userData.normal){
     anchor.position.copy(anchor.userData.surfacePoint)
@@ -157,7 +265,7 @@ function findMirroredBodyHitFromPoint(worldPoint){
   const camDir=camera.getWorldDirection(new THREE.Vector3());
   const origin=mirrored.clone().addScaledVector(camDir,-3);
   raycaster.set(origin,camDir);
-  const hits=raycaster.intersectObjects(bodyMeshes,true);
+  const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
   if(hits.length)return hits.reduce((best,h)=>h.point.distanceTo(mirrored)<best.point.distanceTo(mirrored)?h:best,hits[0]);
   return null;
 }
@@ -170,6 +278,20 @@ const DEFAULT_RING_THICKNESS_MM=6;
 const MM_TO_SCENE=.0037;
 
 function surfaceOffsetScene(){return surfaceOffsetMM*MM_TO_SCENE;}
+
+const MIRROR_AXIS_SNAP=.045;
+
+function snapSurfacePointToMirrorAxis(hit){
+  if(!hit)return hit;
+  if(Math.abs(hit.point.x)<=MIRROR_AXIS_SNAP)hit.point.x=0;
+  return hit;
+}
+
+function isOnMirrorAxis(obj){
+  const k=kindOf(obj);
+  const p=k==='anchor'?obj.position:(k==='strapAnchor'?obj.group.position:null);
+  return !!p && Math.abs(p.x)<=.012;
+}
 const anchors=[],connections=[],strapAnchors=[];
 let selected=null,connectStart=null;
 
@@ -242,7 +364,7 @@ function updateStrapAnchorGeometry(sa){
   }
   if(hit){
     hit.geometry?.dispose?.();
-    hit.geometry=new THREE.SphereGeometry(Math.max(r*1.45,.018),18,14);
+    hit.geometry=new THREE.SphereGeometry(Math.max(r*2.0,.032),18,14);
   }
 }
 function removeStrapAnchor(sa){
@@ -278,6 +400,140 @@ function endpointMirror(obj){
   return null;
 }
 
+
+function getMirrorPartner(obj){
+  const k=kindOf(obj);
+  if(k==='anchor')return obj.userData.mirrorPartner||null;
+  if(k==='connection')return obj.mirrorPartner||null;
+  if(k==='strapAnchor')return obj.mirrorPartner||null;
+  return null;
+}
+
+function setMirrorPartners(a,b){
+  const ka=kindOf(a),kb=kindOf(b);
+  if(ka!==kb)return;
+  if(ka==='anchor'){
+    a.userData.mirrorPartner=b;
+    b.userData.mirrorPartner=a;
+  }else{
+    a.mirrorPartner=b;
+    b.mirrorPartner=a;
+  }
+}
+
+function refreshMirrorSelectedBubble(){
+  if(!mirrorSelectedBtn)return;
+  mirrorSelectedBtn.classList.toggle('paired',!!getMirrorPartner(selected));
+}
+
+function findExistingMirroredAnchor(source){
+  const target=mirrorWorldPoint(source.position);
+  let best=null,bestD=.08;
+  for(const a of anchors){
+    if(a===source)continue;
+    const d=a.position.distanceTo(target);
+    if(d<bestD){best=a;bestD=d;}
+  }
+  return best;
+}
+
+function createOrGetMirroredAnchor(source){
+  if(isOnMirrorAxis(source))return source;
+  if(source.userData.mirrorPartner)return source.userData.mirrorPartner;
+
+  const existing=findExistingMirroredAnchor(source);
+  if(existing){
+    existing.userData.diameterMM=source.userData.diameterMM;
+    existing.userData.thicknessMM=source.userData.thicknessMM;
+    rebuildRingGeometry(existing);
+    setMirrorPartners(source,existing);
+    return existing;
+  }
+
+  const mh=findMirroredBodyHitFromPoint(source.position);
+  if(!mh)return null;
+  const partner=makeAnchor(mh,source);
+  partner.userData.diameterMM=source.userData.diameterMM;
+  partner.userData.thicknessMM=source.userData.thicknessMM;
+  rebuildRingGeometry(partner);
+  setMirrorPartners(source,partner);
+  return partner;
+}
+
+function findConnectionBetween(a,b){
+  return connections.find(c=>
+    (c.a===a&&c.b===b)||(c.a===b&&c.b===a)
+  )||null;
+}
+
+function ensureMirroredConnection(c){
+  if(c.mirrorPartner)return c.mirrorPartner;
+
+  const ma=ensureMirroredEndpoint(c.a);
+  const mb=ensureMirroredEndpoint(c.b);
+  if(!ma||!mb)return null;
+
+  if(ma===c.a && mb===c.b){
+    c.mirrorPartner=c;
+    return c;
+  }
+
+  const existing=findConnectionBetween(ma,mb);
+  if(existing){
+    existing.widthMM=c.widthMM;
+    existing.slack=c.slack;
+    existing.controlPoint=c.controlPoint?mirrorWorldPoint(c.controlPoint):null;
+    updateConnection(existing);
+    setMirrorPartners(c,existing);
+    return existing;
+  }
+
+  const mc=makeConnection(ma,mb,c);
+  mc.widthMM=c.widthMM;
+  mc.slack=c.slack;
+  mc.controlPoint=c.controlPoint?mirrorWorldPoint(c.controlPoint):null;
+  updateConnection(mc);
+  setMirrorPartners(c,mc);
+  return mc;
+}
+
+function createOrGetMirroredStrapAnchor(sa){
+  if(sa.mirrorPartner)return sa.mirrorPartner;
+  const mc=ensureMirroredConnection(sa.connection);
+  if(!mc)return null;
+
+  const existing=strapAnchors.find(x=>x.connection===mc && Math.abs(x.t-sa.t)<.015);
+  if(existing){
+    existing.sizeMM=sa.sizeMM;
+    updateStrapAnchorGeometry(existing);
+    setMirrorPartners(sa,existing);
+    return existing;
+  }
+
+  const partner=makeStrapAnchor(mc,sa.t,sa);
+  partner.sizeMM=sa.sizeMM;
+  updateStrapAnchorGeometry(partner);
+  setMirrorPartners(sa,partner);
+  return partner;
+}
+
+function ensureMirroredEndpoint(ep){
+  const k=kindOf(ep);
+  if(k==='anchor')return createOrGetMirroredAnchor(ep);
+  if(k==='strapAnchor')return createOrGetMirroredStrapAnchor(ep);
+  return null;
+}
+
+function mirrorSelectedObject(){
+  const k=kindOf(selected);
+  if(k==='anchor')createOrGetMirroredAnchor(selected);
+  else if(k==='connection')ensureMirroredConnection(selected);
+  else if(k==='strapAnchor')createOrGetMirroredStrapAnchor(selected);
+
+  refreshSelectionVisuals();
+  refreshMirrorSelectedBubble();
+}
+
 function findMirrorConnection(c){
   if(!c?.a?.userData?.mirrorPartner||!c?.b?.userData?.mirrorPartner)return null;
   return connections.find(x=>
@@ -305,7 +561,7 @@ function makeAnchor(hit,mirrorPartner=null){
   g.add(ring);
 
   const hitDisc=new THREE.Mesh(
-    new THREE.CircleGeometry(ringMajorRadius(g)*.88,32),
+    new THREE.CircleGeometry(Math.max(ringMajorRadius(g)*1.28,.055),32),
     new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.02,side:THREE.DoubleSide})
   );
   hitDisc.position.z=-.004;
@@ -330,12 +586,33 @@ function makeAnchor(hit,mirrorPartner=null){
   return g;
 }
 function positionAnchor(g,hit){
+  hit=snapSurfacePointToMirrorAxis(hit);
   const n=worldNormal(hit);
+
   g.userData.surfacePoint=hit.point.clone();
+  if(Math.abs(g.userData.surfacePoint.x)<=MIRROR_AXIS_SNAP)g.userData.surfacePoint.x=0;
+
   g.userData.normal.copy(n);
-  g.position.copy(g.userData.surfacePoint).addScaledVector(n,surfaceOffsetScene()+ringTubeRadius(g));
+  g.position.copy(g.userData.surfacePoint)
+    .addScaledVector(n,surfaceOffsetScene()+ringTubeRadius(g));
+
+  if(Math.abs(g.userData.surfacePoint.x)<=MIRROR_AXIS_SNAP)g.position.x=0;
+
   g.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);
+
   connections.filter(c=>c.a===g||c.b===g).forEach(updateConnection);
+
+  const mp=g.userData.mirrorPartner;
+  if(mp && !g.userData._syncingMirror && !isOnMirrorAxis(g)){
+    const mh=findMirroredBodyHitFromPoint(g.position);
+    if(mh){
+      g.userData._syncingMirror=true;
+      mp.userData._syncingMirror=true;
+      positionAnchor(mp,mh);
+      mp.userData._syncingMirror=false;
+      g.userData._syncingMirror=false;
+    }
+  }
 }
 function ringPlaneDirection(anchor,worldDirection){
   // Convert the incoming world-space direction into the local XY plane of the ring.
@@ -444,14 +721,14 @@ function surfaceMidpoint(c){
   const p2=kindOf(c.b)==='anchor'?ringEdgePoint(c.b,c.a):endpointWorld(c.b);
   const mid=p1.clone().lerp(p2,.5);
   const ndc=mid.clone().project(camera);raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
-  const h=raycaster.intersectObjects(bodyMeshes,true)[0];
+  const h=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0];
   return h?h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008):mid;
 }
 
 function projectPointToBodyFromCamera(point, offset=.045){
   const ndc=point.clone().project(camera);
   raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
-  const hits=raycaster.intersectObjects(bodyMeshes,true);
+  const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
   if(!hits.length) return point.clone();
   const h=hits[0];
   return h.point.clone().addScaledVector(worldNormal(h),Math.max(.001,surfaceOffsetScene()+offset*.25));
@@ -524,7 +801,7 @@ function buildRibbonGeometry(points,widthMM,thicknessMM=2.5){
     // Approximate surface normal by raycasting the current point from camera.
     const ndc=points[i].clone().project(camera);
     raycaster.setFromCamera(new THREE.Vector2(ndc.x,ndc.y),camera);
-    const h=raycaster.intersectObjects(bodyMeshes,true)[0];
+    const h=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true)[0];
 
     let normal=h?worldNormal(h):camera.getWorldDirection(new THREE.Vector3()).negate();
     normal.normalize();
@@ -614,13 +891,23 @@ function updateConnection(c){
   c.group.add(mesh);
 
   const h=new THREE.Mesh(
-    new THREE.SphereGeometry(.077,24,16),
-    new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.25})
+    new THREE.SphereGeometry(.062,24,16),
+    new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:.24})
   );
   h.position.copy(c.controlPoint);
   h.userData={kind:'strapHandle',owner:c};
   c.group.add(h);
+
+  const hh=new THREE.Mesh(
+    new THREE.SphereGeometry(.115,18,12),
+    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.001})
+  );
+  hh.position.copy(c.controlPoint);
+  hh.userData={kind:'strapHandleHit',owner:c};
+  c.group.add(hh);
+
   c.handle=h;
+  c.handleHit=hh;
   if(kindOf(c.a)==='anchor')rebuildRingWraps(c.a);
   if(kindOf(c.b)==='anchor')rebuildRingWraps(c.b);
   strapAnchors.filter(sa=>sa.connection===c).forEach(updateStrapAnchor);
@@ -642,12 +929,12 @@ function removeAnchor(a){
   if(a.userData.mirrorPartner)a.userData.mirrorPartner.userData.mirrorPartner=null;
   scene.remove(a);const i=anchors.indexOf(a);if(i>=0)anchors.splice(i,1);
 }
-function resetHarness(){strapAnchors.slice().forEach(removeStrapAnchor);connections.slice().forEach(removeConnection);anchors.slice().forEach(a=>scene.remove(a));anchors.length=0;selected=null;connectStart=null;hideSelection();}
+function resetHarness(){strapAnchors.slice().forEach(removeStrapAnchor);connections.slice().forEach(removeConnection);anchors.slice().forEach(a=>scene.remove(a));anchors.length=0;selected=null;connectStart=null;hideSelection();refreshMirrorSelectedBubble();}
 function setHelpers(v){
   anchors.forEach(a=>a.visible=v);
   strapAnchors.forEach(sa=>sa.group.visible=v);
   connections.forEach(c=>{
-    if(c.handle)c.handle.visible=v;
+    if(c.handle)c.handle.visible=v;if(c.handleHit)c.handleHit.visible=v;
   });
 }
 function showSelection(){
@@ -713,6 +1000,7 @@ function refreshSelectionVisuals(){
 function selectObject(obj){
   selected=obj;
   refreshSelectionVisuals();
+  refreshMirrorSelectedBubble();
   showSelection();
 }
 function interactiveHit(x,y){
@@ -743,7 +1031,8 @@ function interactiveHit(x,y){
     if(a)return{kind:'anchor',owner:a};
     const sa=strapAnchors.find(sa=>sa.group.children.includes(h.object));
     if(sa)return{kind:'strapAnchor',owner:sa};
-    if(h.object.userData.kind==='strapHandle')return{kind:'strapHandle',owner:h.object.userData.owner};
+    if(h.object.userData.kind==='strapHandle' || h.object.userData.kind==='strapHandleHit')
+      return{kind:'strapHandle',owner:h.object.userData.owner};
     if(h.object.userData.kind==='connectionMesh')return{kind:'connection',owner:h.object.userData.owner};
   }
   return null;
@@ -751,7 +1040,7 @@ function interactiveHit(x,y){
 
 function refreshBuildToolVisibility(){
   connections.forEach(c=>{
-    if(c.handle)c.handle.visible=(mode==='build');
+    if(c.handle)c.handle.visible=(mode==='build');if(c.handleHit)c.handleHit.visible=(mode==='build');
   });
   strapAnchors.forEach(sa=>{
     sa.group.visible=(mode==='build');
@@ -770,6 +1059,7 @@ function setBuildTool(t){
   if(t==='connect' && k!=='connection' && k!=='strapAnchor')selected=null;
 
   refreshSelectionVisuals();
+  refreshMirrorSelectedBubble();
   showSelection();
 
   if(t==='connect')showToast('Ringe verbinden oder Riemen bearbeiten');
@@ -840,6 +1130,18 @@ strapAnchorSizeSlider.addEventListener('input',()=>{
     }
   }
 });
+
+mirrorSelectedBtn.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  if(!selected){
+    showToast('Erst ein Objekt auswählen');
+    return;
+  }
+  mirrorSelectedObject();
+  if(getMirrorPartner(selected))showToast('Auswahl gespiegelt und gekoppelt');
+});
+
 mirrorToggle.addEventListener('click',e=>{
   e.preventDefault();
   e.stopPropagation();
@@ -857,6 +1159,7 @@ deleteSelectedBtn.addEventListener('click',()=>{
   selected=null;
   hideSelection();
   refreshSelectionVisuals();
+  refreshMirrorSelectedBubble();
 });
 resetBtn.addEventListener('click',resetHarness);
 
@@ -876,6 +1179,25 @@ function refreshSurfaceOffset(){
   strapAnchors.forEach(updateStrapAnchor);
 }
 
+
+envelopeSmoothSlider.addEventListener('input',()=>{
+  envelopeSmoothPct=+envelopeSmoothSlider.value;
+  envelopeSmoothValue.textContent=envelopeSmoothSlider.value;
+  rebuildEnvelope();
+});
+
+envelopeInflateSlider.addEventListener('input',()=>{
+  envelopeInflateMM=+envelopeInflateSlider.value;
+  envelopeInflateValue.textContent=envelopeInflateSlider.value;
+  rebuildEnvelope();
+});
+
+envelopeVisibleToggle.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  setEnvelopeVisible(!envelopeVisible);
+});
+
 surfaceOffsetSlider.addEventListener('input',()=>{
   surfaceOffsetMM=+surfaceOffsetSlider.value;
   surfaceOffsetValue.textContent=surfaceOffsetSlider.value;
@@ -892,6 +1214,11 @@ function syncRotationUI(){
   rotZValue.textContent=rotZSlider.value;
   surfaceOffsetSlider.value=surfaceOffsetMM;
   surfaceOffsetValue.textContent=surfaceOffsetMM;
+  envelopeSmoothSlider.value=envelopeSmoothPct;
+  envelopeSmoothValue.textContent=envelopeSmoothPct;
+  envelopeInflateSlider.value=envelopeInflateMM;
+  envelopeInflateValue.textContent=envelopeInflateMM;
+  setEnvelopeVisible(envelopeVisible);
 }
 function applyManualRotation(){
   const r=Math.PI/180;
@@ -900,6 +1227,7 @@ function applyManualRotation(){
   rotYValue.textContent=rotYSlider.value;
   rotZValue.textContent=rotZSlider.value;
   mannequin.updateMatrixWorld(true);
+  rebuildEnvelope();
   resetHarness();
 }
 rotateModelBtn.addEventListener('click',e=>{
@@ -916,6 +1244,7 @@ closeRotationBtn.addEventListener('click',()=>{
 rotationResetBtn.addEventListener('click',()=>{
   mannequin.rotation.set(0,0,0);
   mannequin.updateMatrixWorld(true);
+  rebuildEnvelope();
   syncRotationUI();
   resetHarness();
 });
@@ -931,6 +1260,7 @@ canvas.addEventListener('pointerdown',e=>{
     if(buildTool==='ring' && hit?.kind==='anchor')selectObject(hit.owner);
     if(buildTool==='connect' && hit?.kind==='connection')selectObject(hit.owner);
     if(buildTool==='connect' && hit?.kind==='strapAnchor')selectObject(hit.owner);
+    if(buildTool==='connect' && hit?.kind==='strapHandle')selectObject(hit.owner);
     single={id:e.pointerId,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,hit};
   }else if(pointers.size===2){
     single=null;const[a,b]=[...pointers.values()];
@@ -948,19 +1278,24 @@ canvas.addEventListener('pointermove',e=>{
     const moveDist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
     if(moveDist>6){
       const h=bodyHitXY(e.clientX,e.clientY);
-      if(h){
-        positionAnchor(single.hit.owner,h);
-        const mp=single.hit.owner.userData.mirrorPartner;
-        if(mp){
-          const mh=findMirroredBodyHitFromPoint(single.hit.owner.position);
-          if(mh)positionAnchor(mp,mh);
-        }
-      }
+      if(h)positionAnchor(single.hit.owner,h);
     }
     single.lx=e.clientX;single.ly=e.clientY;return;
   }
   if(buildTool==='connect' && single.hit?.kind==='strapHandle'){
-    const h=bodyHitXY(e.clientX,e.clientY);if(h){single.hit.owner.controlPoint=h.point.clone().addScaledVector(worldNormal(h),.06);updateConnection(single.hit.owner)}single.lx=e.clientX;single.ly=e.clientY;return;
+    const h=bodyHitXY(e.clientX,e.clientY);
+    if(h){
+      const c=single.hit.owner;
+      c.controlPoint=h.point.clone().addScaledVector(worldNormal(h),surfaceOffsetScene()+.008);
+      updateConnection(c);
+
+      const mc=c.mirrorPartner;
+      if(mc && mc!==c){
+        mc.controlPoint=mirrorWorldPoint(c.controlPoint);
+        updateConnection(mc);
+      }
+    }
+    single.lx=e.clientX;single.ly=e.clientY;return;
   }
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
 });
@@ -1018,6 +1353,8 @@ function installSheetPhysics(el){
 }
 [selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
+
+rebuildEnvelope();
 
 function resize(){const w=viewport.clientWidth,h=viewport.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}
 addEventListener('resize',resize);resize();

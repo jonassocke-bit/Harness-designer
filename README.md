@@ -1,25 +1,20 @@
-# Harness Designer V0.5f
+# Harness Designer V0.6 — Smooth Collision Envelope
 
-## Strap anchors
-- Strap anchors are now white spheres.
-- Size can be adjusted from 2–30 mm.
-- Strap anchors are valid connection targets in Connect mode.
-- Connections can therefore run ring -> strap anchor, strap anchor -> ring, or strap anchor -> strap anchor.
-- Strap anchors remain tied to their percentage on the exact rendered strap.
+## Smooth collision envelope
+- Visible mannequin stays unchanged.
+- A separate internal collision envelope can be generated around it.
+- Model menu controls:
+  - Oberflächenglättung 0–100 %
+  - Hüllenabstand 0–30 mm
+  - Hülle anzeigen An/Aus
+- Rings, strap path projection and picking use the envelope when smoothing or inflate is active.
+- Turning smoothing and inflate both to zero falls back to the original body mesh.
 
-## Size ranges
-- Strap width now allows 0–60 mm.
-- Ring diameter now allows 0–100 mm.
-- Ring material thickness now allows 0–15 mm.
-- Internally a tiny epsilon is used so Three.js geometry remains valid at zero.
+## Visual inspection
+- Envelope can be shown as a translucent white shell.
+- The shell is independent from the visible mannequin.
 
-## Model distance
-- Manual model menu now includes global "Abstand zum Modell" 0–30 mm.
-- Body-attached rings are repositioned from their stored surface point/normal.
-- Strap paths are rebuilt to use the new offset.
-
-## Existing
-- true Mirror toggle bubble
-- manual X/Y/Z mannequin rotation
-- centre-axis floor guide
-- ring editor / strap editor split
+## Compact UI
+- Bottom sheets, sliders, labels and buttons use less vertical space.
+- Build tools and bottom mode switch are smaller.
+- Utility bubbles are slightly smaller.

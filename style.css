@@ -100,3 +100,73 @@ input[type=range]{width:100%;accent-color:#fff;margin-top:9px}
   background:rgba(20,20,23,.82)!important;
   color:#9c9ca3!important;
 }
+
+#mirrorSelectedBtn.paired{
+  background:#fff!important;
+  color:#111!important;
+  border-color:#fff!important;
+}
+
+/* V0.6 compact editor */
+.sheet{
+  left:8px;
+  right:8px;
+  padding:6px 12px 11px;
+  border-radius:18px;
+  bottom:calc(env(safe-area-inset-bottom) + 64px);
+}
+.grabber{
+  width:30px;
+  height:3px;
+  margin:1px auto 7px;
+}
+.sheet-row{margin-bottom:7px}
+.sheet-title{font-size:15px;margin-top:1px}
+.sheet-label{font-size:9px}
+.control{margin-top:8px}
+.control>span{font-size:11px}
+.control-meta{margin-top:4px;font-size:9px}
+input[type=range]{margin-top:5px}
+.value-badge{
+  font-size:10px;
+  padding:4px 6px;
+  border-radius:8px;
+}
+.primary-btn,.small-danger,.danger-btn{
+  padding:8px 9px;
+  margin-top:8px;
+  font-size:11px;
+}
+.compact-sheet p{font-size:10.5px;margin:6px 0 0}
+.mode-pill{
+  bottom:calc(env(safe-area-inset-bottom) + 10px);
+}
+.mode{padding:8px 11px;font-size:11px}
+.build-tools{
+  padding:3px;
+}
+.tool{padding:7px 9px;font-size:11px}
+.utility-bubble{width:36px;height:36px;font-size:17px}
+.inline-toggle-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:9px;
+  font-size:11px;
+  font-weight:650;
+}
+.mini-toggle{
+  min-width:48px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+  color:#aaa;
+  padding:5px 9px;
+  font-size:10px;
+  font-weight:700;
+}
+.mini-toggle.active{
+  background:#fff;
+  color:#111;
+}

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.5fb</title>
+  <title>Harness Designer V0.6b</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.5f</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.6</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -38,6 +38,7 @@
 
     <div class="utility-bubbles">
       <button id="mirrorToggle" class="utility-bubble" aria-pressed="false" aria-label="Spiegelmodus">⇆</button>
+      <button id="mirrorSelectedBtn" class="utility-bubble" aria-label="Auswahl spiegeln">◇</button>
       <button id="rotateModelBtn" class="utility-bubble" aria-label="Modell drehen">⟳</button>
     </div>
 <div id="buildTools" class="build-tools">
@@ -129,6 +130,20 @@
         <div class="value-badge"><span id="surfaceOffsetValue">2</span> mm</div>
         <input id="surfaceOffsetSlider" type="range" min="0" max="30" value="2" step="0.5">
       </label>
+      <label class="control">
+        <span>Oberflächenglättung</span>
+        <div class="value-badge"><span id="envelopeSmoothValue">35</span> %</div>
+        <input id="envelopeSmoothSlider" type="range" min="0" max="100" value="35" step="1">
+      </label>
+      <label class="control">
+        <span>Hüllenabstand</span>
+        <div class="value-badge"><span id="envelopeInflateValue">4</span> mm</div>
+        <input id="envelopeInflateSlider" type="range" min="0" max="30" value="4" step="0.5">
+      </label>
+      <div class="inline-toggle-row">
+        <span>Hülle anzeigen</span>
+        <button id="envelopeVisibleToggle" class="mini-toggle" aria-pressed="false">Aus</button>
+      </div>
       <button id="rotationResetBtn" class="primary-btn">Rotation zurücksetzen</button>
     </section>
 
