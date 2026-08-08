@@ -1,9 +1,19 @@
-# Harness Designer V0.10j
+# Harness Designer V0.10l — Drag Performance
 
-This build fixes the actual structural causes found by inspecting the DOM.
+Two-stage geometry update:
 
-- Ring / Verbinden is `.build-tools`; that real element is now placed in the top row.
-- Lock used to be outside the selection header. The lock button is now physically
-  moved into the same `.sheet-row` as RING/N1 and Delete.
-- Header is therefore truly: name | lock | delete, not a visual overlay.
-- No geometry/model/strap/ring logic changed.
+During finger drag:
+- updates are coalesced to at most one geometry refresh per animation frame
+- fast curve uses only 5 support points
+- fast ribbon uses only 12 samples
+- no automatic crossing refresh
+- no ring-wrap rebuild
+- no expensive surface-normal raycasts for ribbon orientation
+- no full multi-pass solver
+
+On pointer release:
+- one full `updateAllGeometry()` restores final high-quality geometry,
+  crossings, wraps and surface following.
+
+This specifically targets the reported slowdown that occurs only while moving
+a strap / strap endpoint. Static scene quality remains unchanged.

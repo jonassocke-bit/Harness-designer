@@ -36,7 +36,7 @@ let camAz=0,camEl=.02,camDist=5.25;
 const target=new THREE.Vector3(0,.08,0);
 
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -290,6 +290,17 @@ function seatRingOnSurface(n){
   n.group.quaternion.copy(q);
 }
 
+
+function markNodeVisualDirty(n){
+  if(n)n._visualDirty=true;
+}
+
+function refreshNodeVisualIfNeeded(n){
+  if(n._visualDirty!==false){
+    rebuildNodeVisual(n);
+    n._visualDirty=false;
+  }
+}
 function rebuildNodeVisual(n){
   while(n.group.children.length){
     const q=n.group.children.pop();q.geometry?.dispose?.();if(q.material!==metalMat&&q.material!==metalSelected&&q.material!==pointMat&&q.material!==pointSelected)q.material?.dispose?.();
@@ -467,6 +478,39 @@ function visibleEndpoint(node,toward){
   if(d.lengthSq()<1e-8)d.set(1,0,0);d.normalize();
   return node.group.localToWorld(d.multiplyScalar(ringMajor(node)+ringTube(node)*.45));
 }
+
+function buildBaseCurveFast(c){
+  const A=nodePosition(c.a),B=nodePosition(c.b);
+  const a=visibleEndpoint(c.a,B);
+  const b=visibleEndpoint(c.b,A);
+
+  const straight=new THREE.LineCurve3(a,b);
+  const tight=1-THREE.MathUtils.clamp(c.slack/100,0,1);
+  const supports=[];
+  const N=5;
+
+  // Minimal surface-following during drag.
+  for(let i=0;i<N;i++){
+    let p=straight.getPoint(i/(N-1));
+    if(i>0&&i<N-1&&tight>.15){
+      const avgN=averageNormal(c.a,c.b);
+      const origin=p.clone().addScaledVector(avgN,.55);
+      raycaster.set(origin,avgN.clone().negate());
+      const hits=raycaster.intersectObjects(collisionMeshes.length?collisionMeshes:bodyMeshes,true);
+      if(hits.length&&hits[0].point.distanceTo(p)<.42){
+        const snap=hits[0].point.clone().addScaledVector(worldNormal(hits[0]),surfaceOffsetScene()+.008);
+        p.lerp(snap,tight*.55);
+      }
+    }
+    supports.push(p);
+  }
+
+  const curve=new THREE.CatmullRomCurve3(supports,false,'centripetal',.5);
+  c.baseCurve=curve;
+  c.renderCurve=curve;
+  return curve;
+}
+
 function buildBaseCurve(c){
   const A=nodePosition(c.a),B=nodePosition(c.b);
   const a=visibleEndpoint(c.a,B);
@@ -542,15 +586,41 @@ function buildBaseCurve(c){
 
 const AUTO_CROSS_EPS=.028;
 let autoCrossingUpdate=false;
+let crossingsDirty=true;
+let dragPreviewActive=false;
+let fastUpdateScheduled=false;
+let pendingFastUpdate=false;
 
-function sampledSegments(c,count=36){
-  const curve=c.renderCurve||c.baseCurve;if(!curve)return [];
-  const out=[];let a=curve.getPoint(0);
+
+
+let geometryRevision=0;
+
+function invalidateConnectionCache(c){
+  if(c){
+    c._sampleCacheRevision=-1;
+    c._sampleCache=null;
+  }
+}
+
+function sampledSegments(c,count=18){
+  const curve=c.renderCurve||c.baseCurve;
+  if(!curve)return [];
+
+  if(c._sampleCacheRevision===geometryRevision && c._sampleCacheCount===count && c._sampleCache){
+    return c._sampleCache;
+  }
+
+  const out=[];
+  let a=curve.getPoint(0);
   for(let i=1;i<=count;i++){
     const t=i/count,b=curve.getPoint(t);
     out.push({a:a.clone(),b:b.clone(),t0:(i-1)/count,t1:t});
     a=b;
   }
+
+  c._sampleCacheRevision=geometryRevision;
+  c._sampleCacheCount=count;
+  c._sampleCache=out;
   return out;
 }
 
@@ -605,11 +675,11 @@ function createCrossNode(c1,c2,cross){
     normal:new THREE.Vector3(0,0,1),mirrorPartner:null,
     crossing:{c1,c2,t1:cross.t1,t2:cross.t2,key:crossingKey(c1,c2)}
   };
-  nodes.push(n);scene.add(n.group);rebuildNodeVisual(n);updateCrossNode(n,cross);return n;
+  nodes.push(n);scene.add(n.group);n._visualDirty=true;refreshNodeVisualIfNeeded(n);updateCrossNode(n,cross);return n;
 }
 
 function refreshAutomaticCrossings(){
-  if(autoCrossingUpdate)return;
+  if(autoCrossingUpdate||!crossingsDirty)return;
   autoCrossingUpdate=true;
   try{
     const wanted=new Map();
@@ -631,7 +701,7 @@ function refreshAutomaticCrossings(){
       if(!n)n=createCrossNode(item.c1,item.c2,item.cross);
       else updateCrossNode(n,item.cross);
     }
-  }finally{autoCrossingUpdate=false}
+  }finally{autoCrossingUpdate=false;crossingsDirty=false}
 }
 
 function strapNodesOn(c){return nodes.filter(n=>n.source==='strap'&&n.parent===c).sort((x,y)=>x.t-y.t)}
@@ -723,14 +793,107 @@ function ribbonGeometry(points,widthMM,thicknessMM=2.5){
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
   g.setIndex(idx);g.computeVertexNormals();return g;
 }
+
+function ribbonGeometryFast(points,widthMM,thicknessMM=2.5){
+  const halfW=Math.max(.0002,.15*(widthMM/30)*.5);
+  const halfT=.009*(thicknessMM/2.5);
+  const verts=[],idx=[],uv=[];
+  let prevSide=null;
+
+  for(let i=0;i<points.length;i++){
+    const prev=points[Math.max(0,i-1)];
+    const next=points[Math.min(points.length-1,i+1)];
+    const tangent=next.clone().sub(prev).normalize();
+
+    let normal=new THREE.Vector3(0,0,1);
+    let side=new THREE.Vector3().crossVectors(normal,tangent);
+    if(side.lengthSq()<1e-8){
+      normal.set(0,1,0);
+      side.crossVectors(normal,tangent);
+    }
+    side.normalize();
+
+    if(prevSide&&side.dot(prevSide)<0)side.negate();
+    prevSide=side.clone();
+
+    normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
+
+    const p=points[i];
+    const l=p.clone().addScaledVector(side,-halfW);
+    const r=p.clone().addScaledVector(side,halfW);
+    const tl=l.clone().addScaledVector(normal,halfT);
+    const tr=r.clone().addScaledVector(normal,halfT);
+    const bl=l.clone().addScaledVector(normal,-halfT);
+    const br=r.clone().addScaledVector(normal,-halfT);
+    [tl,tr,bl,br].forEach(v=>verts.push(v.x,v.y,v.z));
+    const u=i/(points.length-1);
+    uv.push(0,u,1,u,0,u,1,u);
+  }
+
+  for(let i=0;i<points.length-1;i++){
+    const a=i*4,b=(i+1)*4;
+    idx.push(
+      a,a+1,b,a+1,b+1,b,
+      a+2,b+2,a+3,a+3,b+2,b+3,
+      a+2,a,b+2,a,b,b+2,
+      a+1,a+3,b+1,a+3,b+3,b+1
+    );
+  }
+
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+function addRibbonFast(c,points){
+  if(points.length<2)return;
+  const mesh=new THREE.Mesh(
+    ribbonGeometryFast(points,c.widthMM),
+    new THREE.MeshStandardMaterial({
+      color:0x171718,
+      roughness:.5,
+      metalness:0,
+      side:THREE.DoubleSide,
+      emissive:selected===c?0x2c271d:0x000000,
+      emissiveIntensity:selected===c?.75:0
+    })
+  );
+  mesh.castShadow=false;
+  mesh.receiveShadow=false;
+  mesh.userData={kind:'connectionMesh',owner:c};
+  c.group.add(mesh);
+}
+
 function addRibbon(c,points){
   if(points.length<2)return;
   const mesh=new THREE.Mesh(ribbonGeometry(points,c.widthMM),new THREE.MeshStandardMaterial({
     color:0x171718,roughness:.5,metalness:0,side:THREE.DoubleSide,
     emissive:selected===c?0x2c271d:0x000000,emissiveIntensity:selected===c?.75:0
   }));
-  mesh.castShadow=true;mesh.userData={kind:'connectionMesh',owner:c};c.group.add(mesh);
+  mesh.castShadow=false;mesh.receiveShadow=false;mesh.userData={kind:'connectionMesh',owner:c};c.group.add(mesh);
 }
+
+function renderConnectionFast(c){
+  while(c.group.children.length){
+    const q=c.group.children.pop();
+    q.geometry?.dispose?.();
+    q.material?.dispose?.();
+  }
+
+  const curve=c.baseCurve;
+  if(!curve)return;
+
+  const pts=[];
+  const count=12;
+  for(let i=0;i<=count;i++){
+    pts.push(curve.getPoint(i/count));
+  }
+  addRibbonFast(c,pts);
+}
+
 function renderConnection(c){
   while(c.group.children.length){const q=c.group.children.pop();q.geometry?.dispose?.();q.material?.dispose?.()}
   const curve=c.baseCurve;if(!curve)return;
@@ -754,9 +917,47 @@ function renderConnection(c){
 
 }
 
+
+function updateFastGeometry(){
+  geometryRevision++;
+
+  // Fast preview intentionally skips:
+  // - automatic crossings
+  // - ring wrap regeneration
+  // - expensive node visual rebuilds
+  // - multi-pass solver
+  //
+  // It only rebuilds strap curves + strap mesh positions enough for smooth dragging.
+  for(const c of connections){
+    buildBaseCurveFast(c);
+  }
+  for(const n of nodes){
+    if(n.source==='strap')updateStrapNode(n);
+  }
+  for(const c of connections){
+    renderConnectionFast(c);
+  }
+  refreshSelectionVisuals();
+}
+
+function scheduleFastGeometryUpdate(){
+  pendingFastUpdate=true;
+  if(fastUpdateScheduled)return;
+  fastUpdateScheduled=true;
+
+  requestAnimationFrame(()=>{
+    fastUpdateScheduled=false;
+    if(!pendingFastUpdate)return;
+    pendingFastUpdate=false;
+    updateFastGeometry();
+  });
+}
+
 function updateAllGeometry(){
+  geometryRevision++;
+  crossingsDirty=true;
   for(const n of nodes)if(n.source==='surface')updateSurfaceNodeTransform(n);
-  for(let pass=0;pass<5;pass++){
+  for(let pass=0;pass<3;pass++){
     for(const c of connections)buildBaseCurve(c);
     for(const n of nodes)if(n.source==='strap')updateStrapNode(n);
   }
@@ -764,7 +965,7 @@ function updateAllGeometry(){
   refreshAutomaticCrossings();
   for(const n of nodes){
     if(n.source==='crossing')updateCrossNode(n);
-    rebuildNodeVisual(n);
+    if(n._visualDirty)refreshNodeVisualIfNeeded(n);
   }
   refreshSelectionVisuals();
 }
@@ -837,7 +1038,18 @@ function selectObject(o){
   selected=o;refreshSelectionVisuals();showSelection();updateQuickActions();updateNodeParameterVisibility();vibrate(5);
 }
 function refreshSelectionVisuals(){
-  for(const n of nodes)rebuildNodeVisual(n);
+  for(const n of nodes){
+    for(const child of n.group.children){
+      if(child.userData?.kind==='nodeVisual'){
+        if(n.ringVisible){
+          child.material=(selected===n)?metalSelected:metalMat;
+        }else{
+          child.material=(selected===n)?pointSelected:pointMat;
+        }
+      }
+    }
+  }
+
   for(const c of connections){
     for(const child of c.group.children){
       if(child.userData?.kind==='connectionMesh'&&child.material){
@@ -846,6 +1058,7 @@ function refreshSelectionVisuals(){
       }
     }
   }
+
   mirrorSelectedBtn?.classList.toggle('paired',paired(selected));
 }
 function hideSelection(){
@@ -992,20 +1205,20 @@ document.addEventListener('pointerdown',e=>{if(moreMenu&&!moreMenu.classList.con
 
 ringDiameterSlider.addEventListener('input',()=>{
   if(selected?.kind!=='node')return;
-  selected.diameterMM=+ringDiameterSlider.value;ringDiameterValue.textContent=ringDiameterSlider.value;
-  if(paired(selected)){selected.mirrorPartner.diameterMM=selected.diameterMM}
+  selected.diameterMM=+ringDiameterSlider.value;ringDiameterValue.textContent=ringDiameterSlider.value;markNodeVisualDirty(selected);
+  if(paired(selected)){selected.mirrorPartner.diameterMM=selected.diameterMM;markNodeVisualDirty(selected.mirrorPartner)}
   updateAllGeometry();
 });
 ringThicknessSlider.addEventListener('input',()=>{
   if(selected?.kind!=='node')return;
-  selected.thicknessMM=+ringThicknessSlider.value;ringThicknessValue.textContent=ringThicknessSlider.value;
-  if(paired(selected))selected.mirrorPartner.thicknessMM=selected.thicknessMM;
+  selected.thicknessMM=+ringThicknessSlider.value;ringThicknessValue.textContent=ringThicknessSlider.value;markNodeVisualDirty(selected);
+  if(paired(selected))selected.mirrorPartner.thicknessMM=selected.thicknessMM;markNodeVisualDirty(selected.mirrorPartner);
   updateAllGeometry();
 });
 surfaceNodeSizeSlider.addEventListener('input',()=>{
   if(selected?.kind!=='node')return;
-  selected.sizeMM=+surfaceNodeSizeSlider.value;surfaceNodeSizeValue.textContent=surfaceNodeSizeSlider.value;
-  if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;updateAllGeometry();
+  selected.sizeMM=+surfaceNodeSizeSlider.value;surfaceNodeSizeValue.textContent=surfaceNodeSizeSlider.value;markNodeVisualDirty(selected);
+  if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;markNodeVisualDirty(selected.mirrorPartner);updateAllGeometry();
 });
 surfaceNodeRingToggle.addEventListener('click',()=>{
   if(selected?.kind!=='node')return;
@@ -1017,7 +1230,7 @@ surfaceNodeRingToggle.addEventListener('click',()=>{
     selected.ringVisible=false;
     mergeSplitNode(selected);
   }else{
-    selected.ringVisible=!selected.ringVisible;
+    selected.ringVisible=!selected.ringVisible;markNodeVisualDirty(selected);
   }
 
   if(paired(selected)){
@@ -1062,7 +1275,7 @@ strapNodeRingToggle.addEventListener('click',()=>{
     selected.ringVisible=false;
     mergeSplitNode(selected);
   }else{
-    selected.ringVisible=!selected.ringVisible;
+    selected.ringVisible=!selected.ringVisible;markNodeVisualDirty(selected);
   }
 
   if(paired(selected))selected.mirrorPartner.ringVisible=selected.ringVisible;
@@ -1091,8 +1304,8 @@ strapAnchorSlider.addEventListener('input',()=>{
 });
 strapAnchorSizeSlider.addEventListener('input',()=>{
   if(selected?.kind!=='node'||selected.source!=='strap')return;
-  selected.sizeMM=+strapAnchorSizeSlider.value;strapAnchorSizeValue.textContent=strapAnchorSizeSlider.value;
-  if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;updateAllGeometry();
+  selected.sizeMM=+strapAnchorSizeSlider.value;strapAnchorSizeValue.textContent=strapAnchorSizeSlider.value;markNodeVisualDirty(selected);
+  if(paired(selected))selected.mirrorPartner.sizeMM=selected.sizeMM;markNodeVisualDirty(selected.mirrorPartner);updateAllGeometry();
 });
 
 
@@ -1202,7 +1415,8 @@ canvas.addEventListener('pointermove',e=>{
             }
           }
         }
-        updateAllGeometry();
+        dragPreviewActive=true;
+        scheduleFastGeometryUpdate();
       }
       single.lx=e.clientX;single.ly=e.clientY;return;
     }
@@ -1211,7 +1425,8 @@ canvas.addEventListener('pointermove',e=>{
     if(node.source==='strap' && node.parent && d>4){
       node.t=closestTOnConnectionScreen(node.parent,e.clientX,e.clientY);
       if(paired(node))node.mirrorPartner.t=node.t;
-      updateAllGeometry();
+      dragPreviewActive=true;
+      scheduleFastGeometryUpdate();
       showSelection();
       single.lx=e.clientX;single.ly=e.clientY;return;
     }
@@ -1220,7 +1435,13 @@ canvas.addEventListener('pointermove',e=>{
 
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
 });
-canvas.addEventListener('pointerup',e=>{rememberState();
+canvas.addEventListener('pointerup',e=>{
+  if(dragPreviewActive){
+    dragPreviewActive=false;
+    pendingFastUpdate=false;
+    updateAllGeometry();
+  }
+  rememberState();
   pointers.delete(e.pointerId);if(pointers.size<2)twoStart=null;
   if(single&&single.id===e.pointerId&&Math.hypot(e.clientX-single.sx,e.clientY-single.sy)<=TAP&&mode==='build'){
     const ih=single.hit;
@@ -1238,7 +1459,16 @@ canvas.addEventListener('pointerup',e=>{rememberState();
   }
   single=null;try{canvas.releasePointerCapture(e.pointerId)}catch{}
 });
-canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);single=null;twoStart=null});
+canvas.addEventListener('pointercancel',e=>{
+  pointers.delete(e.pointerId);
+  if(dragPreviewActive){
+    dragPreviewActive=false;
+    pendingFastUpdate=false;
+    updateAllGeometry();
+  }
+  single=null;
+  twoStart=null;
+});
 
 function syncRotationUI(){
   const d=180/Math.PI;rotXSlider.value=Math.round(mannequin.rotation.x*d);rotYSlider.value=Math.round(mannequin.rotation.y*d);rotZSlider.value=Math.round(mannequin.rotation.z*d);
