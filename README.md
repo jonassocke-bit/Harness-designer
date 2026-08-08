@@ -1,13 +1,22 @@
-# Harness Designer V0.5c
+# Harness Designer V0.5d
 
-Rebuilt from the last confirmed-loading V0.5 branch.
+## Editor modes
+- Ring mode: ring taps open ring diameter/thickness editor; new rings can be placed.
+- Connect mode: ring taps define connection endpoints; strap taps open strap editor.
+- Strap midpoint handles are hidden in Connect mode as requested.
+- Strap anchors are edited in Connect mode.
 
-Fixes:
-- strap anchors follow the exact rendered strap curve
-- connect mode hides/disables strap midpoint handles
-- ring taps are separated from ring dragging by a movement threshold
-- build-mode visibility is refreshed consistently
-- imported human models are auto-oriented only when one axis is clearly dominant
-- orientation/scale logic is bounded to avoid pathological values
+## Mirror toggle
+- Mirror is independent from Ring/Connect mode.
+- Tapping Mirror never changes the active construction tool.
+- White = enabled, dark = disabled.
 
-This release intentionally avoids the broader regex-generated structural changes from V0.5b.
+## Manual mannequin rotation
+- New “Modell” rotation control with X/Y/Z sliders (-180° to +180°).
+- Automatic orientation removed.
+- Changing mannequin orientation clears the current harness so anchors cannot remain attached to stale surface coordinates.
+
+## Existing features
+- per-ring diameter and material thickness
+- exact rendered-curve strap anchors
+- flat straps, ring wraps, width/slack

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Harness Designer" />
-  <title>Harness Designer V0.5cb</title>
+  <title>Harness Designer V0.5db</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
@@ -26,7 +26,7 @@
   <div id="chrome">
     <header class="topbar">
       <div>
-        <div class="eyebrow">HARNESS DESIGNER · V0.5c</div>
+        <div class="eyebrow">HARNESS DESIGNER · V0.5d</div>
         <div class="title" id="modeTitle">Build</div>
       </div>
       <div class="top-actions">
@@ -45,6 +45,7 @@
       <button class="tool active" data-tool="ring">＋ Ring</button>
       <button class="tool" data-tool="connect">↔ Verbinden</button>
       <button id="mirrorToggle" class="tool mirror-tool" aria-pressed="false">⇆ Spiegeln</button>
+      <button id="rotateModelBtn" class="tool rotate-tool">⟳ Modell</button>
     </div>
 
     <div class="mode-pill" id="modePill">
@@ -98,6 +99,30 @@
           <input id="strapAnchorSlider" type="range" min="0" max="100" value="50" step="1">
         </label>
       </div>
+    </section>
+
+    <section id="rotationPanel" class="sheet hidden compact-sheet">
+      <div class="grabber"></div>
+      <div class="sheet-row">
+        <div>
+          <div class="sheet-label">MODELLAUSRICHTUNG</div>
+          <div class="sheet-title">Manuell drehen</div>
+        </div>
+        <button id="closeRotationBtn" class="text-btn">Fertig</button>
+      </div>
+      <label class="control">
+        <span>X-Achse</span><div class="value-badge"><span id="rotXValue">0</span>°</div>
+        <input id="rotXSlider" type="range" min="-180" max="180" value="0" step="1">
+      </label>
+      <label class="control">
+        <span>Y-Achse</span><div class="value-badge"><span id="rotYValue">0</span>°</div>
+        <input id="rotYSlider" type="range" min="-180" max="180" value="0" step="1">
+      </label>
+      <label class="control">
+        <span>Z-Achse</span><div class="value-badge"><span id="rotZValue">0</span>°</div>
+        <input id="rotZSlider" type="range" min="-180" max="180" value="0" step="1">
+      </label>
+      <button id="rotationResetBtn" class="primary-btn">Rotation zurücksetzen</button>
     </section>
 
     <section id="accessoryPanel" class="sheet hidden compact-sheet">

@@ -11,7 +11,10 @@ const ringDiameterSlider=$('ringDiameterSlider'),ringDiameterValue=$('ringDiamet
 const ringThicknessSlider=$('ringThicknessSlider'),ringThicknessValue=$('ringThicknessValue');
 const addStrapAnchorBtn=$('addStrapAnchorBtn'),strapAnchorSlider=$('strapAnchorSlider'),strapAnchorValue=$('strapAnchorValue');
 const mirrorToggle=$('mirrorToggle');
-const accessoryPanel=$('accessoryPanel'),photoPanel=$('photoPanel');
+const accessoryPanel=$('accessoryPanel'),photoPanel=$('photoPanel'),rotationPanel=$('rotationPanel');
+const rotateModelBtn=$('rotateModelBtn'),closeRotationBtn=$('closeRotationBtn'),rotationResetBtn=$('rotationResetBtn');
+const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider');
+const rotXValue=$('rotXValue'),rotYValue=$('rotYValue'),rotZValue=$('rotZValue');
 const resetBtn=$('resetBtn'),modelBtn=$('modelBtn'),modelInput=$('modelInput'),toast=$('toast'),modeTitle=$('modeTitle');
 const modeButtons=[...document.querySelectorAll('.mode')],toolButtons=[...document.querySelectorAll('.tool')];
 
@@ -41,6 +44,7 @@ function updateCamera(){
 updateCamera();
 
 let mannequin=new THREE.Group();scene.add(mannequin);
+let importedModel=null;
 let bodyMeshes=[];
 const bodyMat=new THREE.MeshStandardMaterial({color:0xd7d5d0,roughness:.78,metalness:0});
 function registerMesh(m,override=true){if(override)m.material=bodyMat;m.castShadow=true;m.receiveShadow=true;bodyMeshes.push(m)}
@@ -70,21 +74,10 @@ modelInput.addEventListener('change',async()=>{
   try{
     const gltf=await new GLTFLoader().loadAsync(url),obj=gltf.scene;
 
-    // Normalize a typical human base mesh so its longest axis becomes world Y.
+    // V0.5d: no automatic orientation. The user controls model rotation manually.
     obj.updateMatrixWorld(true);
     let box=new THREE.Box3().setFromObject(obj);
     let size=box.getSize(new THREE.Vector3());
-
-    if(size.x>size.y*1.15 && size.x>size.z*1.15){
-      obj.rotation.z+=Math.PI/2;
-      obj.updateMatrixWorld(true);
-    }else if(size.z>size.y*1.15 && size.z>size.x*1.15){
-      obj.rotation.x-=Math.PI/2;
-      obj.updateMatrixWorld(true);
-    }
-
-    box=new THREE.Box3().setFromObject(obj);
-    size=box.getSize(new THREE.Vector3());
     const scale=3.25/Math.max(size.y,.001);
     obj.scale.setScalar(scale);
     obj.updateMatrixWorld(true);
@@ -94,7 +87,7 @@ modelInput.addEventListener('change',async()=>{
     obj.position.z-=c.z;
     obj.position.y+=(-1.75-b2.min.y);
     obj.updateMatrixWorld(true);
-    scene.remove(mannequin);mannequin=new THREE.Group();mannequin.add(obj);scene.add(mannequin);
+    scene.remove(mannequin);mannequin=new THREE.Group();mannequin.add(obj);scene.add(mannequin);importedModel=obj;
     bodyMeshes=[];obj.traverse(n=>{if(n.isMesh)registerMesh(n,false)});
     resetHarness();showToast('3D-Modell geladen');
   }catch(e){console.error(e);showToast('Modell konnte nicht geladen werden')}
@@ -541,29 +534,43 @@ function setHelpers(v){
   });
 }
 function showSelection(){
-  selectionPanel.classList.remove('hidden');
-  ringControls.classList.toggle('hidden',selected?.kind!=='anchor');
-  strapControls.classList.toggle('hidden',selected?.kind!=='connection');
-  strapAnchorControls.classList.toggle('hidden',selected?.kind!=='strapAnchor');
+  if(mode!=='build'){hideSelection();return;}
 
-  if(selected?.kind==='anchor'){
+  const ringMode=buildTool==='ring';
+  const connectMode=buildTool==='connect';
+
+  // Ring mode only exposes ring editing. Connect mode only exposes strap editing.
+  const showRing=ringMode && selected?.kind==='anchor';
+  const showStrap=connectMode && selected?.kind==='connection';
+  const showStrapAnchor=connectMode && selected?.kind==='strapAnchor';
+
+  ringControls.classList.toggle('hidden',!showRing);
+  strapControls.classList.toggle('hidden',!showStrap);
+  strapAnchorControls.classList.toggle('hidden',!showStrapAnchor);
+
+  if(showRing){
+    selectionPanel.classList.remove('hidden');
     selectionLabel.textContent='RING';
     selectionTitle.textContent=selected.userData.id;
     ringDiameterSlider.value=selected.userData.diameterMM;
     ringDiameterValue.textContent=selected.userData.diameterMM;
     ringThicknessSlider.value=selected.userData.thicknessMM;
     ringThicknessValue.textContent=selected.userData.thicknessMM;
-  }else if(selected?.kind==='connection'){
+  }else if(showStrap){
+    selectionPanel.classList.remove('hidden');
     selectionLabel.textContent='RIEMEN';
     selectionTitle.textContent=selected.id;
     widthSlider.value=selected.widthMM;
     widthValue.textContent=selected.widthMM;
     slackSlider.value=selected.slack;
-  }else if(selected?.kind==='strapAnchor'){
+  }else if(showStrapAnchor){
+    selectionPanel.classList.remove('hidden');
     selectionLabel.textContent='RIEMEN-ANKER';
     selectionTitle.textContent=selected.id;
     strapAnchorSlider.value=Math.round(selected.t*100);
     strapAnchorValue.textContent=Math.round(selected.t*100);
+  }else{
+    selectionPanel.classList.add('hidden');
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden');ringControls.classList.add('hidden');strapControls.classList.add('hidden');strapAnchorControls.classList.add('hidden');}
@@ -594,21 +601,36 @@ function selectObject(obj){
 }
 function interactiveHit(x,y){
   setPointerXY(x,y);
-  const objs=[];
-  anchors.forEach(a=>objs.push(...a.children.filter(ch=>ch.userData?.kind==='anchorRing'||ch.userData?.kind==='anchorHit')));
-  strapAnchors.forEach(sa=>objs.push(...sa.group.children));
+
+  const ringObjs=[];
+  anchors.forEach(a=>ringObjs.push(...a.children.filter(ch=>ch.userData?.kind==='anchorRing'||ch.userData?.kind==='anchorHit')));
+
+  const strapAnchorObjs=[];
+  strapAnchors.forEach(sa=>strapAnchorObjs.push(...sa.group.children));
+
+  const strapObjs=[];
   connections.forEach(c=>{
     c.group.children.forEach(ch=>{
       if(ch.userData?.kind==='strapHandle' && buildTool==='connect')return;
-      objs.push(ch);
+      strapObjs.push(ch);
     });
   });
-  const h=raycaster.intersectObjects(objs,true)[0];if(!h)return null;
 
-  const a=anchors.find(a=>a.children.includes(h.object));if(a)return{kind:'anchor',owner:a};
-  const sa=strapAnchors.find(sa=>sa.group.children.includes(h.object));if(sa)return{kind:'strapAnchor',owner:sa};
-  if(h.object.userData.kind==='strapHandle')return{kind:'strapHandle',owner:h.object.userData.owner};
-  if(h.object.userData.kind==='connectionMesh')return{kind:'connection',owner:h.object.userData.owner};
+  let groups=buildTool==='ring'
+    ? [ringObjs,strapAnchorObjs,strapObjs]
+    : [strapAnchorObjs,strapObjs,ringObjs];
+
+  for(const objs of groups){
+    if(!objs.length)continue;
+    const h=raycaster.intersectObjects(objs,true)[0];
+    if(!h)continue;
+    const a=anchors.find(a=>a.children.includes(h.object));
+    if(a)return{kind:'anchor',owner:a};
+    const sa=strapAnchors.find(sa=>sa.group.children.includes(h.object));
+    if(sa)return{kind:'strapAnchor',owner:sa};
+    if(h.object.userData.kind==='strapHandle')return{kind:'strapHandle',owner:h.object.userData.owner};
+    if(h.object.userData.kind==='connectionMesh')return{kind:'connection',owner:h.object.userData.owner};
+  }
   return null;
 }
 
@@ -624,7 +646,17 @@ function setBuildTool(t){
   toolButtons.forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
   connectStart=null;
   refreshBuildToolVisibility();
-  if(t==='connect')showToast('Ersten Ring antippen');
+
+  // The lower editor follows the active construction tool.
+  if(t==='ring'){
+    if(selected?.kind!=='anchor')selected=null;
+    showSelection();
+  }else{
+    if(selected?.kind==='anchor')selected=null;
+    showSelection();
+    showToast('Ringe verbinden oder Riemen antippen');
+  }
+  refreshSelectionVisuals();
 }
 toolButtons.forEach(b=>b.addEventListener('click',()=>setBuildTool(b.dataset.tool)));
 
@@ -674,7 +706,9 @@ strapAnchorSlider.addEventListener('input',()=>{
     if(selected.mirrorPartner){selected.mirrorPartner.t=selected.t;updateStrapAnchor(selected.mirrorPartner)}
   }
 });
-mirrorToggle.addEventListener('click',()=>{
+mirrorToggle.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
   mirrorMode=!mirrorMode;
   mirrorToggle.classList.toggle('active',mirrorMode);
   mirrorToggle.setAttribute('aria-pressed',mirrorMode?'true':'false');
@@ -689,6 +723,43 @@ deleteSelectedBtn.addEventListener('click',()=>{
 });
 resetBtn.addEventListener('click',resetHarness);
 
+
+function syncRotationUI(){
+  const d=180/Math.PI;
+  rotXSlider.value=Math.round(mannequin.rotation.x*d);
+  rotYSlider.value=Math.round(mannequin.rotation.y*d);
+  rotZSlider.value=Math.round(mannequin.rotation.z*d);
+  rotXValue.textContent=rotXSlider.value;
+  rotYValue.textContent=rotYSlider.value;
+  rotZValue.textContent=rotZSlider.value;
+}
+function applyManualRotation(){
+  const r=Math.PI/180;
+  mannequin.rotation.set(+rotXSlider.value*r,+rotYSlider.value*r,+rotZSlider.value*r);
+  rotXValue.textContent=rotXSlider.value;
+  rotYValue.textContent=rotYSlider.value;
+  rotZValue.textContent=rotZSlider.value;
+  mannequin.updateMatrixWorld(true);
+  resetHarness();
+}
+rotateModelBtn.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  rotationPanel.classList.toggle('hidden');
+  rotateModelBtn.classList.toggle('active',!rotationPanel.classList.contains('hidden'));
+  syncRotationUI();
+});
+closeRotationBtn.addEventListener('click',()=>{
+  rotationPanel.classList.add('hidden');
+  rotateModelBtn.classList.remove('active');
+});
+[rotXSlider,rotYSlider,rotZSlider].forEach(s=>s.addEventListener('input',applyManualRotation));
+rotationResetBtn.addEventListener('click',()=>{
+  mannequin.rotation.set(0,0,0);
+  mannequin.updateMatrixWorld(true);
+  syncRotationUI();
+  resetHarness();
+});
+
 // gestures
 const pointers=new Map();let single=null,twoStart=null;const TAP=9;
 function pinfo(e){return{x:e.clientX,y:e.clientY,px:e.clientX,py:e.clientY}}
@@ -697,9 +768,9 @@ canvas.addEventListener('pointerdown',e=>{
   if(pointers.size===1){
     const hit=mode==='build'?interactiveHit(e.clientX,e.clientY):null;
     // Immediate subtle feedback when touching a selectable object.
-    if(hit?.kind==='connection') selectObject(hit.owner);
-    if(hit?.kind==='strapAnchor') selectObject(hit.owner);
-    if(hit?.kind==='anchor' && buildTool!=='connect') selectObject(hit.owner);
+    if(buildTool==='ring' && hit?.kind==='anchor')selectObject(hit.owner);
+    if(buildTool==='connect' && hit?.kind==='connection')selectObject(hit.owner);
+    if(buildTool==='connect' && hit?.kind==='strapAnchor')selectObject(hit.owner);
     single={id:e.pointerId,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,hit};
   }else if(pointers.size===2){
     single=null;const[a,b]=[...pointers.values()];
@@ -713,7 +784,7 @@ canvas.addEventListener('pointermove',e=>{
     camDist=THREE.MathUtils.clamp(twoStart.d*(twoStart.dist/dist),3.1,7.2);camAz=twoStart.az-(cx-twoStart.cx)*.006;target.y=THREE.MathUtils.clamp(twoStart.ty+(cy-twoStart.cy)*.004,-.75,.85);updateCamera();return;
   }
   if(!single||single.id!==e.pointerId)return;
-  if(single.hit?.kind==='anchor'){
+  if(buildTool==='ring' && single.hit?.kind==='anchor'){
     const moveDist=Math.hypot(e.clientX-single.sx,e.clientY-single.sy);
     if(moveDist>6){
       const h=bodyHitXY(e.clientX,e.clientY);
@@ -728,7 +799,7 @@ canvas.addEventListener('pointermove',e=>{
     }
     single.lx=e.clientX;single.ly=e.clientY;return;
   }
-  if(single.hit?.kind==='strapHandle'){
+  if(buildTool==='connect' && single.hit?.kind==='strapHandle'){
     const h=bodyHitXY(e.clientX,e.clientY);if(h){single.hit.owner.controlPoint=h.point.clone().addScaledVector(worldNormal(h),.06);updateConnection(single.hit.owner)}single.lx=e.clientX;single.ly=e.clientY;return;
   }
   const ddx=e.clientX-single.lx,ddy=e.clientY-single.ly;camAz-=ddx*.009;camEl=THREE.MathUtils.clamp(camEl+ddy*.006,-.72,.72);updateCamera();single.lx=e.clientX;single.ly=e.clientY;
@@ -741,13 +812,23 @@ canvas.addEventListener('pointerup',e=>{
       const ih=single.hit;
       if(ih?.kind==='anchor'){
         if(buildTool==='connect'){
-          if(!connectStart){connectStart=ih.owner;selectObject(ih.owner);showToast('Zweiten Ring antippen')}
-          else{makeConnection(connectStart,ih.owner);connectStart=null}
-        }else selectObject(ih.owner);
-      }else if(ih?.kind==='connection'){selectObject(ih.owner)}
-      else if(ih?.kind==='strapAnchor'){selectObject(ih.owner)}
-      else if(!ih&&buildTool==='ring'){
-        const h=bodyHitXY(e.clientX,e.clientY);if(h)selectObject(makeAnchor(h));
+          if(!connectStart){
+            connectStart=ih.owner;
+            showToast('Zweiten Ring antippen');
+          }else{
+            makeConnection(connectStart,ih.owner);
+            connectStart=null;
+          }
+        }else{
+          selectObject(ih.owner);
+        }
+      }else if(ih?.kind==='connection'){
+        if(buildTool==='connect')selectObject(ih.owner);
+      }else if(ih?.kind==='strapAnchor'){
+        if(buildTool==='connect')selectObject(ih.owner);
+      }else if(!ih&&buildTool==='ring'){
+        const h=bodyHitXY(e.clientX,e.clientY);
+        if(h)selectObject(makeAnchor(h));
       }
     }
   }
@@ -776,7 +857,7 @@ function installSheetPhysics(el){
   const end=e=>{if(!tracking)return;tracking=false;el.classList.remove('dragging');el.style.transform='';el.style.opacity='';if(dy>58)hideAllUI();try{el.releasePointerCapture?.(e.pointerId)}catch{}};
   el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
 }
-[selectionPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
+[selectionPanel,rotationPanel,accessoryPanel,photoPanel,$('modePill')].forEach(installSheetPhysics);
 restoreUI.addEventListener('click',()=>{chrome.classList.remove('ui-hidden');restoreUI.classList.add('hidden')});
 
 function resize(){const w=viewport.clientWidth,h=viewport.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}

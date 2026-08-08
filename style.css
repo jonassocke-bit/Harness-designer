@@ -49,3 +49,8 @@ input[type=range]{width:100%;accent-color:#fff;margin-top:9px}
 
 .mirror-tool.active{background:#fff;color:#111}
 .primary-btn{width:100%;margin-top:13px;border:0;border-radius:14px;padding:11px;background:#fff;color:#111;font-weight:700}
+
+/* V0.5d */
+.mirror-tool{background:rgba(20,20,23,.80)!important;color:#9c9ca3!important}
+.mirror-tool.active{background:#fff!important;color:#111!important}
+.rotate-tool.active{background:#fff;color:#111}
