@@ -28,8 +28,7 @@ let surfaceOffsetMM=2;
 let envelopeSmoothPct=35;
 let envelopeInflateMM=4;
 let envelopeVisible=false;
-let envelopeRoot=new THREE.Group();
-scene.add(envelopeRoot);
+let envelopeRoot=null;
 let envelopeMeshes=[];
 let collisionMeshes=[];
 
@@ -39,7 +38,9 @@ function kindOf(obj){
 }
 
 const scene=new THREE.Scene();
-scene.fog=new THREE.Fog(0x09090b,6.2,10);
+scene.fog=new THREE.Fog(0x09090b,6.2,
+envelopeRoot=new THREE.Group();
+scene.add(envelopeRoot);10);
 const camera=new THREE.PerspectiveCamera(31,1,.01,50);
 let camAz=0,camEl=.02,camDist=5.25;const target=new THREE.Vector3(0,.08,0);
 
@@ -109,6 +110,7 @@ function showToast(msg){toast.textContent=msg;toast.classList.remove('hidden');c
 
 
 function clearEnvelope(){
+  if(!envelopeRoot)return;
   envelopeMeshes.forEach(m=>{
     envelopeRoot.remove(m);
     m.geometry?.dispose?.();
@@ -156,6 +158,7 @@ function smoothGeometryClone(sourceGeom, smoothPct, inflateMM){
 }
 
 function rebuildEnvelope(){
+  if(!envelopeRoot || !mannequin)return;
   clearEnvelope();
 
   const sourceMeshes=[];

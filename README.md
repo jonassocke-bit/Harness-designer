@@ -1,20 +1,12 @@
-# Harness Designer V0.6 — Smooth Collision Envelope
+# Harness Designer V0.6a
 
-## Smooth collision envelope
-- Visible mannequin stays unchanged.
-- A separate internal collision envelope can be generated around it.
-- Model menu controls:
-  - Oberflächenglättung 0–100 %
-  - Hüllenabstand 0–30 mm
-  - Hülle anzeigen An/Aus
-- Rings, strap path projection and picking use the envelope when smoothing or inflate is active.
-- Turning smoothing and inflate both to zero falls back to the original body mesh.
+Critical startup hotfix.
 
-## Visual inspection
-- Envelope can be shown as a translucent white shell.
-- The shell is independent from the visible mannequin.
+V0.6 attempted `scene.add(envelopeRoot)` before the Three.js `scene` variable
+had been initialized. Safari therefore stopped execution immediately.
 
-## Compact UI
-- Bottom sheets, sliders, labels and buttons use less vertical space.
-- Build tools and bottom mode switch are smaller.
-- Utility bubbles are slightly smaller.
+V0.6a:
+- declares envelope state without accessing scene
+- creates envelopeRoot only after THREE.Scene exists
+- adds defensive envelope guards
+- otherwise keeps V0.6 features unchanged
