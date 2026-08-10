@@ -394,16 +394,144 @@ function restoreStrapSnapshot(d){
   const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls});
   return s;
 }
+
+function remapTForSplit(t,splitT,leftSide){
+  if(leftSide)return splitT<=1e-6?0:THREE.MathUtils.clamp(t/splitT,0,1);
+  return (1-splitT)<=1e-6?1:THREE.MathUtils.clamp((t-splitT)/(1-splitT),0,1);
+}
+
+function migrateDynamicNodesAfterSplit(originalId,splitNode,splitT,left,right){
+  const EPS=.018;
+
+  for(const dn of [...nodes.values()]){
+    if(dn.id===splitNode.id)continue;
+
+    // Ordinary dynamic anchors on the old through-strap.
+    if(dn.source==='strap'&&dn.parentStrapId===originalId){
+      // There must never be a second anchor at the exact split position.
+      if(Math.abs(dn.t-splitT)<EPS){
+        removeNode(dn.id,false);
+        continue;
+      }
+
+      if(dn.t<splitT){
+        dn.parentStrapId=left.id;
+        dn.t=remapTForSplit(dn.t,splitT,true);
+      }else{
+        dn.parentStrapId=right.id;
+        dn.t=remapTForSplit(dn.t,splitT,false);
+      }
+      syncNodeTransform(dn);
+      continue;
+    }
+
+    // Auto crossings on a strap that is being replaced are intentionally
+    // discarded. A post-structure refresh will recreate only valid crossings.
+    if(dn.source==='crossing'&&dn.crossing&&
+       (dn.crossing.strapAId===originalId||dn.crossing.strapBId===originalId)){
+      if(dn.autoCrossing){
+        removeNode(dn.id,false);
+        continue;
+      }
+
+      // A non-auto crossing point is a user-owned node: remap the affected leg.
+      if(dn.crossing.strapAId===originalId){
+        const oldT=dn.crossing.tA;
+        if(oldT<splitT){
+          dn.crossing.strapAId=left.id;
+          dn.crossing.tA=remapTForSplit(oldT,splitT,true);
+        }else{
+          dn.crossing.strapAId=right.id;
+          dn.crossing.tA=remapTForSplit(oldT,splitT,false);
+        }
+      }
+      if(dn.crossing.strapBId===originalId){
+        const oldT=dn.crossing.tB;
+        if(oldT<splitT){
+          dn.crossing.strapBId=left.id;
+          dn.crossing.tB=remapTForSplit(oldT,splitT,true);
+        }else{
+          dn.crossing.strapBId=right.id;
+          dn.crossing.tB=remapTForSplit(oldT,splitT,false);
+        }
+      }
+      if(dn.crossing){
+        const sa=straps.get(dn.crossing.strapAId),sb=straps.get(dn.crossing.strapBId);
+        if(sa&&sb)dn.crossing.key=crossingKey(sa,sb);
+      }
+      syncNodeTransform(dn);
+    }
+  }
+}
+
+function nodeMirrorEquivalent(idA,idB){
+  if(idA===idB)return true;
+  const a=nodes.get(idA),b=nodes.get(idB);
+  if(!a||!b)return false;
+  return a.mirrorId===b.id||b.mirrorId===a.id;
+}
+
+function strapsAreMirrorEquivalent(a,b){
+  if(!a||!b)return false;
+  return (
+    nodeMirrorEquivalent(a.a,b.a)&&nodeMirrorEquivalent(a.b,b.b)
+  )||(
+    nodeMirrorEquivalent(a.a,b.b)&&nodeMirrorEquivalent(a.b,b.a)
+  );
+}
+
+function pairSplitChildren(partA,partB){
+  if(!partA||!partB)return;
+  const A=(partA.children||[]).map(id=>straps.get(id)).filter(Boolean);
+  const B=(partB.children||[]).map(id=>straps.get(id)).filter(Boolean);
+
+  const used=new Set();
+  for(const sa of A){
+    const sb=B.find(x=>!used.has(x.id)&&strapsAreMirrorEquivalent(sa,x));
+    if(!sb)continue;
+
+    sa.mirrorId=sb.id;
+    sb.mirrorId=sa.id;
+
+    // A freshly split mirrored pair starts with exactly matching properties.
+    // sideFactor is mirrored by copyStrapProps.
+    copyStrapProps(sa,sb);
+    used.add(sb.id);
+  }
+}
+
+function repairSplitPairingForNodes(a,b){
+  if(!a||!b)return;
+  if(a.splitMeta?.kind==='single'&&b.splitMeta?.kind==='single'){
+    pairSplitChildren(a.splitMeta.part,b.splitMeta.part);
+  }
+}
 function splitOneStrapAtNode(s,n,t){
   if(!s||!n)return null;
   const original=strapSnapshot(s);
   const a=s.a,b=s.b;
-  removeStrapBare(s.id);
+  const originalId=s.id;
 
-  const left=makeStrap({a,b:n.id,widthMM:original.widthMM,slack:original.slack,controls:[]});
-  const right=makeStrap({a:n.id,b,widthMM:original.widthMM,slack:original.slack,controls:[]});
+  removeStrapBare(originalId);
 
-  // Critical: render both children immediately against the current ring radius.
+  // Both pieces inherit the exact same strap settings from the parent.
+  const left=makeStrap({
+    a,b:n.id,
+    widthMM:original.widthMM,
+    slack:original.slack,
+    controls:[]
+  });
+  const right=makeStrap({
+    a:n.id,b,
+    widthMM:original.widthMM,
+    slack:original.slack,
+    controls:[]
+  });
+
+  // Move every surviving dynamic point away from the deleted parent strap.
+  // Auto crossing points are removed and recalculated later.
+  migrateDynamicNodesAfterSplit(originalId,n,t,left,right);
+
   updateStrapGeometry(left);
   updateStrapGeometry(right);
   rebuildWrapsForNode(n);
@@ -437,8 +565,12 @@ function convertDynamicPointToRing(n){
     if(!sa||!sb)return;
 
     const crossingSnapshot={...n.crossing};
+    const wereMirrorPair=sa.mirrorId===sb.id||sb.mirrorId===sa.id;
+
     const partA=splitOneStrapAtNode(sa,n,n.crossing.tA);
     const partB=splitOneStrapAtNode(sb,n,n.crossing.tB);
+
+    if(wereMirrorPair)pairSplitChildren(partA,partB);
 
     n.splitMeta={kind:'crossing',partA,partB,crossing:crossingSnapshot};
     n.source='junction';n.crossing=null;n.autoCrossing=false;
@@ -628,6 +760,8 @@ nodeRingToggle.addEventListener('click',()=>{
     if(!partner.ringVisible&&(partner.source==='strap'||partner.source==='crossing'))convertDynamicPointToRing(partner);
     else if(partner.ringVisible&&partner.splitMeta)convertRingBackToPoint(partner);
     else{partner.ringVisible=n.ringVisible;copyNodeVisualProps(n,partner)}
+
+    if(n.ringVisible&&partner.ringVisible)repairSplitPairingForNodes(n,partner);
   }
   updateAttachedStraps(n.id);rebuildAllWraps();showSelection();commitHistory();refreshAutomaticCrossings();
 });
@@ -733,10 +867,45 @@ function clearAutomaticCrossings(validKeys=null){
     if(!validKeys||!key||!validKeys.has(key))removeNode(n.id,false);
   }
 }
+
+function crossingBlockedByExistingAnchor(p,ignoreKey=null){
+  for(const n of nodes.values()){
+    if(n.source==='crossing'&&n.autoCrossing&&!n.ringVisible){
+      if(ignoreKey&&n.crossing?.key===ignoreKey)continue;
+    }
+
+    // Explicit point/ring/junction owns this location.
+    if(n.autoCrossing&&!n.ringVisible)continue;
+
+    const np=nodeWorldPosition(n);
+    let radius=.052;
+    if(n.ringVisible)radius=Math.max(radius,ringMajor(n)+.052);
+
+    if(np.distanceTo(p)<radius)return true;
+  }
+  return false;
+}
+
+
+function cleanupOrphanDynamicNodes(){
+  for(const n of [...nodes.values()]){
+    if(n.source==='strap'&&n.parentStrapId&&!straps.has(n.parentStrapId)){
+      removeNode(n.id,false);
+      continue;
+    }
+    if(n.source==='crossing'&&n.crossing){
+      if(!straps.has(n.crossing.strapAId)||!straps.has(n.crossing.strapBId)){
+        removeNode(n.id,false);
+      }
+    }
+  }
+}
+
 function refreshAutomaticCrossings(){
   if(crossingRefreshBusy)return;
   crossingRefreshBusy=true;
   try{
+    cleanupOrphanDynamicNodes();
     const arr=[...straps.values()];
     const validKeys=new Set();
 
@@ -756,6 +925,10 @@ function refreshAutomaticCrossings(){
       let n=[...nodes.values()].find(n=>
         n.source==='crossing'&&n.autoCrossing&&!n.ringVisible&&n.crossing?.key===key
       );
+
+      // Never create another automatic anchor beside an existing user-owned
+      // anchor, converted ring, or junction. One physical intersection = one node.
+      if(!n&&crossingBlockedByExistingAnchor(p,key))continue;
 
       if(n){
         n.crossing={

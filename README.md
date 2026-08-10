@@ -1,19 +1,27 @@
-# Harness Designer V1.4a — Bugfix
+# Harness Designer V1.4b — Topology cleanup & split pairing
 
-Fixes three V1.4 issues:
+Focused bugfix over V1.4a.
 
-1. Manual curve points no longer disable slack behavior.
-   - Slack remains length-relative and body-outward.
-   - Extra points only refine the curve.
-   - Generated points no longer introduce a fixed oversized offset.
+## Exactly one anchor at a junction
+- Splitting a strap now migrates surviving manual anchors to the correct child strap.
+- Their `t` value is recalculated relative to the new child.
+- Duplicate anchors at the actual split position are removed.
+- Automatic crossing nodes attached to a deleted parent strap are discarded and recalculated.
+- Orphan dynamic nodes referencing deleted straps are cleaned before crossing refresh.
 
-2. Automatic crossing points are stable.
-   - Each crossing pair gets a stable key based on the two strap IDs.
-   - Existing crossing nodes are updated/reused after movement.
-   - Obsolete crossing nodes are removed.
-   - No duplicate old crossing point should remain after recalculation.
+## Crossing dedupe around converted rings
+- Automatic crossing detection will not create another point beside an existing explicit:
+  - anchor
+  - ring
+  - junction
+- A converted crossing ring therefore owns that physical intersection.
 
-3. Point -> Ring updates immediately.
-   - Ring state is applied before the strap is physically split.
-   - New child straps immediately recalculate visible endpoints against ring radius.
-   - Ring wraps and attached strap geometry refresh immediately.
+## Mirrored split straps remain mirrored pairs
+- If mirrored straps are split, their child straps are matched by mirrored endpoints.
+- Matching children receive reciprocal `mirrorId`s.
+- Width, slack and curve configuration are synchronized immediately.
+- A mirrored X-crossing split into a center ring therefore becomes two new mirrored strap pairs.
+
+## Split strap settings
+- Both child straps inherit the exact parent width and slack at split time.
+- Length-relative slack from V1.3/V1.4a remains active.
