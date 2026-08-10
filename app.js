@@ -348,6 +348,7 @@ function makeNode(data={}){
     source:data.source||'surface',parentStrapId:data.parentStrapId||null,t:data.t??.5,
     crossing:data.crossing||null,autoCrossing:!!data.autoCrossing,
     splitMeta:data.splitMeta||null,mergedState:data.mergedState||null,
+    editStamp:data.editStamp||0,
     group:new THREE.Group(),visual:null,hit:null,wrapGroup:new THREE.Group()
   };
   n.group.userData={kind:'nodeGroup',id};
@@ -511,6 +512,7 @@ function makeStrap(data={}){
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:(data.controls||[]).map(c=>({...c})),
     surfaceLevel:data.surfaceLevel??0,
+    editStamp:data.editStamp||0,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -986,9 +988,9 @@ function serialize(){
     nextNodeId,nextStrapId,surfaceOffsetMM,
     nodes:[...nodes.values()].map(n=>({
       id:n.id,position:n.position,normal:n.normal,ringVisible:n.ringVisible,diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
-      locked:n.locked,mirrorId:n.mirrorId,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing,splitMeta:n.splitMeta,mergedState:n.mergedState||null
+      locked:n.locked,mirrorId:n.mirrorId,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing,splitMeta:n.splitMeta,mergedState:n.mergedState||null,editStamp:n.editStamp||0
     })),
-    straps:[...straps.values()].map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId,controls:s.controls,surfaceLevel:s.surfaceLevel||0}))
+    straps:[...straps.values()].map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId,controls:s.controls,surfaceLevel:s.surfaceLevel||0,editStamp:s.editStamp||0}))
   };
 }
 function restore(snap){
@@ -996,7 +998,9 @@ function restore(snap){
   clearHarness();nextNodeId=snap.nextNodeId||1;nextStrapId=snap.nextStrapId||1;surfaceOffsetMM=snap.surfaceOffsetMM??2;surfaceOffsetSlider.value=surfaceOffsetMM;syncParamUI('surfaceOffset',surfaceOffsetMM);
   for(const d of snap.nodes||[])makeNode(d);
   for(const d of snap.straps||[])if(nodes.has(d.a)&&nodes.has(d.b))makeStrap(d);
-  rebuildAllWraps();restoring=false;updateHistoryButtons();
+  rebuildAllWraps();
+  reconcileSymmetryPairs({syncProps:false});
+  restoring=false;updateHistoryButtons();
 }
 function undo(){
   if(undoStack.length<2)return;
@@ -1055,11 +1059,11 @@ function setupParam(name,slider,tools,onInput){
 }
 function syncParamUI(name,val){const p=PARAMS.get(name);if(p){p.slider.value=val;p.num.value=val}}
 
-setupParam('pointSize',pointSizeSlider,$('pointSizeTools'),v=>{if(selected?.kind==='node'){selected.sizeMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);syncPairedNodeProps(selected);refreshMaterials()}});
-setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){ringDefaults.diameterMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.diameterMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
-setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){ringDefaults.thicknessMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.thicknessMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
-setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){strapDefaults.widthMM=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.widthMM=v;updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
-setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){strapDefaults.slack=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.slack=v;updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
+setupParam('pointSize',pointSizeSlider,$('pointSizeTools'),v=>{if(selected?.kind==='node'){selected.sizeMM=v;touchEntity(selected);rebuildNodeVisual(selected);syncNodeTransform(selected);syncPairedNodeProps(selected);refreshMaterials()}});
+setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){ringDefaults.diameterMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.diameterMM=v;touchEntity(selected);rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
+setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){ringDefaults.thicknessMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.thicknessMM=v;touchEntity(selected);rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
+setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){strapDefaults.widthMM=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.widthMM=v;touchEntity(selected);updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
+setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){strapDefaults.slack=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.slack=v;touchEntity(selected);updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
 setupParam('anchorPosition',anchorPositionSlider,$('anchorPositionTools'),v=>{
   if(selected?.kind==='node'&&selected.source==='strap'&&!selected.ringVisible){
     selected.t=THREE.MathUtils.clamp(v/100,0,1);syncNodeTransform(selected);
@@ -1107,7 +1111,12 @@ buildTools.addEventListener('click',e=>{
 nodeRingToggle.addEventListener('click',()=>{
   if(selected?.kind!=='node')return;
   const n=selected;
+
+  // Auto-crossings are generated independently. Discover the mirrored crossing
+  // before conversion so one tap converts both sides together.
+  reconcileSymmetryPairs({syncProps:false});
   const partner=pairOfNode(n);
+  touchEntity(n);
 
   if(!n.ringVisible&&(n.source==='strap'||n.source==='crossing'))convertDynamicPointToRing(n);
   else if(n.ringVisible&&n.splitMeta)convertRingBackToPoint(n);
@@ -1122,7 +1131,10 @@ nodeRingToggle.addEventListener('click',()=>{
 
     if(n.ringVisible&&partner.ringVisible)repairSplitPairingForNodes(n,partner);
   }
-  updateAttachedStraps(n.id);rebuildAllWraps();refreshMaterials();showSelection();commitHistory();refreshAutomaticCrossings();
+  updateAttachedStraps(n.id);rebuildAllWraps();refreshMaterials();showSelection();
+  refreshAutomaticCrossings();
+  reconcileSymmetryPairs({syncProps:true});
+  commitHistory();
 });
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;showSelection();commitHistory()});
 deleteSelectedBtn.addEventListener('click',()=>{
@@ -1336,6 +1348,8 @@ function refreshAutomaticCrossings(){
     }
 
     clearAutomaticCrossings(validKeys);
+    // Generated crossings on mirrored strap geometry become mirrored point pairs.
+    reconcileSymmetryPairs({syncProps:false});
   }finally{
     crossingRefreshBusy=false;
   }
@@ -1343,6 +1357,136 @@ function refreshAutomaticCrossings(){
 
 const AXIS_SNAP_IN=.095;
 const AXIS_SNAP_OUT=.108;
+
+const SYMMETRY_POS_TOL=.035;
+let symmetryEditClock=1;
+
+function touchEntity(e){
+  if(e)e.editStamp=++symmetryEditClock;
+}
+
+function mirroredPoint(p){
+  const q=p.clone();q.x*=-1;return q;
+}
+function mirrorPositionMatches(a,b,tol=SYMMETRY_POS_TOL){
+  return mirroredPoint(nodeWorldPosition(a)).distanceTo(nodeWorldPosition(b))<=tol;
+}
+function sameNodeSymmetryClass(a,b){
+  if(!a||!b||a.id===b.id)return false;
+  if(a.ringVisible!==b.ringVisible)return false;
+  // A converted crossing ring is allowed to pair with its mirrored converted crossing.
+  if(a.ringVisible)return true;
+  // Unconverted points should pair only with the same semantic point type.
+  return a.source===b.source;
+}
+function nodeMirrorEquivalent(a,b){
+  if(!sameNodeSymmetryClass(a,b))return false;
+  return mirrorPositionMatches(a,b);
+}
+function nodeIsOnAxis(n){return Math.abs(nodeWorldPosition(n).x)<=SYMMETRY_POS_TOL}
+
+function endpointMirrors(aId,bId){
+  const a=nodes.get(aId),b=nodes.get(bId);if(!a||!b)return false;
+  if(a.id===b.id)return nodeIsOnAxis(a);
+  return nodeMirrorEquivalent(a,b);
+}
+function strapsMirrorEquivalent(a,b){
+  if(!a||!b||a.id===b.id)return false;
+  return (
+    endpointMirrors(a.a,b.a)&&endpointMirrors(a.b,b.b)
+  )||(
+    endpointMirrors(a.a,b.b)&&endpointMirrors(a.b,b.a)
+  );
+}
+function choosePairMaster(a,b){
+  if(selected?.id===a.id)return a;
+  if(selected?.id===b.id)return b;
+  return (a.editStamp||0)>=(b.editStamp||0)?a:b;
+}
+function establishNodePair(a,b,syncProps=true){
+  if(!a||!b||a.id===b.id)return;
+  if(a.mirrorId&&a.mirrorId!==b.id){
+    const old=nodes.get(a.mirrorId);if(old?.mirrorId===a.id)old.mirrorId=null;
+  }
+  if(b.mirrorId&&b.mirrorId!==a.id){
+    const old=nodes.get(b.mirrorId);if(old?.mirrorId===b.id)old.mirrorId=null;
+  }
+  a.mirrorId=b.id;b.mirrorId=a.id;
+  if(syncProps){
+    const master=choosePairMaster(a,b),slave=master===a?b:a;
+    copyNodeVisualProps(master,slave);
+  }
+}
+function establishStrapPair(a,b,syncProps=true){
+  if(!a||!b||a.id===b.id)return;
+  if(a.mirrorId&&a.mirrorId!==b.id){
+    const old=straps.get(a.mirrorId);if(old?.mirrorId===a.id)old.mirrorId=null;
+  }
+  if(b.mirrorId&&b.mirrorId!==a.id){
+    const old=straps.get(b.mirrorId);if(old?.mirrorId===b.id)old.mirrorId=null;
+  }
+  a.mirrorId=b.id;b.mirrorId=a.id;
+  if(syncProps){
+    const master=choosePairMaster(a,b),slave=master===a?b:a;
+    copyStrapProps(master,slave);
+  }
+}
+
+function reconcileSymmetryPairs({syncProps=true}={}){
+  // 1. Break node pairs whose geometry is no longer mirrored.
+  for(const n of nodes.values()){
+    if(!n.mirrorId)continue;
+    const p=nodes.get(n.mirrorId);
+    if(!p||!nodeMirrorEquivalent(n,p)){
+      if(p?.mirrorId===n.id)p.mirrorId=null;
+      n.mirrorId=null;
+    }
+  }
+
+  // 2. Discover mirrored node/anchor/ring pairs by geometry.
+  const nodeList=[...nodes.values()].filter(n=>!n.mergedState&&!nodeIsOnAxis(n));
+  const usedNodes=new Set();
+  for(const a of nodeList){
+    if(usedNodes.has(a.id)||a.mirrorId)continue;
+    let best=null,bestD=Infinity;
+    const target=mirroredPoint(nodeWorldPosition(a));
+    for(const b of nodeList){
+      if(a.id===b.id||usedNodes.has(b.id)||b.mirrorId||!sameNodeSymmetryClass(a,b))continue;
+      const d=target.distanceTo(nodeWorldPosition(b));
+      if(d<=SYMMETRY_POS_TOL&&d<bestD){best=b;bestD=d}
+    }
+    if(best){
+      establishNodePair(a,best,syncProps);
+      usedNodes.add(a.id);usedNodes.add(best.id);
+    }
+  }
+
+  // 3. Break strap pairs as soon as their endpoints stop being mirror geometry.
+  for(const s of straps.values()){
+    if(!s.mirrorId)continue;
+    const p=straps.get(s.mirrorId);
+    if(!p||!strapsMirrorEquivalent(s,p)){
+      if(p?.mirrorId===s.id)p.mirrorId=null;
+      s.mirrorId=null;
+    }
+  }
+
+  // 4. Re-form strap pairs whenever the endpoint topology becomes mirrored again.
+  const strapList=[...straps.values()];
+  const usedStraps=new Set();
+  for(const a of strapList){
+    if(usedStraps.has(a.id)||a.mirrorId)continue;
+    let best=null;
+    for(const b of strapList){
+      if(a.id===b.id||usedStraps.has(b.id)||b.mirrorId)continue;
+      if(strapsMirrorEquivalent(a,b)){best=b;break}
+    }
+    if(best){
+      establishStrapPair(a,best,syncProps);
+      usedStraps.add(a.id);usedStraps.add(best.id);
+    }
+  }
+}
 
 function pairOfNode(n){return n?.mirrorId&&nodes.has(n.mirrorId)?nodes.get(n.mirrorId):null}
 function pairOfStrap(s){return s?.mirrorId&&straps.has(s.mirrorId)?straps.get(s.mirrorId):null}
@@ -1752,7 +1896,15 @@ canvas.addEventListener('pointerup',e=>{
   if(pointers.size<2)gesture=null;
   if(!single){return}
   const was=single;single=null;
-  if(was.moved){rebuildAllWraps();refreshAutomaticCrossings();commitHistory();return}
+  if(was.moved){
+    const movedNode=was.activeNodeId?nodes.get(was.activeNodeId):null;
+    if(movedNode)touchEntity(movedNode);
+    rebuildAllWraps();
+    refreshAutomaticCrossings();
+    reconcileSymmetryPairs({syncProps:true});
+    refreshMaterials();refreshSelectionGlow();
+    commitHistory();return
+  }
   const hit=was.hit||interactiveHit(e.clientX,e.clientY);
   if(hit?.kind==='node'){
     const n=nodes.get(hit.id);selectObject(n);

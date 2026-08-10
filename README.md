@@ -1,45 +1,26 @@
-# Harness Designer V1.4i — Optional recursive surface-follow routing
+# Harness Designer V1.4j
 
-This version deliberately preserves the V1.4h fast standard strap engine.
+Built on V1.4i. The working optional surface-follow strap engine is unchanged.
 
-## Standard straps
-- `Auflagepunkte = Standard` / level 0 uses the existing V1.4h strap code.
-- No recursive surface projection is performed.
-- Normal chest/waist/etc. straps keep the same performance and behavior.
+## Fix: mirrored crossing anchors -> rings
+Automatic crossing anchors are now geometrically paired with their mirrored
+counterpart. Converting one mirrored crossing point to a ring converts the
+partner too and repairs the split strap pairing on both sides.
 
-## Optional surface-follow mode
-Only the selected strap enters this mode when `+ Punkt` is used:
+## Dynamic symmetry pairing
+Pairing is now treated as a property of current mirror geometry, not as a
+permanent historical link.
 
-- level 1: 1 internal surface point / 2 sections
-- level 2: 3 internal surface points / 4 sections
-- level 3: 7 internal surface points / 8 sections
-- level 4: 15 internal surface points / 16 sections
+- rings/anchors that are mirrored about X=0 can become pairs
+- straps are pairs when their endpoint topology is mirrored about X=0
+- if a shared center ring is moved off-axis, affected strap pairs dissolve
+- when geometry is returned to mirror symmetry, the pairs reform
+- no continuous all-frame scan: reconciliation happens after completed drags,
+  crossing topology changes, conversion, and restore
 
-Every refinement step recursively halves every existing section and projects the
-new midpoint to the mannequin surface.
+When two previously independent straps re-form a pair and their parameters
+differ, V1.4j uses the most recently edited member as the master. If one of
+them is currently selected, the selected member wins. This avoids arbitrary
+averaging and preserves an intentional edit.
 
-The guides are NOT stored as fixed world points. They are regenerated from the
-current endpoints whenever that strap is updated, so they follow moved rings.
-
-## Orientation
-Surface mode uses:
-- curve tangent = strap length direction
-- mannequin surface normal = strap face direction
-- cross product = strap width direction
-
-The frame is propagated continuously and explicitly rejects sudden 180-degree
-flips. This targets the twisting/flaring visible around shoulders and other
-tight routes.
-
-## Projection continuity
-Midpoint projection prefers surfaces whose normals agree with neighboring
-surface normals. This reduces jumps from torso to a nearby arm/leg.
-
-## Retained
-- visible-only picking
-- generous visible strap touch zones
-- pair deletion/highlight
-- one-shot connect
-- mirror pairing
-- anchors/crossings/split topology
-- continuous axis merge/entmerge
+Standard V1.4i strap performance/surface-follow behavior remains unchanged.
