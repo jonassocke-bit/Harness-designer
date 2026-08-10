@@ -192,7 +192,6 @@ function rebuildNodeVisual(n){
   }
   visual.userData={kind:'nodeVisual',id:n.id};hit.userData={kind:'nodeHit',id:n.id};
   n.visual=visual;n.hit=hit;n.group.add(visual,hit);
-  if(selected)refreshMaterials();
 }
 function syncNodeTransform(n){
   if(n.source==='strap'&&n.parentStrapId){
@@ -214,7 +213,6 @@ function syncNodeTransform(n){
   const offset=n.ringVisible?ringTube(n):0;
   n.group.position.copy(p).addScaledVector(normal,surfaceOffsetScene()+offset);
   n.group.quaternion.setFromUnitVectors(UNIT_Z,normal);
-  if(selected)refreshMaterials();
 }
 
 function strapFrame(s){
@@ -363,7 +361,6 @@ function updateStrapGeometry(s){
     else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===s.id||n.crossing.strapBId===s.id))syncNodeTransform(n);
   }
   updateControlHandles(s);
-  if(selected)refreshMaterials();
 }
 function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
@@ -622,73 +619,55 @@ function clearHarness(){
 
 
 
-function selectionColor(){
-  return new THREE.Color(selectionColorHex);
+function applySelectionColor(){
+  const c=new THREE.Color(selectionColorHex);
+  METAL_SEL.color.copy(c);
+  METAL_SEL.emissive.copy(c);
+  METAL_SEL.emissiveIntensity=.75;
+  POINT_SEL.color.copy(c);
+  STRAP_SEL.color.copy(c).multiplyScalar(.82);
+  STRAP_SEL.emissive.copy(c);
+  STRAP_SEL.emissiveIntensity=.62;
 }
 
-function applyNodeHighlight(n,on){
-  if(!n?.visual)return;
-  const base=n.ringVisible?METAL_MAT:POINT_MAT;
-  if(!on){
-    n.visual.material=base;
-    return;
+function refreshConnectHints(){
+  // Connection hinting reuses live materials only; no geometry/material clones.
+  if(tool!=='connect')return;
+  for(const n of nodes.values()){
+    if(!n.visual)continue;
+    if(selected?.kind==='node'&&(n.id===selected.id||pairOfNode(selected)?.id===n.id))continue;
+    if(n.ringVisible){
+      n.visual.material=METAL_MAT;
+      if(connectStart===n.id)n.visual.material=METAL_SEL;
+    }else{
+      n.visual.material=connectStart===n.id?POINT_SEL:POINT_MAT;
+    }
   }
-
-  const c=selectionColor();
-  if(n.ringVisible){
-    const m=METAL_MAT.clone();
-    m.color.copy(c);
-    m.emissive=c.clone().multiplyScalar(.35);
-    m.emissiveIntensity=.9;
-    m.roughness=.22;
-    n.visual.material=m;
-  }else{
-    const m=POINT_MAT.clone();
-    m.color.copy(c);
-    n.visual.material=m;
-  }
-}
-
-function applyStrapHighlight(s,on){
-  if(!s?.mesh)return;
-  if(!on){
-    s.mesh.material=STRAP_MAT;
-    return;
-  }
-  const c=selectionColor();
-  const m=STRAP_MAT.clone();
-  m.color.copy(c);
-  m.emissive=c.clone().multiplyScalar(.28);
-  m.emissiveIntensity=.8;
-  s.mesh.material=m;
-}
-
-function refreshMaterials(){
-  for(const n of nodes.values())applyNodeHighlight(n,false);
-  for(const s of straps.values())applyStrapHighlight(s,false);
-
-  if(selected?.kind==='node'){
-    applyNodeHighlight(selected,true);
-    const p=pairOfNode(selected);
-    if(p)applyNodeHighlight(p,true);
-  }else if(selected?.kind==='strap'){
-    applyStrapHighlight(selected,true);
-    const p=pairOfStrap(selected);
-    if(p)applyStrapHighlight(p,true);
-  }
-
-  refreshConnectHints();
-}
-
-function refreshSelectionGlow(){
-  // V1.4e: no separate glow geometry anymore.
-  // Highlight is applied directly to the live object materials.
-  refreshMaterials();
 }
 
 function selectObject(o){
   selected=o;
-  refreshMaterials();showSelection();updateAllControlHandles();
+  refreshMaterials();
+  showSelection();
+  updateAllControlHandles();
+}
+
+function refreshMaterials(){
+  const selectedNodePair=selected?.kind==='node'?pairOfNode(selected):null;
+  const selectedStrapPair=selected?.kind==='strap'?pairOfStrap(selected):null;
+
+  for(const n of nodes.values()){
+    if(!n.visual)continue;
+    const on=selected?.kind==='node'&&(n.id===selected.id||n.id===selectedNodePair?.id);
+    n.visual.material=on?(n.ringVisible?METAL_SEL:POINT_SEL):(n.ringVisible?METAL_MAT:POINT_MAT);
+  }
+
+  for(const s of straps.values()){
+    const on=selected?.kind==='strap'&&(s.id===selected.id||s.id===selectedStrapPair?.id);
+    s.mesh.material=on?STRAP_SEL:STRAP_MAT;
+  }
+
+  refreshConnectHints();
 }
 function updateAllControlHandles(){for(const s of straps.values())updateControlHandles(s)}
 function showSelection(){
@@ -802,11 +781,11 @@ function setupParam(name,slider,tools,onInput){
 }
 function syncParamUI(name,val){const p=PARAMS.get(name);if(p){p.slider.value=val;p.num.value=val}}
 
-setupParam('pointSize',pointSizeSlider,$('pointSizeTools'),v=>{if(selected?.kind==='node'){selected.sizeMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);syncPairedNodeProps(selected)}});
-setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){ringDefaults.diameterMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.diameterMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
-setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){ringDefaults.thicknessMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.thicknessMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
-setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){strapDefaults.widthMM=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.widthMM=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
-setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){strapDefaults.slack=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.slack=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
+setupParam('pointSize',pointSizeSlider,$('pointSizeTools'),v=>{if(selected?.kind==='node'){selected.sizeMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);syncPairedNodeProps(selected);refreshMaterials()}});
+setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){ringDefaults.diameterMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.diameterMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
+setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){ringDefaults.thicknessMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.thicknessMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
+setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){strapDefaults.widthMM=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.widthMM=v;updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
+setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){strapDefaults.slack=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.slack=v;updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
 setupParam('anchorPosition',anchorPositionSlider,$('anchorPositionTools'),v=>{
   if(selected?.kind==='node'&&selected.source==='strap'&&!selected.ringVisible){
     selected.t=THREE.MathUtils.clamp(v/100,0,1);syncNodeTransform(selected);
@@ -822,9 +801,11 @@ setupParam('surfaceOffset',surfaceOffsetSlider,$('surfaceOffsetTools'),v=>{surfa
 globalAnchorSizeSlider.value=globalAnchorSizeMM;
 
 selectionColorPicker.value=selectionColorHex;
+applySelectionColor();
 selectionColorPicker.addEventListener('input',()=>{
   selectionColorHex=selectionColorPicker.value;
   localStorage.setItem('hd:selectionColor',selectionColorHex);
+  applySelectionColor();
   refreshMaterials();
 });
 
@@ -867,7 +848,7 @@ nodeRingToggle.addEventListener('click',()=>{
 
     if(n.ringVisible&&partner.ringVisible)repairSplitPairingForNodes(n,partner);
   }
-  updateAttachedStraps(n.id);rebuildAllWraps();showSelection();commitHistory();refreshAutomaticCrossings();
+  updateAttachedStraps(n.id);rebuildAllWraps();refreshMaterials();showSelection();commitHistory();refreshAutomaticCrossings();
 });
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;showSelection();commitHistory()});
 deleteSelectedBtn.addEventListener('click',()=>{
@@ -875,13 +856,13 @@ deleteSelectedBtn.addEventListener('click',()=>{
   const was=selected;
 
   if(was.kind==='node'){
-    const p=pairOfNode(was);
-    if(p&&nodes.has(p.id))removeNode(p.id);
+    const partner=pairOfNode(was);
     if(nodes.has(was.id))removeNode(was.id);
+    if(partner&&nodes.has(partner.id))removeNode(partner.id);
   }else{
-    const p=pairOfStrap(was);
-    if(p&&straps.has(p.id))removeStrap(p.id);
+    const partner=pairOfStrap(was);
     if(straps.has(was.id))removeStrap(was.id);
+    if(partner&&straps.has(partner.id))removeStrap(partner.id);
   }
 
   selected=null;
@@ -1270,19 +1251,18 @@ function requestNodeDrag(n,x,y){
     dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
 
     // Merged center ring:
-    // - normal drag along the mannequin keeps X snapped to the mirror axis
-    // - strong lateral drag leaves the snap zone and entmerges, in the SAME gesture
+    // X stays locked to the symmetry axis while Y/Z follow the mannequin.
+    // A deliberate lateral pull entmerges in the same drag gesture.
     if(q.n.mergedState){
       const current=nodeWorldPosition(q.n);
       const planeP=screenPlanePoint(q.x,q.y,current);
       if(!planeP)return;
 
-      const lateral=planeP.x;
-
-      if(Math.abs(lateral)>AXIS_SNAP_OUT){
+      if(Math.abs(planeP.x)>AXIS_SNAP_OUT){
         const release=current.clone();
-        release.x=lateral;
+        release.x=planeP.x;
         setNodeWorldPosition(q.n,release);
+
         const active=maybeAxisMergeOrEntmerge(q.n);
         if(active!==q.n){
           if(single)single.activeNodeId=active.id;
@@ -1295,12 +1275,11 @@ function requestNodeDrag(n,x,y){
         return;
       }
 
-      // Still snapped: use actual body surface under the pointer for Y/Z,
-      // but force X=0. This allows smooth movement up/down along the center line.
       const hit=bodyHit(q.x,q.y);
       if(hit){
         const p=hit.point.clone();
         p.x=0;
+
         const normal=worldNormal(hit);
         normal.x=0;
         if(normal.lengthSq()<1e-8)normal.set(0,0,1);
