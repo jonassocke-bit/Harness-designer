@@ -1,16 +1,22 @@
-# Harness Designer V1.4f — Safe highlight recovery
+# Harness Designer V1.4g — Surface guides & visible-only picking
 
-Built from the known-good V1.4d, not from V1.4e.
+Built on stable V1.4f.
 
-- Completely removes clone-based selection glow geometry.
-- No material cloning during drag or geometry rebuild.
-- Selection uses the three pre-existing selected materials only.
-- Both members of a mirrored node/strap pair are highlighted equally.
-- Global selection color picker changes those persistent selected materials.
-- Selection highlight is refreshed only after explicit UI edits/selection changes.
-- Pair deletion: deleting one mirrored node/strap deletes its paired partner.
-- Merged center ring:
-  - X remains snapped to 0 while moving along mannequin Y/Z.
-  - lateral pull beyond snap-out threshold entmerges in the same gesture.
-- Keeps V1.4d startup safeguard, one-shot connect UX, defaults, global anchor size,
-  and V1.4b topology logic.
+## Strap surface guides
+- Each `+ Punkt` now creates ONE explicit surface guide.
+- The guide is projected to the nearest mannequin/body surface.
+- Guides store body-surface position + surface normal.
+- A Catmull-Rom curve runs through the ordered surface guides.
+- Slack lifts the curve outward from those guides instead of replacing them.
+- This is intended for shoulder, flank, hip and front-to-back routing.
+- Mirrored straps regenerate guide points on their own mirrored body surface.
+
+## Visible-only picking
+- Rings/points hidden behind the mannequin are ignored.
+- Strap ray hits are compared against the nearest mannequin ray hit.
+- A strap behind the body cannot be selected through the mannequin.
+- Generous touch targets remain for visible rings.
+- This allows building the back without constantly catching front-side objects.
+
+Existing V1.4f selection color, pair delete, one-shot connect,
+axis merge/entmerge and topology logic are retained.

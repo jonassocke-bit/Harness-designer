@@ -140,6 +140,56 @@ function bodyHit(x,y){
   setPointer(x,y);
   return raycaster.intersectObjects(bodyMeshes,true)[0]||null;
 }
+function nearestBodySurface(worldPoint){
+  // Approximate closest surface by casting through the point from several axes.
+  // This works for points inside the torso/shoulder as well as slightly outside it.
+  const dirs=[
+    new THREE.Vector3(1,0,0),new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1),
+    new THREE.Vector3(1,1,0).normalize(),new THREE.Vector3(1,0,1).normalize(),
+    new THREE.Vector3(0,1,1).normalize()
+  ];
+  let best=null,bestDist=Infinity;
+
+  for(const d0 of dirs){
+    for(const sign of [-1,1]){
+      const d=d0.clone().multiplyScalar(sign);
+      const origin=worldPoint.clone().addScaledVector(d,3.5);
+      raycaster.set(origin,d.clone().negate());
+      const hits=raycaster.intersectObjects(bodyMeshes,true);
+      for(const h of hits){
+        const dd=h.point.distanceTo(worldPoint);
+        if(dd<bestDist){
+          bestDist=dd;
+          best={point:h.point.clone(),normal:worldNormal(h)};
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function makeSurfaceGuideForStrap(s,t){
+  const f=strapFrame(s);
+  const candidate=f.A.clone().lerp(f.B,t);
+  const hit=nearestBodySurface(candidate);
+
+  if(hit){
+    return {
+      t,
+      surfacePos:hit.point.toArray(),
+      surfaceNormal:hit.normal.toArray()
+    };
+  }
+
+  // Fallback remains deterministic even if an imported mesh cannot be projected.
+  const p=strapCurve(s).getPoint(t);
+  return {
+    t,
+    surfacePos:p.toArray(),
+    surfaceNormal:strapNormalAt(s,t).toArray()
+  };
+}
+
 function worldNormal(hit){
   if(!hit?.face)return new THREE.Vector3(0,0,1);
   const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
@@ -243,21 +293,24 @@ function autoControlWorld(s){
 function manualControlWorld(s,c){
   const f=strapFrame(s);
   const slack=THREE.MathUtils.clamp(s.slack/100,0,1);
-
-  // V1.4a: manual points refine the curve, but do not replace slack.
-  // Their offsets scale with current strap length, while the main body-clearance
-  // still comes from the current slack value.
   const relativeBulge=THREE.MathUtils.clamp(f.length*.28,.018,.24);
   const baseClearance=THREE.MathUtils.clamp(f.length*.018,.006,.022);
-  const slackOffset=baseClearance + slack*relativeBulge;
+  const clearance=baseClearance+slack*relativeBulge;
 
+  // V1.4g: explicit curve points are surface guides, not free points in space.
+  if(c.surfacePos){
+    const p=new THREE.Vector3().fromArray(c.surfacePos);
+    const n=c.surfaceNormal?new THREE.Vector3().fromArray(c.surfaceNormal).normalize():f.normal;
+    // At "straff" the curve follows the surface closely.
+    // Lockerheit lifts the guide away proportionally.
+    return p.addScaledVector(n,clearance);
+  }
+
+  // Legacy control compatibility for older saved projects.
   const sideScale=THREE.MathUtils.clamp(f.length,.12,1.2);
-  const manualNormal=(c.normalFactor??0)*relativeBulge;
-  const manualSide=(c.sideFactor??0)*sideScale;
-
   return f.A.clone().lerp(f.B,c.t)
-    .addScaledVector(f.side,manualSide)
-    .addScaledVector(f.normal,slackOffset + manualNormal);
+    .addScaledVector(f.side,(c.sideFactor??0)*sideScale)
+    .addScaledVector(f.normal,clearance+(c.normalFactor??0)*relativeBulge);
 }
 function strapCurve(s){
   const A=nodeWorldPosition(nodes.get(s.a)),B=nodeWorldPosition(nodes.get(s.b));
@@ -877,19 +930,29 @@ curveAutoBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;se
 curvePlusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
-  if(!s.controls.length){
-    const f=strapFrame(s),auto=autoControlWorld(s),base=f.A.clone().lerp(f.B,.5),d=auto.clone().sub(base);
-    s.controls=[
-      {t:.33,sideFactor:0,normalFactor:0},
-      {t:.67,sideFactor:0,normalFactor:0}
-    ];
-  }else{
-    const sorted=s.controls.slice().sort((a,b)=>a.t-b.t);
-    let bestT=.5,bestGap=-1,prev=0;
-    for(const c of [...sorted,{t:1}]){const gap=c.t-prev;if(gap>bestGap){bestGap=gap;bestT=(prev+c.t)/2}prev=c.t}
-    s.controls.push({t:bestT,sideFactor:0,normalFactor:0});s.controls.sort((a,b)=>a.t-b.t);
+
+  const sorted=s.controls.slice().sort((a,b)=>a.t-b.t);
+  let bestT=.5,bestGap=-1,prev=0;
+  for(const c of [...sorted,{t:1}]){
+    const gap=c.t-prev;
+    if(gap>bestGap){bestGap=gap;bestT=(prev+c.t)/2}
+    prev=c.t;
   }
-  updateStrapGeometry(s);syncPairedStrapProps(s);showSelection();refreshAutomaticCrossings();commitHistory();
+
+  s.controls.push(makeSurfaceGuideForStrap(s,bestT));
+  s.controls.sort((a,b)=>a.t-b.t);
+
+  // Mirrored partner receives a geometrically projected guide at the same t.
+  const ps=pairOfStrap(s);
+  if(ps){
+    ps.controls=s.controls.map(c=>makeSurfaceGuideForStrap(ps,c.t));
+    updateStrapGeometry(ps);
+  }
+
+  updateStrapGeometry(s);
+  showSelection();
+  refreshAutomaticCrossings();
+  commitHistory();
 });
 curveMinusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
@@ -1072,10 +1135,11 @@ function copyStrapProps(src,dst){
   if(!src||!dst)return;
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
-  dst.controls=src.controls.map(c=>({
-    ...c,
-    sideFactor:-(c.sideFactor??0)
-  }));
+
+  // Surface guides are regenerated on the partner's own body surface.
+  dst.controls=src.controls.map(c=>
+    c.surfacePos?makeSurfaceGuideForStrap(dst,c.t):({...c,sideFactor:-(c.sideFactor??0)})
+  );
   updateStrapGeometry(dst);
 }
 
@@ -1213,11 +1277,37 @@ for(const b of modePill.querySelectorAll('.mode'))b.addEventListener('click',()=
   if(mode!=='build')showToast(mode==='accessories'?'Accessoires folgen später':'Fotomodus folgt später');
 });
 
+
+function bodyOccludesWorldPoint(worldPoint,tolerance=.065){
+  const origin=camera.position.clone();
+  const delta=worldPoint.clone().sub(origin);
+  const targetDist=delta.length();
+  if(targetDist<1e-6)return false;
+
+  raycaster.set(origin,delta.normalize());
+  const body=raycaster.intersectObjects(bodyMeshes,true)[0];
+  if(!body)return false;
+
+  return body.distance < targetDist-tolerance;
+}
+
+function screenRayBodyDistance(x,y){
+  setPointer(x,y);
+  const body=raycaster.intersectObjects(bodyMeshes,true)[0];
+  return body?body.distance:Infinity;
+}
+
+function visibleNodeFromCamera(n){
+  if(!n)return false;
+  return !bodyOccludesWorldPoint(n.group.position,.075);
+}
+
 function screenSpaceNodeHit(x,y){
   const rect=canvas.getBoundingClientRect();
   const px=x-rect.left,py=y-rect.top;
   let best=null,bestD=Infinity;
   for(const n of nodes.values()){
+    if(!visibleNodeFromCamera(n))continue;
     const wp=n.group.position.clone();
     const q=wp.project(camera);
     if(q.z<-1||q.z>1)continue;
@@ -1231,14 +1321,28 @@ function screenSpaceNodeHit(x,y){
   return best;
 }
 function interactiveHit(x,y){
-  // V1.2: selection is always attempted before body placement.
-  // Screen-space node hit makes thin rings reliable on touch screens.
-  const softNode=screenSpaceNodeHit(x,y);if(softNode)return softNode;
+  // Existing visible nodes still get the generous touch target.
+  const softNode=screenSpaceNodeHit(x,y);
+  if(softNode)return softNode;
+
   setPointer(x,y);
-  const nodeHits=[];for(const n of nodes.values())if(n.hit)nodeHits.push(n.hit);
-  const nh=raycaster.intersectObjects(nodeHits,false)[0];if(nh)return {kind:'node',id:nh.object.userData.id};
+  const bodyDistance=raycaster.intersectObjects(bodyMeshes,true)[0]?.distance??Infinity;
+
+  // Node ray hits: accept only if the node is not behind the mannequin.
+  const nodeHits=[];
+  for(const n of nodes.values())if(n.hit&&visibleNodeFromCamera(n))nodeHits.push(n.hit);
+  const nhits=raycaster.intersectObjects(nodeHits,false);
+  for(const nh of nhits){
+    if(nh.distance<=bodyDistance+.075)return {kind:'node',id:nh.object.userData.id};
+  }
+
+  // Strap ray hits: compare the actual hit depth to the first mannequin surface.
   const meshes=[...straps.values()].map(s=>s.mesh);
-  const sh=raycaster.intersectObjects(meshes,false)[0];if(sh)return {kind:'strap',id:sh.object.userData.id};
+  const shits=raycaster.intersectObjects(meshes,false);
+  for(const sh of shits){
+    if(sh.distance<=bodyDistance+.055)return {kind:'strap',id:sh.object.userData.id};
+  }
+
   return null;
 }
 function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
