@@ -6,7 +6,7 @@ const canvas=$('scene'),viewport=$('viewport');
 const selectionPanel=$('selectionPanel'),modelPanel=$('modelPanel');
 const nodeControls=$('nodeControls'),strapControls=$('strapControls');
 const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle');
-const lockSelectedBtn=$('lockSelectedBtn'),deleteSelectedBtn=$('deleteSelectedBtn');
+const linkSelectedBtn=$('linkSelectedBtn'),lockSelectedBtn=$('lockSelectedBtn'),deleteSelectedBtn=$('deleteSelectedBtn');
 const undoBtn=$('undoBtn'),redoBtn=$('redoBtn');
 const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),rotateModelBtn=$('rotateModelBtn');
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
@@ -349,6 +349,8 @@ function makeNode(data={}){
     crossing:data.crossing||null,autoCrossing:!!data.autoCrossing,
     splitMeta:data.splitMeta||null,mergedState:data.mergedState||null,
     dynEditStamp:data.dynEditStamp||0,
+    previousPartnerId:data.previousPartnerId||null,
+    manualUnlinked:!!data.manualUnlinked,
     group:new THREE.Group(),visual:null,hit:null,wrapGroup:new THREE.Group()
   };
   n.group.userData={kind:'nodeGroup',id};
@@ -513,6 +515,8 @@ function makeStrap(data={}){
     controls:(data.controls||[]).map(c=>({...c})),
     surfaceLevel:data.surfaceLevel??0,
     dynEditStamp:data.dynEditStamp||0,
+    previousPartnerId:data.previousPartnerId||null,
+    manualUnlinked:!!data.manualUnlinked,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -660,7 +664,7 @@ function rebuildAllWraps(){for(const n of nodes.values())rebuildWrapsForNode(n)}
 
 
 function strapSnapshot(s){
-  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0};
+  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0,previousPartnerId:s.previousPartnerId||null,manualUnlinked:!!s.manualUnlinked};
 }
 function removeStrapBare(id){
   const s=straps.get(id);if(!s)return;
@@ -668,7 +672,7 @@ function removeStrapBare(id){
 }
 function restoreStrapSnapshot(d){
   if(!d||!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)return null;
-  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0});
+  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0,previousPartnerId:d.previousPartnerId||null,manualUnlinked:!!d.manualUnlinked});
   return s;
 }
 
@@ -951,6 +955,7 @@ function showSelection(){
   selectionLabel.textContent=selected.kind==='node'?(selected.ringVisible?'RING':'PUNKT'):'RIEMEN';
   selectionTitle.textContent=selected.id;
   lockSelectedBtn.classList.toggle('active',!!selected.locked);
+  updateLinkButton();
   if(selected.kind==='node'){
     nodeRingToggle.classList.toggle('active',selected.ringVisible);
     nodeRingToggle.textContent=selected.ringVisible?'An':'Aus';
@@ -972,7 +977,7 @@ function showSelection(){
     curvePointCount.textContent=lvl?`${internal} Punkte · ${sections} Teile`:'Standard';
   }
 }
-function hideSelection(){selectionPanel.classList.add('hidden')}
+function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
 
 function commitHistory(){
   if(restoring)return;
@@ -1131,10 +1136,39 @@ nodeRingToggle.addEventListener('click',()=>{
   dynReconcileSymmetry({syncProps:true});
   commitHistory();
 });
+linkSelectedBtn.addEventListener('click',()=>{
+  if(!selected)return;
+  const linked=selected.kind==='node'?!!pairOfNode(selected):!!pairOfStrap(selected);
+
+  if(linked){
+    if(manuallyUnlinkSelected()){
+      showToast(selected.kind==='node'?'Ring/Punkt entkoppelt':'Riemen entkoppelt');
+      commitHistory();
+    }
+  }else{
+    if(reconnectSelected()){
+      showToast(selected.kind==='node'?'Ring/Punkt wieder gekoppelt':'Riemen wieder gekoppelt');
+      rebuildAllWraps();
+      refreshAutomaticCrossings();
+      commitHistory();
+    }else{
+      showToast('Kein früherer Partner verfügbar');
+    }
+  }
+  updateLinkButton();
+});
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;showSelection();commitHistory()});
+
+function clearFormerPartnerReference(e){
+  if(!e?.previousPartnerId)return;
+  const p=e.kind==='node'?nodes.get(e.previousPartnerId):straps.get(e.previousPartnerId);
+  if(p?.previousPartnerId===e.id)p.previousPartnerId=null;
+  if(p)p.manualUnlinked=false;
+}
 deleteSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
   const was=selected;
+  if(was.manualUnlinked)clearFormerPartnerReference(was);
 
   if(was.kind==='node'){
     const partner=pairOfNode(was);
@@ -1382,11 +1416,113 @@ function dynChooseMaster(a,b){
   if(selected?.id===b.id)return b;
   return (a.dynEditStamp||0)>=(b.dynEditStamp||0)?a:b;
 }
+
+function rememberFormerPartners(a,b){
+  if(!a||!b||a.id===b.id)return;
+  a.previousPartnerId=b.id;
+  b.previousPartnerId=a.id;
+}
+function clearCurrentPair(a,b){
+  if(a?.mirrorId===b?.id)a.mirrorId=null;
+  if(b?.mirrorId===a?.id)b.mirrorId=null;
+}
+function manuallyUnlinkSelected(){
+  if(!selected)return false;
+  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
+  if(!partner)return false;
+
+  rememberFormerPartners(selected,partner);
+  selected.manualUnlinked=true;
+  partner.manualUnlinked=true;
+  clearCurrentPair(selected,partner);
+
+  refreshMaterials();
+  showSelection();
+  return true;
+}
+function reconnectNodeToFormerPartner(n){
+  const p=n?.previousPartnerId?nodes.get(n.previousPartnerId):null;
+  if(!n||!p)return false;
+
+  // Selected node is the explicit master.
+  // Reconstruct exact mirror position, orientation and parameters.
+  const masterPos=nodeWorldPosition(n);
+  const slavePos=masterPos.clone();slavePos.x*=-1;
+
+  const masterNormal=nodeWorldNormal(n);
+  const slaveNormal=masterNormal.clone();slaveNormal.x*=-1;
+
+  setNodeWorldPosition(p,slavePos);
+  p.normal=slaveNormal.toArray();
+  copyNodeVisualProps(n,p);
+
+  n.manualUnlinked=false;
+  p.manualUnlinked=false;
+  n.mirrorId=p.id;
+  p.mirrorId=n.id;
+  rememberFormerPartners(n,p);
+
+  syncNodeTransform(n);
+  syncNodeTransform(p);
+  updateAttachedStraps(n.id);
+  updateAttachedStraps(p.id);
+  rebuildWrapsForNode(n);
+  rebuildWrapsForNode(p);
+
+  // Their movement may restore/destroy strap symmetry around them.
+  dynReconcileSymmetry({syncProps:true});
+  refreshMaterials();
+  showSelection();
+  return true;
+}
+function reconnectStrapToFormerPartner(s){
+  const p=s?.previousPartnerId?straps.get(s.previousPartnerId):null;
+  if(!s||!p)return false;
+
+  // Strap coupling is PROPERTY ONLY. Endpoints/length/position stay untouched.
+  s.manualUnlinked=false;
+  p.manualUnlinked=false;
+  s.mirrorId=p.id;
+  p.mirrorId=s.id;
+  rememberFormerPartners(s,p);
+
+  copyStrapProps(s,p);
+  refreshMaterials();
+  showSelection();
+  return true;
+}
+function reconnectSelected(){
+  if(!selected)return false;
+  if(selected.kind==='node')return reconnectNodeToFormerPartner(selected);
+  return reconnectStrapToFormerPartner(selected);
+}
+function updateLinkButton(){
+  if(!selected){
+    linkSelectedBtn.disabled=true;
+    linkSelectedBtn.classList.remove('active','unlinked');
+    linkSelectedBtn.setAttribute('aria-pressed','false');
+    return;
+  }
+
+  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
+  const formerId=selected.previousPartnerId;
+  const formerExists=selected.kind==='node'?nodes.has(formerId):straps.has(formerId);
+  const linked=!!partner;
+
+  linkSelectedBtn.disabled=!linked&&!formerExists;
+  linkSelectedBtn.classList.toggle('active',linked);
+  linkSelectedBtn.classList.toggle('unlinked',!linked&&formerExists);
+  linkSelectedBtn.setAttribute('aria-pressed',String(linked));
+  linkSelectedBtn.title=linked?'Entkoppeln':formerExists?'Wieder koppeln':'Kein Partner';
+}
+
 function dynPairNodes(a,b,syncProps=true){
   if(!a||!b||a.id===b.id)return;
   if(a.mirrorId&&a.mirrorId!==b.id){const o=nodes.get(a.mirrorId);if(o?.mirrorId===a.id)o.mirrorId=null}
   if(b.mirrorId&&b.mirrorId!==a.id){const o=nodes.get(b.mirrorId);if(o?.mirrorId===b.id)o.mirrorId=null}
   a.mirrorId=b.id;b.mirrorId=a.id;
+  a.manualUnlinked=false;b.manualUnlinked=false;
+  rememberFormerPartners(a,b);
   if(syncProps){const m=dynChooseMaster(a,b),s=m===a?b:a;copyNodeVisualProps(m,s)}
 }
 function dynPairStraps(a,b,syncProps=true){
@@ -1394,20 +1530,28 @@ function dynPairStraps(a,b,syncProps=true){
   if(a.mirrorId&&a.mirrorId!==b.id){const o=straps.get(a.mirrorId);if(o?.mirrorId===a.id)o.mirrorId=null}
   if(b.mirrorId&&b.mirrorId!==a.id){const o=straps.get(b.mirrorId);if(o?.mirrorId===b.id)o.mirrorId=null}
   a.mirrorId=b.id;b.mirrorId=a.id;
+  a.manualUnlinked=false;b.manualUnlinked=false;
+  rememberFormerPartners(a,b);
   if(syncProps){const m=dynChooseMaster(a,b),s=m===a?b:a;copyStrapProps(m,s)}
 }
 function dynReconcileSymmetry({syncProps=true}={}){
   for(const n of nodes.values()){
     if(!n.mirrorId)continue;
     const p=nodes.get(n.mirrorId);
-    if(!p||!dynNodesAreMirrors(n,p)){if(p?.mirrorId===n.id)p.mirrorId=null;n.mirrorId=null}
+    if(!p||!dynNodesAreMirrors(n,p)){
+      if(p){
+        rememberFormerPartners(n,p);
+        if(p.mirrorId===n.id)p.mirrorId=null;
+      }
+      n.mirrorId=null;
+    }
   }
-  const nl=[...nodes.values()].filter(n=>!n.mergedState&&!dynNodeOnAxis(n)),usedN=new Set();
+  const nl=[...nodes.values()].filter(n=>!n.mergedState&&!dynNodeOnAxis(n)&&!n.manualUnlinked),usedN=new Set();
   for(const a of nl){
     if(a.mirrorId||usedN.has(a.id))continue;
     let best=null,bestD=Infinity,target=dynMirrorPoint(nodeWorldPosition(a));
     for(const b of nl){
-      if(a.id===b.id||b.mirrorId||usedN.has(b.id)||!dynNodeClassMatches(a,b))continue;
+      if(a.id===b.id||b.mirrorId||b.manualUnlinked||usedN.has(b.id)||!dynNodeClassMatches(a,b))continue;
       const d=target.distanceTo(nodeWorldPosition(b));
       if(d<=DYN_SYM_POS_TOL&&d<bestD){best=b;bestD=d}
     }
@@ -1416,14 +1560,20 @@ function dynReconcileSymmetry({syncProps=true}={}){
   for(const s of straps.values()){
     if(!s.mirrorId)continue;
     const p=straps.get(s.mirrorId);
-    if(!p||!dynStrapsAreMirrors(s,p)){if(p?.mirrorId===s.id)p.mirrorId=null;s.mirrorId=null}
+    if(!p||!dynStrapsAreMirrors(s,p)){
+      if(p){
+        rememberFormerPartners(s,p);
+        if(p.mirrorId===s.id)p.mirrorId=null;
+      }
+      s.mirrorId=null;
+    }
   }
-  const sl=[...straps.values()],usedS=new Set();
+  const sl=[...straps.values()].filter(s=>!s.manualUnlinked),usedS=new Set();
   for(const a of sl){
     if(a.mirrorId||usedS.has(a.id))continue;
     let best=null;
     for(const b of sl){
-      if(a.id===b.id||b.mirrorId||usedS.has(b.id))continue;
+      if(a.id===b.id||b.mirrorId||b.manualUnlinked||usedS.has(b.id))continue;
       if(dynStrapsAreMirrors(a,b)){best=b;break}
     }
     if(best){dynPairStraps(a,best,syncProps);usedS.add(a.id);usedS.add(best.id)}
@@ -1456,7 +1606,7 @@ function serializeNodeForMerge(n){
   return {
     id:n.id,position:[...n.position],normal:[...n.normal],ringVisible:n.ringVisible,
     diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
-    locked:n.locked,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing
+    locked:n.locked,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing,previousPartnerId:n.previousPartnerId||null,manualUnlinked:!!n.manualUnlinked
   };
 }
 function captureMergeTopology(a,b){
@@ -1538,7 +1688,7 @@ function mirrorNode(n){
   const normal=nodeWorldNormal(n);normal.x*=-1;
   if(Math.abs(p.x)<.015)return n;
   const m=makeNode({position:p.toArray(),normal:normal.toArray(),ringVisible:n.ringVisible,diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM});
-  n.mirrorId=m.id;m.mirrorId=n.id;copyNodeVisualProps(n,m);return m;
+  n.mirrorId=m.id;m.mirrorId=n.id;rememberFormerPartners(n,m);copyNodeVisualProps(n,m);return m;
 }
 mirrorToggle.addEventListener('click',()=>{mirrorMode=!mirrorMode;mirrorToggle.classList.toggle('active',mirrorMode);mirrorToggle.setAttribute('aria-pressed',String(mirrorMode))});
 mirrorSelectedBtn.addEventListener('click',()=>{
@@ -1550,7 +1700,7 @@ mirrorSelectedBtn.addEventListener('click',()=>{
     let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
     if(!existing){
       const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:selected.surfaceLevel||0});
-      selected.mirrorId=m.id;m.mirrorId=selected.id;
+      selected.mirrorId=m.id;m.mirrorId=selected.id;rememberFormerPartners(selected,m);
     }
     rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
   }
@@ -1854,7 +2004,7 @@ canvas.addEventListener('pointerup',e=>{
         const a=nodes.get(connectStart);let s=makeStrap({a:a.id,b:n.id});
         if(mirrorMode){
           const ma=mirrorNode(a),mb=mirrorNode(n);
-          if(ma.id!==a.id||mb.id!==n.id){const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack});s.mirrorId=ms.id;ms.mirrorId=s.id}
+          if(ma.id!==a.id||mb.id!==n.id){const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack});s.mirrorId=ms.id;ms.mirrorId=s.id;rememberFormerPartners(s,ms)}
         }
         connectStart=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
       }
