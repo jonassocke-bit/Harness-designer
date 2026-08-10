@@ -107,3 +107,8 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
 
 /* V1.4: auto crossing points remain subtle but pickable */
 .auto-crossing-node{opacity:.92}
+
+/* V1.4c — one-shot connect UX */
+.one-shot-tools{width:auto!important;min-width:0!important}
+.one-shot-tools .connect-toggle{padding-left:22px;padding-right:22px;white-space:nowrap}
+.connect-toggle.active{background:#fff!important;color:#111!important;box-shadow:0 0 0 3px rgba(255,255,255,.18)}

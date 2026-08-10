@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Harness Designer">
-  <title>Harness Designer V1.4b</title>
+  <title>Harness Designer V1.4c</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
   <script type="importmap">
@@ -32,9 +32,8 @@
         <button id="redoBtn" class="circle-btn icon-redo" aria-label="Wiederholen"></button>
       </div>
 
-      <div id="buildTools" class="build-tools">
-        <button class="tool active" data-tool="ring">+ Ring</button>
-        <button class="tool" data-tool="connect">↔ Verbinden</button>
+      <div id="buildTools" class="build-tools one-shot-tools">
+        <button id="connectToggle" class="tool connect-toggle" data-tool="connect" aria-pressed="false">↔ Verbinden</button>
       </div>
 
       <div class="utility-group">
@@ -145,6 +144,10 @@
           <div class="parameter-top"><span>Abstand zum Modell</span><div id="surfaceOffsetTools" class="parameter-tools"></div></div>
           <input id="surfaceOffsetSlider" type="range" min="0" max="30" step="0.5" value="2">
         </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Ankergröße</span><div id="globalAnchorSizeTools" class="parameter-tools"></div></div>
+          <input id="globalAnchorSizeSlider" type="range" min="4" max="30" step="1" value="12">
+        </div>
         <button id="rotationResetBtn" class="primary-btn">Rotation zurücksetzen</button>
       </div>
     </section>
@@ -156,7 +159,7 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <div class="version-badge">v1.4b</div>
+    <div class="version-badge">v1.4c</div>
   </div>
 </div>
 

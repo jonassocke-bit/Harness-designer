@@ -9,7 +9,7 @@ const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle');
 const lockSelectedBtn=$('lockSelectedBtn'),deleteSelectedBtn=$('deleteSelectedBtn');
 const undoBtn=$('undoBtn'),redoBtn=$('redoBtn');
 const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),rotateModelBtn=$('rotateModelBtn');
-const buildTools=$('buildTools'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
+const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
 const modelInput=$('modelInput'),uploadModelBtn=$('uploadModelBtn'),reloadModelBtn=$('reloadModelBtn');
 const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationResetBtn');
 
@@ -22,6 +22,7 @@ const curvePointCount=$('curvePointCount'),curveMinusBtn=$('curveMinusBtn'),curv
 const addAnchorBtn=$('addAnchorBtn');
 
 const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider'),surfaceOffsetSlider=$('surfaceOffsetSlider');
+const globalAnchorSizeSlider=$('globalAnchorSizeSlider');
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0b0b0e);
@@ -58,6 +59,9 @@ let importedModel=null;
 let camAz=0,camEl=.02,camDist=5.25;
 const target=new THREE.Vector3(0,.08,0);
 let tool='ring',mode='build',mirrorMode=false,surfaceOffsetMM=2;
+let globalAnchorSizeMM=Number(localStorage.getItem('hd:anchorSize'))||12;
+let ringDefaults=(()=>{try{return {...{diameterMM:40,thicknessMM:6},...JSON.parse(localStorage.getItem('hd:ringDefaults')||'{}')}}catch{return {diameterMM:40,thicknessMM:6}}})();
+let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localStorage.getItem('hd:strapDefaults')||'{}')}}catch{return {widthMM:30,slack:8}}})();
 let selected=null,connectStart=null;
 let nextNodeId=1,nextStrapId=1;
 let nodes=new Map(),straps=new Map();
@@ -153,7 +157,7 @@ function makeNode(data={}){
     id,kind:'node',
     position:data.position||[0,0,0],normal:data.normal||[0,0,1],
     ringVisible:data.ringVisible!==false,
-    diameterMM:data.diameterMM??40,thicknessMM:data.thicknessMM??6,sizeMM:data.sizeMM??8,
+    diameterMM:data.diameterMM??ringDefaults.diameterMM,thicknessMM:data.thicknessMM??ringDefaults.thicknessMM,sizeMM:data.sizeMM??globalAnchorSizeMM,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     source:data.source||'surface',parentStrapId:data.parentStrapId||null,t:data.t??.5,
     crossing:data.crossing||null,autoCrossing:!!data.autoCrossing,
@@ -294,7 +298,7 @@ function makeStrap(data={}){
   const id=data.id||`S${nextStrapId++}`;
   const num=Number(id.replace(/\D/g,''));if(Number.isFinite(num))nextStrapId=Math.max(nextStrapId,num+1);
   const s={
-    id,kind:'strap',a:data.a,b:data.b,widthMM:data.widthMM??30,slack:data.slack??8,
+    id,kind:'strap',a:data.a,b:data.b,widthMM:data.widthMM??strapDefaults.widthMM,slack:data.slack??strapDefaults.slack,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:(data.controls||[]).map(c=>({...c})),
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
@@ -611,11 +615,45 @@ function clearHarness(){
   nodes.clear();straps.clear();selected=null;connectStart=null;helperRoot.clear();hideSelection();
 }
 
+
+function clearSelectionGlow(){
+  helperRoot.children.filter(x=>x.userData?.selectionGlow).forEach(x=>helperRoot.remove(x));
+}
+function addGlowClone(obj,scale=1.08,opacity=.38){
+  if(!obj)return;
+  const mat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity,side:THREE.BackSide,depthWrite:false});
+  const g=obj.geometry?.clone?.();if(!g)return;
+  const m=new THREE.Mesh(g,mat);m.userData.selectionGlow=true;
+  obj.updateWorldMatrix(true,false);
+  m.matrix.copy(obj.matrixWorld);m.matrix.decompose(m.position,m.quaternion,m.scale);m.scale.multiplyScalar(scale);
+  helperRoot.add(m);
+}
+function refreshSelectionGlow(){
+  clearSelectionGlow();
+  if(!selected)return;
+  if(selected.kind==='node'){
+    addGlowClone(selected.visual,1.16,.5);
+    const p=pairOfNode(selected);if(p)addGlowClone(p.visual,1.11,.22);
+  }else if(selected.kind==='strap'){
+    addGlowClone(selected.mesh,1.045,.45);
+    const p=pairOfStrap(selected);if(p)addGlowClone(p.mesh,1.025,.18);
+  }
+}
+function refreshConnectHints(){
+  for(const n of nodes.values()){
+    if(!n.visual)continue;
+    if(tool==='connect'){
+      n.visual.material.emissive?.set?.(connectStart===n.id?0x8a7a30:0x292715);
+      if(n.visual.material.emissiveIntensity!==undefined)n.visual.material.emissiveIntensity=connectStart===n.id?.9:.18;
+    }
+  }
+}
 function selectObject(o){
   selected=o;
-  refreshMaterials();showSelection();updateAllControlHandles();
+  refreshMaterials();refreshSelectionGlow();showSelection();updateAllControlHandles();refreshConnectHints();
 }
 function refreshMaterials(){
+  clearSelectionGlow();
   for(const n of nodes.values())if(n.visual)n.visual.material=(selected?.kind==='node'&&selected.id===n.id)?(n.ringVisible?METAL_SEL:POINT_SEL):(n.ringVisible?METAL_MAT:POINT_MAT);
   for(const s of straps.values())s.mesh.material=(selected?.kind==='strap'&&selected.id===s.id)?STRAP_SEL:STRAP_MAT;
 }
@@ -722,10 +760,10 @@ function setupParam(name,slider,tools,onInput){
 function syncParamUI(name,val){const p=PARAMS.get(name);if(p){p.slider.value=val;p.num.value=val}}
 
 setupParam('pointSize',pointSizeSlider,$('pointSizeTools'),v=>{if(selected?.kind==='node'){selected.sizeMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);syncPairedNodeProps(selected)}});
-setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){selected.diameterMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
-setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){selected.thicknessMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
-setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){selected.widthMM=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
-setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){selected.slack=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
+setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){ringDefaults.diameterMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.diameterMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
+setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){ringDefaults.thicknessMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.thicknessMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
+setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){strapDefaults.widthMM=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.widthMM=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
+setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){strapDefaults.slack=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.slack=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
 setupParam('anchorPosition',anchorPositionSlider,$('anchorPositionTools'),v=>{
   if(selected?.kind==='node'&&selected.source==='strap'&&!selected.ringVisible){
     selected.t=THREE.MathUtils.clamp(v/100,0,1);syncNodeTransform(selected);
@@ -738,12 +776,27 @@ setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathU
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
 setupParam('surfaceOffset',surfaceOffsetSlider,$('surfaceOffsetTools'),v=>{surfaceOffsetMM=v;for(const n of nodes.values())syncNodeTransform(n);for(const s of straps.values())updateStrapGeometry(s)});
+globalAnchorSizeSlider.value=globalAnchorSizeMM;
+setupParam('globalAnchorSize',globalAnchorSizeSlider,$('globalAnchorSizeTools'),v=>{
+  globalAnchorSizeMM=v;localStorage.setItem('hd:anchorSize',String(v));
+  for(const n of nodes.values())if(!n.ringVisible){n.sizeMM=v;rebuildNodeVisual(n);syncNodeTransform(n)}
+  refreshMaterials();refreshSelectionGlow();
+});
 
 function setTool(t){
-  tool=t;connectStart=null;
-  [...buildTools.querySelectorAll('.tool')].forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
+  if(t==='connect'){
+    if(tool==='connect'){tool='ring';connectStart=null}
+    else{tool='connect';connectStart=null}
+  }else{
+    tool='ring';connectStart=null;
+  }
+  connectToggle.classList.toggle('active',tool==='connect');
+  connectToggle.setAttribute('aria-pressed',String(tool==='connect'));
+  refreshMaterials();refreshSelectionGlow();refreshConnectHints();
 }
-buildTools.addEventListener('click',e=>{const b=e.target.closest('.tool');if(b)setTool(b.dataset.tool)});
+buildTools.addEventListener('click',e=>{
+  const b=e.target.closest('.tool');if(b?.dataset.tool==='connect')setTool('connect');
+});
 
 nodeRingToggle.addEventListener('click',()=>{
   if(selected?.kind!=='node')return;
@@ -801,11 +854,11 @@ curveMinusBtn.addEventListener('click',()=>{
 addAnchorBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected,t=.5,p=strapPointAt(s,t),normal=strapNormalAt(s,t);
-  const n=makeNode({position:p.toArray(),normal:normal.toArray(),ringVisible:false,source:'strap',parentStrapId:s.id,t,sizeMM:8});
+  const n=makeNode({position:p.toArray(),normal:normal.toArray(),ringVisible:false,source:'strap',parentStrapId:s.id,t,sizeMM:globalAnchorSizeMM});
   const ps=pairOfStrap(s);
   if(ps){
     const pp=strapPointAt(ps,t),pn=strapNormalAt(ps,t);
-    const m=makeNode({position:pp.toArray(),normal:pn.toArray(),ringVisible:false,source:'strap',parentStrapId:ps.id,t,sizeMM:8,mirrorId:n.id});
+    const m=makeNode({position:pp.toArray(),normal:pn.toArray(),ringVisible:false,source:'strap',parentStrapId:ps.id,t,sizeMM:globalAnchorSizeMM,mirrorId:n.id});
     n.mirrorId=m.id;
   }
   selectObject(n);commitHistory();
@@ -941,7 +994,7 @@ function refreshAutomaticCrossings(){
         syncNodeTransform(n);
       }else{
         n=makeNode({
-          position:p.toArray(),normal:normal.toArray(),ringVisible:false,sizeMM:7,
+          position:p.toArray(),normal:normal.toArray(),ringVisible:false,sizeMM:globalAnchorSizeMM,
           source:'crossing',autoCrossing:true,
           crossing:{key,strapAId:sa.id,tA:hit.tA,strapBId:sb.id,tB:hit.tB}
         });
@@ -1245,20 +1298,20 @@ canvas.addEventListener('pointerup',e=>{
   if(hit?.kind==='node'){
     const n=nodes.get(hit.id);selectObject(n);
     if(tool==='connect'){
-      if(!connectStart){connectStart=n.id;showToast(`${n.id} gewählt`)}
+      if(!connectStart){connectStart=n.id;refreshMaterials();refreshSelectionGlow();refreshConnectHints();showToast(`${n.id} gewählt`)}
       else if(connectStart!==n.id){
         const a=nodes.get(connectStart);let s=makeStrap({a:a.id,b:n.id});
         if(mirrorMode){
           const ma=mirrorNode(a),mb=mirrorNode(n);
           if(ma.id!==a.id||mb.id!==n.id){const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack});s.mirrorId=ms.id;ms.mirrorId=s.id}
         }
-        connectStart=null;selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
+        connectStart=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
       }
     }
     return;
   }
   if(hit?.kind==='strap'){selectObject(straps.get(hit.id));return}
-  if(tool==='ring'&&mode==='build'){
+  if(tool!=='connect'&&mode==='build'){
     const bh=bodyHit(e.clientX,e.clientY);if(!bh)return;
     const p=snapAxis(bh.point.clone()),normal=worldNormal(bh);
     const n=makeNode({position:p.toArray(),normal:normal.toArray()});
