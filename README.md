@@ -1,11 +1,8 @@
-# Harness Designer V1.2 — Interaction Fix
+# Harness Designer V1.3
 
-- Existing rings/nodes are selected before new-ring placement.
-- Thin rings get a generous touch hit area.
-- Merged center rings can immediately be dragged away from the mirror axis and entmerge.
-- Entmerge release threshold is slightly easier to cross.
-- Strap looseness no longer adds a world-down/gravity sag.
-- Looseness now moves the curve outward from the body along the strap/body normal.
-- Generated extra curve points no longer inherit a vertical drop.
-- Internal curve points remain invisible and non-pickable.
-- V1.1 pair synchronization and topology-preserving merge/entmerge remain intact.
+- Slack/clearance is now relative to strap length.
+- Same slider value gives a comparable curve on short and long straps.
+- Merge and entmerge now keep the same pointer gesture active.
+- Drag target transfers automatically from paired ring -> merged center ring -> split ring.
+- No release/re-grab should be required.
+- V1.2 ring-first selection and topology-preserving merge/entmerge retained.

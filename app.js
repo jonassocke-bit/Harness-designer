@@ -214,9 +214,15 @@ function strapFrame(s){
 }
 function autoControlWorld(s){
   const f=strapFrame(s),slack=THREE.MathUtils.clamp(s.slack/100,0,1);
-  // V1.2: "Lockerheit" means clearance away from the body.
-  // No WORLD_UP component: orientation of the mannequin must not create gravity sag.
-  return f.A.clone().lerp(f.B,.5).addScaledVector(f.normal,.025+slack*.22);
+
+  // V1.3: slack is relative to strap length.
+  // Same slider value gives a similar curvature ratio on short and long straps.
+  const relativeBulge=THREE.MathUtils.clamp(f.length*.28,.018,.24);
+  const baseClearance=THREE.MathUtils.clamp(f.length*.018,.006,.022);
+
+  return f.A.clone()
+    .lerp(f.B,.5)
+    .addScaledVector(f.normal,baseClearance + slack*relativeBulge);
 }
 function manualControlWorld(s,c){
   const f=strapFrame(s);
@@ -537,7 +543,7 @@ addAnchorBtn.addEventListener('click',()=>{
 
 
 const AXIS_SNAP_IN=.095;
-const AXIS_SNAP_OUT=.115;
+const AXIS_SNAP_OUT=.108;
 
 function pairOfNode(n){return n?.mirrorId&&nodes.has(n.mirrorId)?nodes.get(n.mirrorId):null}
 function pairOfStrap(s){return s?.mirrorId&&straps.has(s.mirrorId)?straps.get(s.mirrorId):null}
@@ -729,16 +735,21 @@ function requestNodeDrag(n,x,y){
   dragRaf=requestAnimationFrame(()=>{
     dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
 
-    // Special case first: a merged ring must not depend on a mannequin ray hit,
-    // otherwise the body surface keeps pinning it to the symmetry axis.
+    // Merged center ring: move on a camera-facing plane so it can leave the axis
+    // without requiring a new pointer gesture.
     if(q.n.mergedState){
       const planeP=screenPlanePoint(q.x,q.y,nodeWorldPosition(q.n));
       if(!planeP)return;
       const current=nodeWorldPosition(q.n);
       current.x=planeP.x;
       setNodeWorldPosition(q.n,current);syncNodeTransform(q.n);
+
       const active=maybeAxisMergeOrEntmerge(q.n);
-      if(active!==q.n){showSelection();updateAttachedStraps(active.id);rebuildAllWraps()}
+      if(active!==q.n){
+        if(single)single.activeNodeId=active.id;
+        selected=active;
+        showSelection();updateAttachedStraps(active.id);rebuildAllWraps();
+      }
       return;
     }
 
@@ -753,8 +764,13 @@ function requestNodeDrag(n,x,y){
       const mn=normal.clone();mn.x*=-1;
       setNodeWorldPosition(partner,mp);partner.normal=mn.toArray();syncNodeTransform(partner);
       updateAttachedStraps(partner.id);
+
       const active=maybeAxisMergeOrEntmerge(q.n);
-      if(active!==q.n){showSelection();rebuildAllWraps()}
+      if(active!==q.n){
+        if(single)single.activeNodeId=active.id;
+        selected=active;
+        showSelection();rebuildAllWraps();
+      }
     }
   });
 }
@@ -776,7 +792,7 @@ canvas.addEventListener('pointerdown',e=>{
     const a=[...pointers.values()];gesture={dist:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,camDist,target:target.clone(),camAz,camEl};single=null;return;
   }
   const hit=interactiveHit(e.clientX,e.clientY);
-  single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit};
+  single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit,activeNodeId:hit?.kind==='node'?hit.id:null};
   if(hit?.kind==='node'){
     const n=nodes.get(hit.id);selectObject(n);
   }else if(hit?.kind==='strap'){
@@ -794,7 +810,9 @@ canvas.addEventListener('pointermove',e=>{
   if(!single)return;
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
   if(single.hit?.kind==='node'){
-    const n=nodes.get(single.hit.id);if(!n.locked&&n.source!=='strap')requestNodeDrag(n,e.clientX,e.clientY);
+    const activeId=single.activeNodeId||single.hit.id;
+    const n=nodes.get(activeId);
+    if(n&&!n.locked&&n.source!=='strap')requestNodeDrag(n,e.clientX,e.clientY);
     single.lx=e.clientX;single.ly=e.clientY;return;
   }
   if(!single.hit){
