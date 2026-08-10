@@ -732,11 +732,21 @@ const PRESETS={
   rotX:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   rotY:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   rotZ:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
-  surfaceOffset:{defaults:[0,2,5,10],min:0,max:30,step:.5}
+  surfaceOffset:{defaults:[0,2,5,10],min:0,max:30,step:.5},
+  globalAnchorSize:{defaults:[8,12,16,20],min:4,max:30,step:1}
 };
 const PARAMS=new Map();
 function setupParam(name,slider,tools,onInput){
-  const cfg=PRESETS[name],num=document.createElement('input');num.type='number';num.inputMode='decimal';num.className='number-input';
+  // V1.4d: derive a safe config from the slider if a PRESETS entry is ever missing.
+  // A forgotten preset definition must never be able to stop the whole app at startup.
+  const fallback={
+    defaults:[Number(slider.value),Number(slider.value),Number(slider.value),Number(slider.value)],
+    min:Number(slider.min||0),
+    max:Number(slider.max||100),
+    step:Number(slider.step||1)
+  };
+  const cfg=PRESETS[name]||fallback;
+  const num=document.createElement('input');num.type='number';num.inputMode='decimal';num.className='number-input';
   num.min=cfg.min;num.max=cfg.max;num.step=cfg.step;num.value=slider.value;tools.appendChild(num);
   const row=document.createElement('div');row.className='presets';tools.appendChild(row);
   let vals;try{vals=JSON.parse(localStorage.getItem(`v1preset:${name}`))}catch{}
