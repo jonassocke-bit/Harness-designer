@@ -16,6 +16,7 @@ const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationRes
 const nodeRingToggle=$('nodeRingToggle');
 const pointSizeControl=$('pointSizeControl'),ringDiameterControl=$('ringDiameterControl'),ringThicknessControl=$('ringThicknessControl');
 const pointSizeSlider=$('pointSizeSlider'),ringDiameterSlider=$('ringDiameterSlider'),ringThicknessSlider=$('ringThicknessSlider');
+const anchorPositionControl=$('anchorPositionControl'),anchorPositionSlider=$('anchorPositionSlider');
 const strapWidthSlider=$('strapWidthSlider'),strapSlackSlider=$('strapSlackSlider');
 const curvePointCount=$('curvePointCount'),curveMinusBtn=$('curveMinusBtn'),curvePlusBtn=$('curvePlusBtn'),curveAutoBtn=$('curveAutoBtn');
 const addAnchorBtn=$('addAnchorBtn');
@@ -155,6 +156,7 @@ function makeNode(data={}){
     diameterMM:data.diameterMM??40,thicknessMM:data.thicknessMM??6,sizeMM:data.sizeMM??8,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     source:data.source||'surface',parentStrapId:data.parentStrapId||null,t:data.t??.5,
+    crossing:data.crossing||null,autoCrossing:!!data.autoCrossing,
     splitMeta:data.splitMeta||null,mergedState:data.mergedState||null,
     group:new THREE.Group(),visual:null,hit:null,wrapGroup:new THREE.Group()
   };
@@ -191,6 +193,14 @@ function syncNodeTransform(n){
     if(s){
       const p=strapPointAt(s,n.t);setNodeWorldPosition(n,p);
       const normal=strapNormalAt(s,n.t);n.normal=normal.toArray();
+    }
+  }else if(n.source==='crossing'&&n.crossing){
+    const sa=straps.get(n.crossing.strapAId),sb=straps.get(n.crossing.strapBId);
+    if(sa&&sb){
+      const pa=strapPointAt(sa,n.crossing.tA),pb=strapPointAt(sb,n.crossing.tB);
+      const p=pa.clone().lerp(pb,.5);setNodeWorldPosition(n,p);
+      const normal=strapNormalAt(sa,n.crossing.tA).add(strapNormalAt(sb,n.crossing.tB));
+      if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();n.normal=normal.toArray();
     }
   }
   const p=nodeWorldPosition(n),normal=nodeWorldNormal(n);
@@ -330,6 +340,7 @@ function updateStrapGeometry(s){
   // Dynamic strap nodes move with exactly this strap, not with the whole scene.
   for(const n of nodes.values()){
     if(n.source==='strap'&&n.parentStrapId===s.id)syncNodeTransform(n);
+    else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===s.id||n.crossing.strapBId===s.id))syncNodeTransform(n);
   }
   updateControlHandles(s);
 }
@@ -358,10 +369,71 @@ function rebuildWrapsForNode(n){
 }
 function rebuildAllWraps(){for(const n of nodes.values())rebuildWrapsForNode(n)}
 
+
+function strapSnapshot(s){
+  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c}))};
+}
+function removeStrapBare(id){
+  const s=straps.get(id);if(!s)return;
+  s.geometry.dispose();strapRoot.remove(s.group);straps.delete(id);
+}
+function restoreStrapSnapshot(d){
+  if(!d||!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)return null;
+  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls});
+  return s;
+}
+function splitOneStrapAtNode(s,n,t){
+  if(!s||!n)return null;
+  const original=strapSnapshot(s);
+  const a=s.a,b=s.b;
+  removeStrapBare(s.id);
+  const left=makeStrap({a,b:n.id,widthMM:original.widthMM,slack:original.slack,controls:[]});
+  const right=makeStrap({a:n.id,b,widthMM:original.widthMM,slack:original.slack,controls:[]});
+  return {original,children:[left.id,right.id],t};
+}
+function restoreSplitPart(part,n){
+  if(!part)return;
+  for(const id of part.children||[])if(straps.has(id))removeStrapBare(id);
+  restoreStrapSnapshot(part.original);
+}
+function convertDynamicPointToRing(n){
+  if(!n||n.ringVisible)return;
+  if(n.source==='strap'&&n.parentStrapId){
+    const s=straps.get(n.parentStrapId);if(!s)return;
+    const part=splitOneStrapAtNode(s,n,n.t);
+    n.splitMeta={kind:'single',part};
+    n.source='junction';n.parentStrapId=null;
+  }else if(n.source==='crossing'&&n.crossing){
+    const sa=straps.get(n.crossing.strapAId),sb=straps.get(n.crossing.strapBId);
+    if(!sa||!sb)return;
+    const partA=splitOneStrapAtNode(sa,n,n.crossing.tA);
+    const partB=splitOneStrapAtNode(sb,n,n.crossing.tB);
+    n.splitMeta={kind:'crossing',partA,partB,crossing:{...n.crossing}};
+    n.source='junction';n.crossing=null;n.autoCrossing=false;
+  }
+  n.ringVisible=true;
+  rebuildNodeVisual(n);syncNodeTransform(n);rebuildAllWraps();
+}
+function convertRingBackToPoint(n){
+  if(!n?.ringVisible||!n.splitMeta)return;
+  const meta=n.splitMeta;
+  if(meta.kind==='single'){
+    restoreSplitPart(meta.part,n);
+    n.source='strap';n.parentStrapId=meta.part.original.id;n.t=meta.part.t;
+  }else if(meta.kind==='crossing'){
+    restoreSplitPart(meta.partA,n);restoreSplitPart(meta.partB,n);
+    n.source='crossing';n.crossing={...meta.crossing};n.autoCrossing=false;
+  }
+  n.splitMeta=null;n.ringVisible=false;
+  rebuildNodeVisual(n);syncNodeTransform(n);rebuildAllWraps();
+}
 function removeStrap(id){
   const s=straps.get(id);if(!s)return;
   s.geometry.dispose();strapRoot.remove(s.group);straps.delete(id);
-  for(const n of [...nodes.values()])if(n.source==='strap'&&n.parentStrapId===id)removeNode(n.id,false);
+  for(const n of [...nodes.values()]){
+    if(n.source==='strap'&&n.parentStrapId===id)removeNode(n.id,false);
+    else if(n.source==='crossing'&&n.autoCrossing&&n.crossing&&(n.crossing.strapAId===id||n.crossing.strapBId===id))removeNode(n.id,false);
+  }
 }
 function removeNode(id,removeConnected=true){
   const n=nodes.get(id);if(!n)return;
@@ -398,7 +470,10 @@ function showSelection(){
     pointSizeControl.classList.toggle('hidden',selected.ringVisible);
     ringDiameterControl.classList.toggle('hidden',!selected.ringVisible);
     ringThicknessControl.classList.toggle('hidden',!selected.ringVisible);
+    const movableAnchor=selected.source==='strap'&&!selected.ringVisible;
+    anchorPositionControl.classList.toggle('hidden',!movableAnchor);
     pointSizeSlider.value=selected.sizeMM;ringDiameterSlider.value=selected.diameterMM;ringThicknessSlider.value=selected.thicknessMM;
+    if(movableAnchor){anchorPositionSlider.value=Math.round(selected.t*100);syncParamUI('anchorPosition',Math.round(selected.t*100))}
     syncParamUI('pointSize',selected.sizeMM);syncParamUI('ringDiameter',selected.diameterMM);syncParamUI('ringThickness',selected.thicknessMM);
   }else{
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
@@ -422,7 +497,7 @@ function serialize(){
     nextNodeId,nextStrapId,surfaceOffsetMM,
     nodes:[...nodes.values()].map(n=>({
       id:n.id,position:n.position,normal:n.normal,ringVisible:n.ringVisible,diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
-      locked:n.locked,mirrorId:n.mirrorId,source:n.source,parentStrapId:n.parentStrapId,t:n.t,splitMeta:n.splitMeta,mergedState:n.mergedState||null
+      locked:n.locked,mirrorId:n.mirrorId,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing,splitMeta:n.splitMeta,mergedState:n.mergedState||null
     })),
     straps:[...straps.values()].map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId,controls:s.controls}))
   };
@@ -450,6 +525,7 @@ const PRESETS={
   ringThickness:{defaults:[3,4,6,8],min:0,max:20,step:.5},
   strapWidth:{defaults:[10,20,30,40],min:0,max:100,step:1},
   strapSlack:{defaults:[0,10,30,60],min:0,max:100,step:1},
+  anchorPosition:{defaults:[25,50,75,90],min:0,max:100,step:1},
   rotX:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   rotY:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   rotZ:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
@@ -485,6 +561,14 @@ setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selec
 setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){selected.thicknessMM=v;rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected)}});
 setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){selected.widthMM=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
 setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){selected.slack=v;updateStrapGeometry(selected);syncPairedStrapProps(selected)}});
+setupParam('anchorPosition',anchorPositionSlider,$('anchorPositionTools'),v=>{
+  if(selected?.kind==='node'&&selected.source==='strap'&&!selected.ringVisible){
+    selected.t=THREE.MathUtils.clamp(v/100,0,1);syncNodeTransform(selected);
+  }
+});
+strapWidthSlider.addEventListener('change',refreshAutomaticCrossings);
+strapSlackSlider.addEventListener('change',refreshAutomaticCrossings);
+
 setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathUtils.degToRad(v)});
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
@@ -498,18 +582,31 @@ buildTools.addEventListener('click',e=>{const b=e.target.closest('.tool');if(b)s
 
 nodeRingToggle.addEventListener('click',()=>{
   if(selected?.kind!=='node')return;
-  selected.ringVisible=!selected.ringVisible;
-  rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);showSelection();commitHistory();
+  const n=selected;
+  const partner=pairOfNode(n);
+
+  if(!n.ringVisible&&(n.source==='strap'||n.source==='crossing'))convertDynamicPointToRing(n);
+  else if(n.ringVisible&&n.splitMeta)convertRingBackToPoint(n);
+  else{
+    n.ringVisible=!n.ringVisible;rebuildNodeVisual(n);syncNodeTransform(n);updateAttachedStraps(n.id);rebuildWrapsForNode(n);
+  }
+
+  if(partner&&nodes.has(partner.id)){
+    if(!partner.ringVisible&&(partner.source==='strap'||partner.source==='crossing'))convertDynamicPointToRing(partner);
+    else if(partner.ringVisible&&partner.splitMeta)convertRingBackToPoint(partner);
+    else{partner.ringVisible=n.ringVisible;copyNodeVisualProps(n,partner)}
+  }
+  showSelection();commitHistory();refreshAutomaticCrossings();
 });
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;showSelection();commitHistory()});
 deleteSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;const was=selected;
   if(was.kind==='node')removeNode(was.id);else removeStrap(was.id);
-  selected=null;hideSelection();rebuildAllWraps();commitHistory();
+  selected=null;hideSelection();rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
 });
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
-curveAutoBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;selected.controls=[];updateStrapGeometry(selected);syncPairedStrapProps(selected);showSelection();commitHistory()});
+curveAutoBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;selected.controls=[];updateStrapGeometry(selected);syncPairedStrapProps(selected);showSelection();refreshAutomaticCrossings();commitHistory()});
 curvePlusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
@@ -525,23 +622,95 @@ curvePlusBtn.addEventListener('click',()=>{
     for(const c of [...sorted,{t:1}]){const gap=c.t-prev;if(gap>bestGap){bestGap=gap;bestT=(prev+c.t)/2}prev=c.t}
     s.controls.push({t:bestT,side:0,normal:.02,drop:0});s.controls.sort((a,b)=>a.t-b.t);
   }
-  updateStrapGeometry(s);syncPairedStrapProps(s);showSelection();commitHistory();
+  updateStrapGeometry(s);syncPairedStrapProps(s);showSelection();refreshAutomaticCrossings();commitHistory();
 });
 curveMinusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   if(selected.controls.length<=2)selected.controls=[];
   else selected.controls.splice(Math.floor(selected.controls.length/2),1);
-  updateStrapGeometry(selected);syncPairedStrapProps(selected);showSelection();commitHistory();
+  updateStrapGeometry(selected);syncPairedStrapProps(selected);showSelection();refreshAutomaticCrossings();commitHistory();
 });
 
 addAnchorBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected,t=.5,p=strapPointAt(s,t),normal=strapNormalAt(s,t);
   const n=makeNode({position:p.toArray(),normal:normal.toArray(),ringVisible:false,source:'strap',parentStrapId:s.id,t,sizeMM:8});
+  const ps=pairOfStrap(s);
+  if(ps){
+    const pp=strapPointAt(ps,t),pn=strapNormalAt(ps,t);
+    const m=makeNode({position:pp.toArray(),normal:pn.toArray(),ringVisible:false,source:'strap',parentStrapId:ps.id,t,sizeMM:8,mirrorId:n.id});
+    n.mirrorId=m.id;
+  }
   selectObject(n);commitHistory();
 });
 
 
+
+const CROSSING_THRESHOLD=.035;
+let crossingRefreshBusy=false;
+
+function closestSegmentPoints(p1,q1,p2,q2){
+  const d1=q1.clone().sub(p1),d2=q2.clone().sub(p2),r=p1.clone().sub(p2);
+  const a=d1.dot(d1),e=d2.dot(d2),f=d2.dot(r);
+  let s=0,t=0;
+  if(a<=1e-9&&e<=1e-9)return {s:0,t:0,pA:p1.clone(),pB:p2.clone(),dist:p1.distanceTo(p2)};
+  if(a<=1e-9){s=0;t=THREE.MathUtils.clamp(f/e,0,1)}
+  else{
+    const c=d1.dot(r);
+    if(e<=1e-9){t=0;s=THREE.MathUtils.clamp(-c/a,0,1)}
+    else{
+      const b=d1.dot(d2),den=a*e-b*b;
+      s=den!==0?THREE.MathUtils.clamp((b*f-c*e)/den,0,1):0;
+      t=(b*s+f)/e;
+      if(t<0){t=0;s=THREE.MathUtils.clamp(-c/a,0,1)}
+      else if(t>1){t=1;s=THREE.MathUtils.clamp((b-c)/a,0,1)}
+    }
+  }
+  const pA=p1.clone().addScaledVector(d1,s),pB=p2.clone().addScaledVector(d2,t);
+  return {s,t,pA,pB,dist:pA.distanceTo(pB)};
+}
+function bestCrossingBetween(sa,sb){
+  if(sa.a===sb.a||sa.a===sb.b||sa.b===sb.a||sa.b===sb.b)return null;
+  const ca=strapCurve(sa),cb=strapCurve(sb),N=14;
+  let best=null;
+  let a0=ca.getPoint(0);
+  for(let i=0;i<N;i++){
+    const a1=ca.getPoint((i+1)/N);let b0=cb.getPoint(0);
+    for(let j=0;j<N;j++){
+      const b1=cb.getPoint((j+1)/N);
+      const hit=closestSegmentPoints(a0,a1,b0,b1);
+      const tA=(i+hit.s)/N,tB=(j+hit.t)/N;
+      if(tA>.06&&tA<.94&&tB>.06&&tB<.94&&hit.dist<CROSSING_THRESHOLD&&(!best||hit.dist<best.dist)){
+        best={...hit,tA,tB};
+      }
+      b0=b1;
+    }
+    a0=a1;
+  }
+  return best;
+}
+function clearAutomaticCrossings(){
+  for(const n of [...nodes.values()])if(n.source==='crossing'&&n.autoCrossing&&!n.ringVisible)removeNode(n.id,false);
+}
+function refreshAutomaticCrossings(){
+  if(crossingRefreshBusy)return;
+  crossingRefreshBusy=true;
+  try{
+    clearAutomaticCrossings();
+    const arr=[...straps.values()];
+    for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++){
+      const sa=arr[i],sb=arr[j],hit=bestCrossingBetween(sa,sb);if(!hit)continue;
+      const p=hit.pA.clone().lerp(hit.pB,.5);
+      const normal=strapNormalAt(sa,hit.tA).add(strapNormalAt(sb,hit.tB));
+      if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();
+      makeNode({
+        position:p.toArray(),normal:normal.toArray(),ringVisible:false,sizeMM:7,
+        source:'crossing',autoCrossing:true,
+        crossing:{strapAId:sa.id,tA:hit.tA,strapBId:sb.id,tB:hit.tB}
+      });
+    }
+  }finally{crossingRefreshBusy=false}
+}
 const AXIS_SNAP_IN=.095;
 const AXIS_SNAP_OUT=.108;
 
@@ -568,7 +737,7 @@ function serializeNodeForMerge(n){
   return {
     id:n.id,position:[...n.position],normal:[...n.normal],ringVisible:n.ringVisible,
     diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
-    locked:n.locked,source:n.source,parentStrapId:n.parentStrapId,t:n.t
+    locked:n.locked,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing
   };
 }
 function captureMergeTopology(a,b){
@@ -825,7 +994,7 @@ canvas.addEventListener('pointerup',e=>{
   if(pointers.size<2)gesture=null;
   if(!single){return}
   const was=single;single=null;
-  if(was.moved){rebuildAllWraps();commitHistory();return}
+  if(was.moved){rebuildAllWraps();refreshAutomaticCrossings();commitHistory();return}
   const hit=was.hit||interactiveHit(e.clientX,e.clientY);
   if(hit?.kind==='node'){
     const n=nodes.get(hit.id);selectObject(n);
@@ -837,7 +1006,7 @@ canvas.addEventListener('pointerup',e=>{
           const ma=mirrorNode(a),mb=mirrorNode(n);
           if(ma.id!==a.id||mb.id!==n.id){const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack});s.mirrorId=ms.id;ms.mirrorId=s.id}
         }
-        connectStart=null;selectObject(s);rebuildAllWraps();commitHistory();
+        connectStart=null;selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
       }
     }
     return;
