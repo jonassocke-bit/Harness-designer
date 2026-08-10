@@ -214,7 +214,9 @@ function strapFrame(s){
 }
 function autoControlWorld(s){
   const f=strapFrame(s),slack=THREE.MathUtils.clamp(s.slack/100,0,1);
-  return f.A.clone().lerp(f.B,.5).addScaledVector(f.normal,.025+slack*.22).addScaledVector(WORLD_UP,-slack*.18);
+  // V1.2: "Lockerheit" means clearance away from the body.
+  // No WORLD_UP component: orientation of the mannequin must not create gravity sag.
+  return f.A.clone().lerp(f.B,.5).addScaledVector(f.normal,.025+slack*.22);
 }
 function manualControlWorld(s,c){
   const f=strapFrame(s);
@@ -508,8 +510,8 @@ curvePlusBtn.addEventListener('click',()=>{
   if(!s.controls.length){
     const f=strapFrame(s),auto=autoControlWorld(s),base=f.A.clone().lerp(f.B,.5),d=auto.clone().sub(base);
     s.controls=[
-      {t:.33,side:d.dot(f.side),normal:d.dot(f.normal),drop:d.dot(WORLD_UP)*.65},
-      {t:.67,side:d.dot(f.side),normal:d.dot(f.normal),drop:d.dot(WORLD_UP)*.65}
+      {t:.33,side:0,normal:d.dot(f.normal),drop:0},
+      {t:.67,side:0,normal:d.dot(f.normal),drop:0}
     ];
   }else{
     const sorted=s.controls.slice().sort((a,b)=>a.t-b.t);
@@ -535,7 +537,7 @@ addAnchorBtn.addEventListener('click',()=>{
 
 
 const AXIS_SNAP_IN=.095;
-const AXIS_SNAP_OUT=.135;
+const AXIS_SNAP_OUT=.115;
 
 function pairOfNode(n){return n?.mirrorId&&nodes.has(n.mirrorId)?nodes.get(n.mirrorId):null}
 function pairOfStrap(s){return s?.mirrorId&&straps.has(s.mirrorId)?straps.get(s.mirrorId):null}
@@ -690,7 +692,27 @@ for(const b of modePill.querySelectorAll('.mode'))b.addEventListener('click',()=
   if(mode!=='build')showToast(mode==='accessories'?'Accessoires folgen später':'Fotomodus folgt später');
 });
 
+function screenSpaceNodeHit(x,y){
+  const rect=canvas.getBoundingClientRect();
+  const px=x-rect.left,py=y-rect.top;
+  let best=null,bestD=Infinity;
+  for(const n of nodes.values()){
+    const wp=n.group.position.clone();
+    const q=wp.project(camera);
+    if(q.z<-1||q.z>1)continue;
+    const sx=(q.x*.5+.5)*rect.width;
+    const sy=(-q.y*.5+.5)*rect.height;
+    const d=Math.hypot(px-sx,py-sy);
+    // Deliberately forgiving touch target. Visual ring itself can be thin.
+    const radius=n.ringVisible?46:30;
+    if(d<radius&&d<bestD){best={kind:'node',id:n.id};bestD=d}
+  }
+  return best;
+}
 function interactiveHit(x,y){
+  // V1.2: selection is always attempted before body placement.
+  // Screen-space node hit makes thin rings reliable on touch screens.
+  const softNode=screenSpaceNodeHit(x,y);if(softNode)return softNode;
   setPointer(x,y);
   const nodeHits=[];for(const n of nodes.values())if(n.hit)nodeHits.push(n.hit);
   const nh=raycaster.intersectObjects(nodeHits,false)[0];if(nh)return {kind:'node',id:nh.object.userData.id};
@@ -706,17 +728,22 @@ function requestNodeDrag(n,x,y){
   if(dragRaf)return;
   dragRaf=requestAnimationFrame(()=>{
     dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
-    const hit=bodyHit(q.x,q.y);if(!hit)return;
-    const raw=hit.point.clone(),normal=worldNormal(hit);
 
+    // Special case first: a merged ring must not depend on a mannequin ray hit,
+    // otherwise the body surface keeps pinning it to the symmetry axis.
     if(q.n.mergedState){
-      setNodeWorldPosition(q.n,raw);q.n.normal=normal.toArray();syncNodeTransform(q.n);
+      const planeP=screenPlanePoint(q.x,q.y,nodeWorldPosition(q.n));
+      if(!planeP)return;
+      const current=nodeWorldPosition(q.n);
+      current.x=planeP.x;
+      setNodeWorldPosition(q.n,current);syncNodeTransform(q.n);
       const active=maybeAxisMergeOrEntmerge(q.n);
-      if(active!==q.n){showSelection();updateAttachedStraps(active.id)}
+      if(active!==q.n){showSelection();updateAttachedStraps(active.id);rebuildAllWraps()}
       return;
     }
 
-    const p=snapAxis(raw);
+    const hit=bodyHit(q.x,q.y);if(!hit)return;
+    const p=snapAxis(hit.point.clone()),normal=worldNormal(hit);
     setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
     updateAttachedStraps(q.n.id);
 
