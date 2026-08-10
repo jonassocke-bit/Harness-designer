@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Harness Designer">
-  <title>Harness Designer V1.4l</title>
+  <title>Harness Designer V1.5</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
   <script type="importmap">
@@ -129,6 +129,40 @@
           <button id="reloadModelBtn" class="soft-btn">Standardmodell</button>
         </div>
 
+        <div class="body-system">
+          <div class="body-system-title">Körper</div>
+
+          <div class="body-gender-switch">
+            <button id="bodyFemaleBtn" type="button" class="body-gender-btn active">Female</button>
+            <button id="bodyMaleBtn" type="button" class="body-gender-btn">Male</button>
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Körperform</span><span id="bodyShapeValue" class="body-value">Neutral</span></div>
+            <input id="bodyShapeSlider" type="range" min="-1" max="1" step="0.01" value="0">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Muskulatur</span><span id="bodyMuscleValue" class="body-value">0%</span></div>
+            <input id="bodyMuscleSlider" type="range" min="0" max="1" step="0.01" value="0">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Höhe</span><span id="bodyHeightValue" class="body-value">175 cm</span></div>
+            <input id="bodyHeightSlider" type="range" min="145" max="205" step="1" value="175">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Arme</span><span id="bodyArmsValue" class="body-value">A-Pose</span></div>
+            <input id="bodyArmsSlider" type="range" min="-1" max="1" step="0.01" value="0">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Beine</span><span id="bodyLegsValue" class="body-value">Offen</span></div>
+            <input id="bodyLegsSlider" type="range" min="0" max="1" step="0.01" value="0">
+          </div>
+        </div>
+
         <div class="parameter">
           <div class="parameter-top"><span>X-Achse</span><div id="rotXTools" class="parameter-tools"></div></div>
           <input id="rotXSlider" type="range" min="-180" max="180" step="1" value="0">
@@ -164,7 +198,7 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <div class="version-badge">v1.4l</div>
+    <div class="version-badge">v1.5</div>
   </div>
 </div>
 

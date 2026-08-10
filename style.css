@@ -136,3 +136,53 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
 .link-btn:disabled{
   opacity:.28;
 }
+
+/* V1.5 — integrated body system */
+.body-system{
+  margin:5px 0 8px;
+  padding:8px 0 7px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.body-system-title{
+  margin:0 0 6px;
+  color:var(--muted);
+  font-size:9px;
+  font-weight:750;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+}
+.body-gender-switch{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+  margin-bottom:5px;
+}
+.body-gender-btn{
+  height:32px;
+  border-radius:10px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.055);
+  color:#fff;
+  font-weight:700;
+}
+.body-gender-btn.active{
+  background:#fff;
+  color:#111;
+}
+.body-parameter{padding:3px 0}
+.body-parameter .parameter-top{margin-bottom:1px}
+.body-parameter .parameter-top>span{font-size:12px}
+.body-value{
+  color:var(--muted);
+  font-weight:600 !important;
+  font-variant-numeric:tabular-nums;
+}
+.body-system.disabled{
+  opacity:.35;
+  pointer-events:none;
+}
+
+/* repair object header: name + couple + lock + delete all in one row */
+#selectionPanel .selection-head{
+  grid-template-columns:minmax(0,1fr) 36px 36px 36px;
+}

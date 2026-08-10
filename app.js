@@ -12,6 +12,11 @@ const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),ro
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
 const modelInput=$('modelInput'),uploadModelBtn=$('uploadModelBtn'),reloadModelBtn=$('reloadModelBtn');
 const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationResetBtn');
+const bodyFemaleBtn=$('bodyFemaleBtn'),bodyMaleBtn=$('bodyMaleBtn');
+const bodyShapeSlider=$('bodyShapeSlider'),bodyMuscleSlider=$('bodyMuscleSlider'),bodyHeightSlider=$('bodyHeightSlider'),bodyArmsSlider=$('bodyArmsSlider'),bodyLegsSlider=$('bodyLegsSlider');
+const bodyShapeValue=$('bodyShapeValue'),bodyMuscleValue=$('bodyMuscleValue'),bodyHeightValue=$('bodyHeightValue'),bodyArmsValue=$('bodyArmsValue'),bodyLegsValue=$('bodyLegsValue');
+const bodySystemPanel=document.querySelector('.body-system');
+
 
 const nodeRingToggle=$('nodeRingToggle');
 const pointSizeControl=$('pointSizeControl'),ringDiameterControl=$('ringDiameterControl'),ringThicknessControl=$('ringThicknessControl');
@@ -57,6 +62,16 @@ const CONTROL_MAT=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,o
 
 let bodyMeshes=[];
 let importedModel=null;
+let integratedBodyRoot=null,integratedBodyMesh=null,integratedBodyDict=null;
+let integratedBodyBaseScale=1,integratedBodyLoading=false,usingIntegratedBody=true;
+let bodySystem={
+  gender:localStorage.getItem('hd:bodyGender')||'female',
+  shape:Number(localStorage.getItem('hd:bodyShape')||0),
+  muscle:Number(localStorage.getItem('hd:bodyMuscle')||0),
+  height:Number(localStorage.getItem('hd:bodyHeight')||175),
+  arms:Number(localStorage.getItem('hd:bodyArms')||0),
+  legs:Number(localStorage.getItem('hd:bodyLegs')||0)
+};
 let camAz=0,camEl=.02,camDist=5.25;
 const target=new THREE.Vector3(0,.08,0);
 let tool='ring',mode='build',mirrorMode=false,surfaceOffsetMM=2;
@@ -129,6 +144,160 @@ function buildFallback(){
   modelRoot.rotation.set(0,0,0);
 }
 buildFallback();
+
+const integratedLoader=new GLTFLoader();
+
+function integratedBodyUrl(g){
+  return g==='male'?'./male_custom_morph.glb':'./female_custom_morph.glb';
+}
+function setBodyUIEnabled(enabled){
+  bodySystemPanel.classList.toggle('disabled',!enabled);
+}
+function updateBodyUI(){
+  const sh=bodySystem.shape,ar=bodySystem.arms;
+  bodyFemaleBtn.classList.toggle('active',bodySystem.gender==='female');
+  bodyMaleBtn.classList.toggle('active',bodySystem.gender==='male');
+  bodyShapeSlider.value=bodySystem.shape;
+  bodyMuscleSlider.value=bodySystem.muscle;
+  bodyHeightSlider.value=bodySystem.height;
+  bodyArmsSlider.value=bodySystem.arms;
+  bodyLegsSlider.value=bodySystem.legs;
+  bodyShapeValue.textContent=Math.abs(sh)<.03?'Neutral':sh<0?`Schlank ${Math.round(-sh*100)}%`:`Curvy ${Math.round(sh*100)}%`;
+  bodyMuscleValue.textContent=`${Math.round(bodySystem.muscle*100)}%`;
+  bodyHeightValue.textContent=`${Math.round(bodySystem.height)} cm`;
+  bodyArmsValue.textContent=Math.abs(ar)<.03?'A-Pose':ar<0?`Gerade ${Math.round(-ar*100)}%`:`Unten ${Math.round(ar*100)}%`;
+  bodyLegsValue.textContent=bodySystem.legs<.03?'Offen':`Zusammen ${Math.round(bodySystem.legs*100)}%`;
+}
+function saveBodyUI(){
+  localStorage.setItem('hd:bodyGender',bodySystem.gender);
+  localStorage.setItem('hd:bodyShape',String(bodySystem.shape));
+  localStorage.setItem('hd:bodyMuscle',String(bodySystem.muscle));
+  localStorage.setItem('hd:bodyHeight',String(bodySystem.height));
+  localStorage.setItem('hd:bodyArms',String(bodySystem.arms));
+  localStorage.setItem('hd:bodyLegs',String(bodySystem.legs));
+}
+function applyIntegratedBodyMorphs(){
+  if(!integratedBodyRoot||!integratedBodyMesh||!integratedBodyDict)return;
+  const d=integratedBodyDict,inf=integratedBodyMesh.morphTargetInfluences;
+  if(inf){
+    for(const k of Object.keys(d))inf[d[k]]=0;
+    if(d.Skinny!==undefined)inf[d.Skinny]=Math.max(0,-bodySystem.shape);
+    if(d.Overweight!==undefined)inf[d.Overweight]=Math.max(0,bodySystem.shape);
+    if(d.Muscular!==undefined)inf[d.Muscular]=bodySystem.muscle;
+    if(d.ArmsStraight!==undefined)inf[d.ArmsStraight]=Math.max(0,-bodySystem.arms);
+    if(d.ArmsDown!==undefined)inf[d.ArmsDown]=Math.max(0,bodySystem.arms);
+    if(d.LegsTogether!==undefined)inf[d.LegsTogether]=bodySystem.legs;
+  }
+  const heightFactor=bodySystem.height/180;
+  integratedBodyRoot.scale.setScalar(integratedBodyBaseScale*heightFactor);
+  integratedBodyRoot.updateMatrixWorld(true);
+}
+function fitIntegratedBodyToHarnessScene(obj){
+  // neutral 180 cm model -> existing mannequin working height 3.3 scene units
+  obj.scale.setScalar(1);
+  obj.position.set(0,0,0);
+  obj.updateMatrixWorld(true);
+  let box=new THREE.Box3().setFromObject(obj);
+  const size=box.getSize(new THREE.Vector3());
+  integratedBodyBaseScale=3.3/Math.max(size.y,.001);
+  obj.scale.setScalar(integratedBodyBaseScale*(bodySystem.height/180));
+  obj.updateMatrixWorld(true);
+  box=new THREE.Box3().setFromObject(obj);
+  const c=box.getCenter(new THREE.Vector3());
+  obj.position.x-=c.x;
+  obj.position.z-=c.z;
+  obj.position.y+=(-1.75-box.min.y);
+  obj.updateMatrixWorld(true);
+}
+function collectIntegratedBodyMeshes(obj){
+  bodyMeshes=[];
+  obj.traverse(x=>{
+    if(x.isMesh){
+      x.material=BODY_MAT.clone();
+      x.receiveShadow=false;x.castShadow=false;
+      bodyMeshes.push(x);
+    }
+  });
+}
+function reprojectHarnessToBody(){
+  if(!usingIntegratedBody||!bodyMeshes.length||!nodes.size)return;
+
+  // Only user-placed surface nodes/rings are projected.
+  for(const n of nodes.values()){
+    if(n.source==='strap'||n.source==='crossing')continue;
+    const current=nodeWorldPosition(n);
+    const hit=nearestBodySurface(current);
+    if(!hit)continue;
+    setNodeWorldPosition(n,hit.point);
+    n.normal=hit.normal.toArray();
+    syncNodeTransform(n);
+  }
+
+  for(const s of straps.values())updateStrapGeometry(s);
+  rebuildAllWraps();
+  refreshAutomaticCrossings();
+  dynReconcileSymmetry({syncProps:true});
+  refreshMaterials();
+}
+function realignIntegratedBodyFeet(){
+  if(!integratedBodyRoot)return;
+  integratedBodyRoot.updateMatrixWorld(true);
+  const box=new THREE.Box3().setFromObject(integratedBodyRoot);
+  integratedBodyRoot.position.y+=(-1.75-box.min.y);
+  integratedBodyRoot.updateMatrixWorld(true);
+}
+async function loadIntegratedBody(gender=bodySystem.gender,{reproject=false,clearExistingHarness=false}={}){
+  if(integratedBodyLoading)return;
+  integratedBodyLoading=true;
+  try{
+    const gltf=await integratedLoader.loadAsync(integratedBodyUrl(gender));
+    const obj=gltf.scene;
+    const mesh=obj.getObjectByProperty('isMesh',true);
+    if(!mesh)throw new Error('Kein Body-Mesh im GLB');
+
+    modelRoot.clear();
+    bodyMeshes=[];
+    importedModel=null;
+    integratedBodyRoot=obj;
+    integratedBodyMesh=mesh;
+    integratedBodyDict=mesh.morphTargetDictionary||{};
+    usingIntegratedBody=true;
+    bodySystem.gender=gender;
+
+    modelRoot.add(obj);
+    fitIntegratedBodyToHarnessScene(obj);
+    collectIntegratedBodyMeshes(obj);
+    applyIntegratedBodyMorphs();
+    realignIntegratedBodyFeet();
+    setBodyUIEnabled(true);
+    updateBodyUI();
+    saveBodyUI();
+
+    if(clearExistingHarness)clearHarness();
+    else if(reproject)reprojectHarnessToBody();
+
+    showToast(gender==='male'?'Male Body geladen':'Female Body geladen');
+  }catch(err){
+    console.error('Body-System load failed',err);
+    // Hard fallback means the app still starts and remains usable.
+    integratedBodyRoot=null;integratedBodyMesh=null;integratedBodyDict=null;
+    usingIntegratedBody=false;
+    buildFallback();
+    setBodyUIEnabled(false);
+    showToast('Body-Modell nicht geladen – Fallback aktiv');
+  }finally{
+    integratedBodyLoading=false;
+  }
+}
+
+function commitBodyChange(){
+  if(!usingIntegratedBody)return;
+  applyIntegratedBodyMorphs();
+  realignIntegratedBodyFeet();
+  reprojectHarnessToBody();
+  saveBodyUI();
+  commitHistory();
+}
 
 function setPointer(x,y){
   const r=canvas.getBoundingClientRect();
@@ -1709,7 +1878,7 @@ mirrorSelectedBtn.addEventListener('click',()=>{
 rotateModelBtn.addEventListener('click',()=>{modelPanel.classList.remove('hidden');selectionPanel.classList.add('hidden')});
 closeModelPanelBtn.addEventListener('click',()=>modelPanel.classList.add('hidden'));
 uploadModelBtn.addEventListener('click',()=>modelInput.click());
-reloadModelBtn.addEventListener('click',()=>{buildFallback();clearHarness();commitHistory();showToast('Standardmodell geladen')});
+reloadModelBtn.addEventListener('click',()=>loadIntegratedBody(bodySystem.gender,{reproject:false,clearExistingHarness:true}));
 rotationResetBtn.addEventListener('click',()=>{
   modelRoot.rotation.set(0,0,0);for(const [name] of [['rotX'],['rotY'],['rotZ']])syncParamUI(name,0);
 });
@@ -1725,9 +1894,36 @@ modelInput.addEventListener('change',async()=>{
     box=new THREE.Box3().setFromObject(obj);const c=box.getCenter(new THREE.Vector3());
     obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y+=(-1.75-box.min.y);obj.updateMatrixWorld(true);
     modelRoot.add(obj);obj.traverse(x=>{if(x.isMesh){x.material=BODY_MAT.clone();bodyMeshes.push(x)}});
-    clearHarness();commitHistory();showToast('3D-Modell geladen');
+    integratedBodyRoot=null;integratedBodyMesh=null;integratedBodyDict=null;usingIntegratedBody=false;
+    setBodyUIEnabled(false);
+    clearHarness();commitHistory();showToast('Eigenes 3D-Modell geladen');
   }catch(err){console.error(err);showToast('Modell konnte nicht geladen werden')}
   finally{URL.revokeObjectURL(url);modelInput.value=''}
+});
+
+
+updateBodyUI();
+
+function liveBodySliderUpdate(){
+  bodySystem.shape=Number(bodyShapeSlider.value);
+  bodySystem.muscle=Number(bodyMuscleSlider.value);
+  bodySystem.height=Number(bodyHeightSlider.value);
+  bodySystem.arms=Number(bodyArmsSlider.value);
+  bodySystem.legs=Number(bodyLegsSlider.value);
+  updateBodyUI();
+  applyIntegratedBodyMorphs();
+}
+for(const s of [bodyShapeSlider,bodyMuscleSlider,bodyHeightSlider,bodyArmsSlider,bodyLegsSlider]){
+  s.addEventListener('input',liveBodySliderUpdate);
+  s.addEventListener('change',commitBodyChange);
+}
+bodyFemaleBtn.addEventListener('click',()=>{
+  if(bodySystem.gender==='female'&&usingIntegratedBody)return;
+  loadIntegratedBody('female',{reproject:nodes.size>0});
+});
+bodyMaleBtn.addEventListener('click',()=>{
+  if(bodySystem.gender==='male'&&usingIntegratedBody)return;
+  loadIntegratedBody('male',{reproject:nodes.size>0});
 });
 
 for(const b of modePill.querySelectorAll('.mode'))b.addEventListener('click',()=>{
@@ -2035,5 +2231,9 @@ installSheetResize(selectionPanel);installSheetResize(modelPanel);
 
 function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)}
 resize();animate();
+
+// Start from safe procedural fallback, then replace asynchronously.
+// A body-GLB failure therefore cannot block the render loop.
+setTimeout(()=>loadIntegratedBody(bodySystem.gender,{reproject:false}),0);
 
 commitHistory();
