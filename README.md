@@ -1,22 +1,45 @@
-# Harness Designer V1.4g — Surface guides & visible-only picking
+# Harness Designer V1.4i — Optional recursive surface-follow routing
 
-Built on stable V1.4f.
+This version deliberately preserves the V1.4h fast standard strap engine.
 
-## Strap surface guides
-- Each `+ Punkt` now creates ONE explicit surface guide.
-- The guide is projected to the nearest mannequin/body surface.
-- Guides store body-surface position + surface normal.
-- A Catmull-Rom curve runs through the ordered surface guides.
-- Slack lifts the curve outward from those guides instead of replacing them.
-- This is intended for shoulder, flank, hip and front-to-back routing.
-- Mirrored straps regenerate guide points on their own mirrored body surface.
+## Standard straps
+- `Auflagepunkte = Standard` / level 0 uses the existing V1.4h strap code.
+- No recursive surface projection is performed.
+- Normal chest/waist/etc. straps keep the same performance and behavior.
 
-## Visible-only picking
-- Rings/points hidden behind the mannequin are ignored.
-- Strap ray hits are compared against the nearest mannequin ray hit.
-- A strap behind the body cannot be selected through the mannequin.
-- Generous touch targets remain for visible rings.
-- This allows building the back without constantly catching front-side objects.
+## Optional surface-follow mode
+Only the selected strap enters this mode when `+ Punkt` is used:
 
-Existing V1.4f selection color, pair delete, one-shot connect,
-axis merge/entmerge and topology logic are retained.
+- level 1: 1 internal surface point / 2 sections
+- level 2: 3 internal surface points / 4 sections
+- level 3: 7 internal surface points / 8 sections
+- level 4: 15 internal surface points / 16 sections
+
+Every refinement step recursively halves every existing section and projects the
+new midpoint to the mannequin surface.
+
+The guides are NOT stored as fixed world points. They are regenerated from the
+current endpoints whenever that strap is updated, so they follow moved rings.
+
+## Orientation
+Surface mode uses:
+- curve tangent = strap length direction
+- mannequin surface normal = strap face direction
+- cross product = strap width direction
+
+The frame is propagated continuously and explicitly rejects sudden 180-degree
+flips. This targets the twisting/flaring visible around shoulders and other
+tight routes.
+
+## Projection continuity
+Midpoint projection prefers surfaces whose normals agree with neighboring
+surface normals. This reduces jumps from torso to a nearby arm/leg.
+
+## Retained
+- visible-only picking
+- generous visible strap touch zones
+- pair deletion/highlight
+- one-shot connect
+- mirror pairing
+- anchors/crossings/split topology
+- continuous axis merge/entmerge

@@ -190,6 +190,140 @@ function makeSurfaceGuideForStrap(s,t){
   };
 }
 
+
+function nearestBodySurfacePreferred(worldPoint,preferredNormal){
+  const pref=preferredNormal?.clone?.().normalize?.()||new THREE.Vector3(0,0,1);
+
+  // Build directions around the expected surface normal. The normal-directed
+  // casts strongly discourage jumping from torso to an unrelated nearby limb.
+  let tangentA=new THREE.Vector3().crossVectors(pref,Math.abs(pref.y)<.9?WORLD_UP:new THREE.Vector3(1,0,0));
+  if(tangentA.lengthSq()<1e-8)tangentA.set(1,0,0);
+  tangentA.normalize();
+  const tangentB=new THREE.Vector3().crossVectors(pref,tangentA).normalize();
+
+  const dirs=[
+    pref.clone(),
+    pref.clone().multiplyScalar(-1),
+    pref.clone().addScaledVector(tangentA,.35).normalize(),
+    pref.clone().addScaledVector(tangentA,-.35).normalize(),
+    pref.clone().addScaledVector(tangentB,.35).normalize(),
+    pref.clone().addScaledVector(tangentB,-.35).normalize()
+  ];
+
+  let best=null,bestScore=Infinity;
+  for(const d of dirs){
+    const origin=worldPoint.clone().addScaledVector(d,2.4);
+    raycaster.set(origin,d.clone().negate());
+    const hits=raycaster.intersectObjects(bodyMeshes,true);
+
+    for(const h of hits.slice(0,5)){
+      const normal=worldNormal(h);
+      const dist=h.point.distanceTo(worldPoint);
+      const alignment=normal.dot(pref);
+
+      // Strong penalty for a surface facing the wrong way.
+      const score=dist + Math.max(0,.35-alignment)*.35;
+      if(score<bestScore){
+        bestScore=score;
+        best={point:h.point.clone(),normal};
+      }
+    }
+  }
+  return best;
+}
+
+function surfaceClearanceForStrap(s){
+  const f=strapFrame(s);
+  const slack=THREE.MathUtils.clamp(s.slack/100,0,1);
+
+  // Same length-relative philosophy as the good standard straps,
+  // but surface mode stays much closer to the body.
+  const base=surfaceOffsetScene()+.007;
+  const relative=THREE.MathUtils.clamp(f.length*.12,.008,.10);
+  return base+slack*relative;
+}
+
+function projectSurfaceMidpoint(a,b,normalA,normalB){
+  const candidate=a.clone().lerp(b,.5);
+  let preferred=normalA.clone().add(normalB);
+  if(preferred.lengthSq()<1e-8)preferred=normalA.clone();
+  preferred.normalize();
+
+  const hit=nearestBodySurfacePreferred(candidate,preferred);
+  if(hit)return hit;
+
+  // Deterministic fallback: keep segment midpoint + interpolated normal.
+  return {point:candidate,normal:preferred};
+}
+
+function buildSurfaceGuideChain(s,level){
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return null;
+
+  const A=nodeWorldPosition(aNode);
+  const B=nodeWorldPosition(bNode);
+  const nA=nodeWorldNormal(aNode);
+  const nB=nodeWorldNormal(bNode);
+
+  // Recursively split every existing section. Level 1 -> 1 internal point,
+  // level 2 -> 3, level 3 -> 7, etc.
+  function subdivide(a,b,na,nb,depth){
+    if(depth<=0)return [
+      {point:a.clone(),normal:na.clone().normalize()},
+      {point:b.clone(),normal:nb.clone().normalize()}
+    ];
+
+    const mid=projectSurfaceMidpoint(a,b,na,nb);
+    const left=subdivide(a,mid.point,na,mid.normal,depth-1);
+    const right=subdivide(mid.point,b,mid.normal,nb,depth-1);
+    return left.slice(0,-1).concat(right);
+  }
+
+  const guides=subdivide(A,B,nA,nB,level);
+  const clearance=surfaceClearanceForStrap(s);
+
+  // Endpoints stay at their actual nodes. Only internal guides sit on/lift off
+  // the body surface; visibleEndpoint later handles the ring radius.
+  for(let i=1;i<guides.length-1;i++){
+    guides[i].point.addScaledVector(guides[i].normal,clearance);
+  }
+  return guides;
+}
+
+function surfaceCurveData(s){
+  const level=THREE.MathUtils.clamp(Math.round(s.surfaceLevel||0),1,4);
+  const guides=buildSurfaceGuideChain(s,level);
+  if(!guides||guides.length<3)return null;
+
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  const firstGuide=guides[1].point;
+  const lastGuide=guides[guides.length-2].point;
+  const a=visibleEndpoint(aNode,firstGuide);
+  const b=visibleEndpoint(bNode,lastGuide);
+
+  const points=guides.map((g,i)=>{
+    if(i===0)return a.clone();
+    if(i===guides.length-1)return b.clone();
+    return g.point.clone();
+  });
+
+  const curve=new THREE.CatmullRomCurve3(points,false,'centripetal',.35);
+  return {curve,guides,points};
+}
+
+function surfaceNormalAtData(data,t){
+  const guides=data.guides;
+  if(!guides?.length)return new THREE.Vector3(0,0,1);
+
+  const x=THREE.MathUtils.clamp(t,0,1)*(guides.length-1);
+  const i=Math.min(guides.length-2,Math.floor(x));
+  const f=x-i;
+
+  let n=guides[i].normal.clone().lerp(guides[i+1].normal,f);
+  if(n.lengthSq()<1e-8)n=guides[i].normal.clone();
+  return n.normalize();
+}
+
 function worldNormal(hit){
   if(!hit?.face)return new THREE.Vector3(0,0,1);
   const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
@@ -320,11 +454,31 @@ function strapCurve(s){
   const pts=[A,...s.controls.slice().sort((a,b)=>a.t-b.t).map(c=>manualControlWorld(s,c)),B];
   return new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
 }
-function strapPointAt(s,t){return strapCurve(s).getPoint(THREE.MathUtils.clamp(t,0,1))}
+function effectiveStrapCurve(s){
+  if((s.surfaceLevel||0)>0){
+    const data=surfaceCurveData(s);
+    if(data)return data.curve;
+  }
+  return strapCurve(s);
+}
+function strapPointAt(s,t){return effectiveStrapCurve(s).getPoint(THREE.MathUtils.clamp(t,0,1))}
 function strapNormalAt(s,t){
-  const f=strapFrame(s),tan=strapCurve(s).getTangent(THREE.MathUtils.clamp(t,0,1)).normalize();
+  const tt=THREE.MathUtils.clamp(t,0,1);
+
+  if((s.surfaceLevel||0)>0){
+    const data=surfaceCurveData(s);
+    if(data){
+      const tan=data.curve.getTangent(tt).normalize();
+      let n=surfaceNormalAtData(data,tt);
+      n.addScaledVector(tan,-n.dot(tan));
+      if(n.lengthSq()>1e-8)return n.normalize();
+    }
+  }
+
+  const f=strapFrame(s),tan=strapCurve(s).getTangent(tt).normalize();
   let n=f.normal.clone().addScaledVector(tan,-f.normal.dot(tan));
-  if(n.lengthSq()<1e-8)n=f.normal.clone();return n.normalize();
+  if(n.lengthSq()<1e-8)n=f.normal.clone();
+  return n.normalize();
 }
 function visibleEndpoint(node,targetPoint){
   const center=nodeWorldPosition(node);
@@ -356,6 +510,7 @@ function makeStrap(data={}){
     id,kind:'strap',a:data.a,b:data.b,widthMM:data.widthMM??strapDefaults.widthMM,slack:data.slack??strapDefaults.slack,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:(data.controls||[]).map(c=>({...c})),
+    surfaceLevel:data.surfaceLevel??0,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -367,35 +522,95 @@ function makeStrap(data={}){
 }
 function updateStrapGeometry(s){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
-  const curve=strapCurve(s);
-  const firstGuide=curve.getPoint(1/STRAP_SAMPLES),lastGuide=curve.getPoint(1-1/STRAP_SAMPLES);
-  const a=visibleEndpoint(aNode,firstGuide),b=visibleEndpoint(bNode,lastGuide);
-  let renderCurve;
-  if(!s.controls.length){
-    const ctrl=autoControlWorld(s);
-    renderCurve=new THREE.QuadraticBezierCurve3(a,ctrl,b);
+
+  const surfaceMode=(s.surfaceLevel||0)>0;
+  let renderCurve=null;
+  let surfaceData=null;
+
+  if(!surfaceMode){
+    // IMPORTANT: untouched fast V1.4h standard path.
+    const curve=strapCurve(s);
+    const firstGuide=curve.getPoint(1/STRAP_SAMPLES),lastGuide=curve.getPoint(1-1/STRAP_SAMPLES);
+    const a=visibleEndpoint(aNode,firstGuide),b=visibleEndpoint(bNode,lastGuide);
+
+    if(!s.controls.length){
+      const ctrl=autoControlWorld(s);
+      renderCurve=new THREE.QuadraticBezierCurve3(a,ctrl,b);
+    }else{
+      // Legacy project compatibility only. V1.4i UI no longer creates these controls.
+      const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
+      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+    }
   }else{
-    const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
-    renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+    surfaceData=surfaceCurveData(s);
+    if(!surfaceData){
+      // Fail-safe fallback to the known-good standard geometry.
+      const curve=strapCurve(s);
+      const a=visibleEndpoint(aNode,curve.getPoint(1/STRAP_SAMPLES));
+      const b=visibleEndpoint(bNode,curve.getPoint(1-1/STRAP_SAMPLES));
+      renderCurve=new THREE.QuadraticBezierCurve3(a,autoControlWorld(s),b);
+      surfaceData=null;
+    }else{
+      renderCurve=surfaceData.curve;
+    }
   }
 
   const pos=s.geometry.getAttribute('position');
   const halfW=Math.max(.0003,s.widthMM*.0037*.5);
   const halfT=.0045;
   let prevSide=null,prevNormal=null;
+
   for(let i=0;i<=STRAP_SAMPLES;i++){
     const t=i/STRAP_SAMPLES,p=renderCurve.getPoint(t);
     const tan=renderCurve.getTangent(t).normalize();
-    let normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
-    normal.addScaledVector(tan,-normal.dot(tan));
-    if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
-    normal.normalize();
+
+    let normal;
+    if(surfaceData){
+      // Body normal controls the flat face in surface mode.
+      normal=surfaceNormalAtData(surfaceData,t);
+      normal.addScaledVector(tan,-normal.dot(tan));
+
+      if(normal.lengthSq()<1e-8){
+        normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
+        normal.addScaledVector(tan,-normal.dot(tan));
+      }
+      normal.normalize();
+    }else{
+      // Exact old orientation behavior for normal straps.
+      normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
+      normal.addScaledVector(tan,-normal.dot(tan));
+      if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
+      normal.normalize();
+    }
+
     let side=new THREE.Vector3().crossVectors(normal,tan);
     if(side.lengthSq()<1e-8)side=prevSide?prevSide.clone():new THREE.Vector3(1,0,0);
     side.normalize();
-    if(prevSide&&side.dot(prevSide)<0){side.negate();normal.negate()}
+
+    // Parallel-transport style continuity: never allow a sudden 180° frame flip.
+    if(prevSide&&side.dot(prevSide)<0){
+      side.negate();
+      normal.negate();
+    }
+
     normal=new THREE.Vector3().crossVectors(tan,side).normalize();
-    prevSide=side.clone();prevNormal=normal.clone();
+
+    // Extra surface-mode safeguard: keep the chosen normal on the same hemisphere
+    // as the mannequin normal unless that would flip the previous frame.
+    if(surfaceData){
+      const bodyN=surfaceNormalAtData(surfaceData,t);
+      if(normal.dot(bodyN)<0){
+        normal.negate();
+        side.negate();
+      }
+      if(prevSide&&side.dot(prevSide)<0){
+        side.negate();
+        normal.negate();
+      }
+    }
+
+    prevSide=side.clone();
+    prevNormal=normal.clone();
 
     const l=p.clone().addScaledVector(side,-halfW),r=p.clone().addScaledVector(side,halfW);
     const verts=[
@@ -404,11 +619,12 @@ function updateStrapGeometry(s){
     ];
     for(let k=0;k<4;k++)pos.setXYZ(i*4+k,verts[k].x,verts[k].y,verts[k].z);
   }
+
   pos.needsUpdate=true;
   s.geometry.computeVertexNormals();
   s.geometry.computeBoundingSphere();
 
-  // Dynamic strap nodes move with exactly this strap, not with the whole scene.
+  // Dynamic nodes still update only for this strap.
   for(const n of nodes.values()){
     if(n.source==='strap'&&n.parentStrapId===s.id)syncNodeTransform(n);
     else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===s.id||n.crossing.strapBId===s.id))syncNodeTransform(n);
@@ -442,7 +658,7 @@ function rebuildAllWraps(){for(const n of nodes.values())rebuildWrapsForNode(n)}
 
 
 function strapSnapshot(s){
-  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c}))};
+  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0};
 }
 function removeStrapBare(id){
   const s=straps.get(id);if(!s)return;
@@ -450,7 +666,7 @@ function removeStrapBare(id){
 }
 function restoreStrapSnapshot(d){
   if(!d||!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)return null;
-  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls});
+  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0});
   return s;
 }
 
@@ -578,13 +794,15 @@ function splitOneStrapAtNode(s,n,t){
     a,b:n.id,
     widthMM:original.widthMM,
     slack:original.slack,
-    controls:[]
+    controls:[],
+    surfaceLevel:original.surfaceLevel||0
   });
   const right=makeStrap({
     a:n.id,b,
     widthMM:original.widthMM,
     slack:original.slack,
-    controls:[]
+    controls:[],
+    surfaceLevel:original.surfaceLevel||0
   });
 
   // Move every surviving dynamic point away from the deleted parent strap.
@@ -746,7 +964,10 @@ function showSelection(){
   }else{
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
-    curvePointCount.textContent=selected.controls.length?`Manuell · ${selected.controls.length}`:'Auto · 1';
+    const lvl=selected.surfaceLevel||0;
+    const internal=lvl?Math.pow(2,lvl)-1:0;
+    const sections=lvl?Math.pow(2,lvl):1;
+    curvePointCount.textContent=lvl?`${internal} Punkte · ${sections} Teile`:'Standard';
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden')}
@@ -767,7 +988,7 @@ function serialize(){
       id:n.id,position:n.position,normal:n.normal,ringVisible:n.ringVisible,diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
       locked:n.locked,mirrorId:n.mirrorId,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing,splitMeta:n.splitMeta,mergedState:n.mergedState||null
     })),
-    straps:[...straps.values()].map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId,controls:s.controls}))
+    straps:[...straps.values()].map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId,controls:s.controls,surfaceLevel:s.surfaceLevel||0}))
   };
 }
 function restore(snap){
@@ -926,39 +1147,42 @@ deleteSelectedBtn.addEventListener('click',()=>{
 });
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
-curveAutoBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;selected.controls=[];updateStrapGeometry(selected);syncPairedStrapProps(selected);showSelection();refreshAutomaticCrossings();commitHistory()});
+curveAutoBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='strap')return;
+  selected.surfaceLevel=0;
+  selected.controls=[];
+
+  const ps=pairOfStrap(selected);
+  if(ps){ps.surfaceLevel=0;ps.controls=[];updateStrapGeometry(ps)}
+
+  updateStrapGeometry(selected);
+  showSelection();refreshAutomaticCrossings();commitHistory();
+});
+
 curvePlusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
+  s.surfaceLevel=Math.min(4,(s.surfaceLevel||0)+1);
+  s.controls=[];
 
-  const sorted=s.controls.slice().sort((a,b)=>a.t-b.t);
-  let bestT=.5,bestGap=-1,prev=0;
-  for(const c of [...sorted,{t:1}]){
-    const gap=c.t-prev;
-    if(gap>bestGap){bestGap=gap;bestT=(prev+c.t)/2}
-    prev=c.t;
-  }
-
-  s.controls.push(makeSurfaceGuideForStrap(s,bestT));
-  s.controls.sort((a,b)=>a.t-b.t);
-
-  // Mirrored partner receives a geometrically projected guide at the same t.
   const ps=pairOfStrap(s);
-  if(ps){
-    ps.controls=s.controls.map(c=>makeSurfaceGuideForStrap(ps,c.t));
-    updateStrapGeometry(ps);
-  }
+  if(ps){ps.surfaceLevel=s.surfaceLevel;ps.controls=[];updateStrapGeometry(ps)}
 
   updateStrapGeometry(s);
-  showSelection();
-  refreshAutomaticCrossings();
-  commitHistory();
+  showSelection();refreshAutomaticCrossings();commitHistory();
 });
+
 curveMinusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
-  if(selected.controls.length<=2)selected.controls=[];
-  else selected.controls.splice(Math.floor(selected.controls.length/2),1);
-  updateStrapGeometry(selected);syncPairedStrapProps(selected);showSelection();refreshAutomaticCrossings();commitHistory();
+  const s=selected;
+  s.surfaceLevel=Math.max(0,(s.surfaceLevel||0)-1);
+  s.controls=[];
+
+  const ps=pairOfStrap(s);
+  if(ps){ps.surfaceLevel=s.surfaceLevel;ps.controls=[];updateStrapGeometry(ps)}
+
+  updateStrapGeometry(s);
+  showSelection();refreshAutomaticCrossings();commitHistory();
 });
 
 addAnchorBtn.addEventListener('click',()=>{
@@ -1001,7 +1225,7 @@ function closestSegmentPoints(p1,q1,p2,q2){
 }
 function bestCrossingBetween(sa,sb){
   if(sa.a===sb.a||sa.a===sb.b||sa.b===sb.a||sa.b===sb.b)return null;
-  const ca=strapCurve(sa),cb=strapCurve(sb),N=14;
+  const ca=effectiveStrapCurve(sa),cb=effectiveStrapCurve(sb),N=14;
   let best=null;
   let a0=ca.getPoint(0);
   for(let i=0;i<N;i++){
@@ -1135,11 +1359,10 @@ function copyStrapProps(src,dst){
   if(!src||!dst)return;
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
+  dst.surfaceLevel=src.surfaceLevel||0;
 
-  // Surface guides are regenerated on the partner's own body surface.
-  dst.controls=src.controls.map(c=>
-    c.surfacePos?makeSurfaceGuideForStrap(dst,c.t):({...c,sideFactor:-(c.sideFactor??0)})
-  );
+  // Legacy manual controls remain mirrored only for old projects.
+  dst.controls=src.controls.map(c=>({...c,sideFactor:-(c.sideFactor??0)}));
   updateStrapGeometry(dst);
 }
 
@@ -1153,7 +1376,7 @@ function serializeNodeForMerge(n){
 function captureMergeTopology(a,b){
   return [...straps.values()]
     .filter(s=>s.a===a.id||s.b===a.id||s.a===b.id||s.b===b.id)
-    .map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c}))}));
+    .map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0}));
 }
 
 function mergeRingPair(a,b){
@@ -1183,7 +1406,7 @@ function restoreTopologyAfterEntmerge(merged,left,right,state){
     const a=d.a===state.left.id?left.id:d.a===state.right.id?right.id:d.a;
     const b=d.b===state.left.id?left.id:d.b===state.right.id?right.id:d.b;
     if(!nodes.has(a)||!nodes.has(b)||a===b)continue;
-    const s=makeStrap({id:d.id,a,b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,controls:d.controls});
+    const s=makeStrap({id:d.id,a,b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,controls:d.controls,surfaceLevel:d.surfaceLevel||0});
     s.mirrorId=d.mirrorId||null;
   }
   for(const s of straps.values())if(s.mirrorId&&!straps.has(s.mirrorId))s.mirrorId=null;
@@ -1240,7 +1463,7 @@ mirrorSelectedBtn.addEventListener('click',()=>{
     const a=mirrorNode(nodes.get(selected.a)),b=mirrorNode(nodes.get(selected.b));
     let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
     if(!existing){
-      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:selected.controls.map(c=>({...c,side:-c.side}))});
+      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:selected.surfaceLevel||0});
       selected.mirrorId=m.id;m.mirrorId=selected.id;
     }
     rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
@@ -1320,10 +1543,70 @@ function screenSpaceNodeHit(x,y){
   }
   return best;
 }
+
+function pointSegmentDistance2D(px,py,ax,ay,bx,by){
+  const abx=bx-ax,aby=by-ay;
+  const len2=abx*abx+aby*aby;
+  if(len2<1e-8)return Math.hypot(px-ax,py-ay);
+  const t=THREE.MathUtils.clamp(((px-ax)*abx+(py-ay)*aby)/len2,0,1);
+  return Math.hypot(px-(ax+t*abx),py-(ay+t*aby));
+}
+
+function screenSpaceStrapHit(x,y){
+  const rect=canvas.getBoundingClientRect();
+  const px=x-rect.left,py=y-rect.top;
+  let best=null,bestD=Infinity;
+
+  for(const s of straps.values()){
+    const curve=effectiveStrapCurve(s);
+    const samples=18;
+    let prevWorld=curve.getPoint(0);
+    let prevProj=prevWorld.clone().project(camera);
+
+    for(let i=1;i<=samples;i++){
+      const t=i/samples;
+      const world=curve.getPoint(t);
+      const proj=world.clone().project(camera);
+
+      // Ignore segments outside the camera clip volume.
+      if(prevProj.z>=-1&&prevProj.z<=1&&proj.z>=-1&&proj.z<=1){
+        const ax=(prevProj.x*.5+.5)*rect.width;
+        const ay=(-prevProj.y*.5+.5)*rect.height;
+        const bx=(proj.x*.5+.5)*rect.width;
+        const by=(-proj.y*.5+.5)*rect.height;
+        const d=pointSegmentDistance2D(px,py,ax,ay,bx,by);
+
+        // Touch target is intentionally much wider than the visual strap.
+        // A wider strap gets a slightly wider target, but even a thin strap
+        // remains easy to select on iPhone.
+        const hitRadius=THREE.MathUtils.clamp(18+(s.widthMM||20)*.18,20,34);
+
+        if(d<hitRadius&&d<bestD){
+          // Check a representative point on this segment against the mannequin.
+          // Rear-side straps therefore still cannot be selected through the body.
+          const midWorld=prevWorld.clone().lerp(world,.5);
+          if(!bodyOccludesWorldPoint(midWorld,.06)){
+            best={kind:'strap',id:s.id};
+            bestD=d;
+          }
+        }
+      }
+
+      prevWorld=world;
+      prevProj=proj;
+    }
+  }
+
+  return best;
+}
+
 function interactiveHit(x,y){
-  // Existing visible nodes still get the generous touch target.
+  // Existing visible objects always win over placing a new ring.
   const softNode=screenSpaceNodeHit(x,y);
   if(softNode)return softNode;
+
+  const softStrap=screenSpaceStrapHit(x,y);
+  if(softStrap)return softStrap;
 
   setPointer(x,y);
   const bodyDistance=raycaster.intersectObjects(bodyMeshes,true)[0]?.distance??Infinity;
