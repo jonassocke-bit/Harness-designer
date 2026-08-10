@@ -23,6 +23,7 @@ const addAnchorBtn=$('addAnchorBtn');
 
 const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider'),surfaceOffsetSlider=$('surfaceOffsetSlider');
 const globalAnchorSizeSlider=$('globalAnchorSizeSlider');
+const selectionColorPicker=$('selectionColorPicker');
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0b0b0e);
@@ -60,6 +61,7 @@ let camAz=0,camEl=.02,camDist=5.25;
 const target=new THREE.Vector3(0,.08,0);
 let tool='ring',mode='build',mirrorMode=false,surfaceOffsetMM=2;
 let globalAnchorSizeMM=Number(localStorage.getItem('hd:anchorSize'))||12;
+let selectionColorHex=localStorage.getItem('hd:selectionColor')||'#00d8ff';
 let ringDefaults=(()=>{try{return {...{diameterMM:40,thicknessMM:6},...JSON.parse(localStorage.getItem('hd:ringDefaults')||'{}')}}catch{return {diameterMM:40,thicknessMM:6}}})();
 let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localStorage.getItem('hd:strapDefaults')||'{}')}}catch{return {widthMM:30,slack:8}}})();
 let selected=null,connectStart=null;
@@ -190,6 +192,7 @@ function rebuildNodeVisual(n){
   }
   visual.userData={kind:'nodeVisual',id:n.id};hit.userData={kind:'nodeHit',id:n.id};
   n.visual=visual;n.hit=hit;n.group.add(visual,hit);
+  if(selected)refreshMaterials();
 }
 function syncNodeTransform(n){
   if(n.source==='strap'&&n.parentStrapId){
@@ -211,6 +214,7 @@ function syncNodeTransform(n){
   const offset=n.ringVisible?ringTube(n):0;
   n.group.position.copy(p).addScaledVector(normal,surfaceOffsetScene()+offset);
   n.group.quaternion.setFromUnitVectors(UNIT_Z,normal);
+  if(selected)refreshMaterials();
 }
 
 function strapFrame(s){
@@ -359,6 +363,7 @@ function updateStrapGeometry(s){
     else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===s.id||n.crossing.strapBId===s.id))syncNodeTransform(n);
   }
   updateControlHandles(s);
+  if(selected)refreshMaterials();
 }
 function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
@@ -616,46 +621,74 @@ function clearHarness(){
 }
 
 
-function clearSelectionGlow(){
-  helperRoot.children.filter(x=>x.userData?.selectionGlow).forEach(x=>helperRoot.remove(x));
+
+function selectionColor(){
+  return new THREE.Color(selectionColorHex);
 }
-function addGlowClone(obj,scale=1.08,opacity=.38){
-  if(!obj)return;
-  const mat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity,side:THREE.BackSide,depthWrite:false});
-  const g=obj.geometry?.clone?.();if(!g)return;
-  const m=new THREE.Mesh(g,mat);m.userData.selectionGlow=true;
-  obj.updateWorldMatrix(true,false);
-  m.matrix.copy(obj.matrixWorld);m.matrix.decompose(m.position,m.quaternion,m.scale);m.scale.multiplyScalar(scale);
-  helperRoot.add(m);
+
+function applyNodeHighlight(n,on){
+  if(!n?.visual)return;
+  const base=n.ringVisible?METAL_MAT:POINT_MAT;
+  if(!on){
+    n.visual.material=base;
+    return;
+  }
+
+  const c=selectionColor();
+  if(n.ringVisible){
+    const m=METAL_MAT.clone();
+    m.color.copy(c);
+    m.emissive=c.clone().multiplyScalar(.35);
+    m.emissiveIntensity=.9;
+    m.roughness=.22;
+    n.visual.material=m;
+  }else{
+    const m=POINT_MAT.clone();
+    m.color.copy(c);
+    n.visual.material=m;
+  }
 }
+
+function applyStrapHighlight(s,on){
+  if(!s?.mesh)return;
+  if(!on){
+    s.mesh.material=STRAP_MAT;
+    return;
+  }
+  const c=selectionColor();
+  const m=STRAP_MAT.clone();
+  m.color.copy(c);
+  m.emissive=c.clone().multiplyScalar(.28);
+  m.emissiveIntensity=.8;
+  s.mesh.material=m;
+}
+
+function refreshMaterials(){
+  for(const n of nodes.values())applyNodeHighlight(n,false);
+  for(const s of straps.values())applyStrapHighlight(s,false);
+
+  if(selected?.kind==='node'){
+    applyNodeHighlight(selected,true);
+    const p=pairOfNode(selected);
+    if(p)applyNodeHighlight(p,true);
+  }else if(selected?.kind==='strap'){
+    applyStrapHighlight(selected,true);
+    const p=pairOfStrap(selected);
+    if(p)applyStrapHighlight(p,true);
+  }
+
+  refreshConnectHints();
+}
+
 function refreshSelectionGlow(){
-  clearSelectionGlow();
-  if(!selected)return;
-  if(selected.kind==='node'){
-    addGlowClone(selected.visual,1.16,.5);
-    const p=pairOfNode(selected);if(p)addGlowClone(p.visual,1.11,.22);
-  }else if(selected.kind==='strap'){
-    addGlowClone(selected.mesh,1.045,.45);
-    const p=pairOfStrap(selected);if(p)addGlowClone(p.mesh,1.025,.18);
-  }
+  // V1.4e: no separate glow geometry anymore.
+  // Highlight is applied directly to the live object materials.
+  refreshMaterials();
 }
-function refreshConnectHints(){
-  for(const n of nodes.values()){
-    if(!n.visual)continue;
-    if(tool==='connect'){
-      n.visual.material.emissive?.set?.(connectStart===n.id?0x8a7a30:0x292715);
-      if(n.visual.material.emissiveIntensity!==undefined)n.visual.material.emissiveIntensity=connectStart===n.id?.9:.18;
-    }
-  }
-}
+
 function selectObject(o){
   selected=o;
-  refreshMaterials();refreshSelectionGlow();showSelection();updateAllControlHandles();refreshConnectHints();
-}
-function refreshMaterials(){
-  clearSelectionGlow();
-  for(const n of nodes.values())if(n.visual)n.visual.material=(selected?.kind==='node'&&selected.id===n.id)?(n.ringVisible?METAL_SEL:POINT_SEL):(n.ringVisible?METAL_MAT:POINT_MAT);
-  for(const s of straps.values())s.mesh.material=(selected?.kind==='strap'&&selected.id===s.id)?STRAP_SEL:STRAP_MAT;
+  refreshMaterials();showSelection();updateAllControlHandles();
 }
 function updateAllControlHandles(){for(const s of straps.values())updateControlHandles(s)}
 function showSelection(){
@@ -787,6 +820,14 @@ setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathU
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
 setupParam('surfaceOffset',surfaceOffsetSlider,$('surfaceOffsetTools'),v=>{surfaceOffsetMM=v;for(const n of nodes.values())syncNodeTransform(n);for(const s of straps.values())updateStrapGeometry(s)});
 globalAnchorSizeSlider.value=globalAnchorSizeMM;
+
+selectionColorPicker.value=selectionColorHex;
+selectionColorPicker.addEventListener('input',()=>{
+  selectionColorHex=selectionColorPicker.value;
+  localStorage.setItem('hd:selectionColor',selectionColorHex);
+  refreshMaterials();
+});
+
 setupParam('globalAnchorSize',globalAnchorSizeSlider,$('globalAnchorSizeTools'),v=>{
   globalAnchorSizeMM=v;localStorage.setItem('hd:anchorSize',String(v));
   for(const n of nodes.values())if(!n.ringVisible){n.sizeMM=v;rebuildNodeVisual(n);syncNodeTransform(n)}
@@ -830,9 +871,24 @@ nodeRingToggle.addEventListener('click',()=>{
 });
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;showSelection();commitHistory()});
 deleteSelectedBtn.addEventListener('click',()=>{
-  if(!selected)return;const was=selected;
-  if(was.kind==='node')removeNode(was.id);else removeStrap(was.id);
-  selected=null;hideSelection();rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
+  if(!selected)return;
+  const was=selected;
+
+  if(was.kind==='node'){
+    const p=pairOfNode(was);
+    if(p&&nodes.has(p.id))removeNode(p.id);
+    if(nodes.has(was.id))removeNode(was.id);
+  }else{
+    const p=pairOfStrap(was);
+    if(p&&straps.has(p.id))removeStrap(p.id);
+    if(straps.has(was.id))removeStrap(was.id);
+  }
+
+  selected=null;
+  hideSelection();
+  rebuildAllWraps();
+  refreshAutomaticCrossings();
+  commitHistory();
 });
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
@@ -1213,20 +1269,47 @@ function requestNodeDrag(n,x,y){
   dragRaf=requestAnimationFrame(()=>{
     dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
 
-    // Merged center ring: move on a camera-facing plane so it can leave the axis
-    // without requiring a new pointer gesture.
+    // Merged center ring:
+    // - normal drag along the mannequin keeps X snapped to the mirror axis
+    // - strong lateral drag leaves the snap zone and entmerges, in the SAME gesture
     if(q.n.mergedState){
-      const planeP=screenPlanePoint(q.x,q.y,nodeWorldPosition(q.n));
-      if(!planeP)return;
       const current=nodeWorldPosition(q.n);
-      current.x=planeP.x;
-      setNodeWorldPosition(q.n,current);syncNodeTransform(q.n);
+      const planeP=screenPlanePoint(q.x,q.y,current);
+      if(!planeP)return;
 
-      const active=maybeAxisMergeOrEntmerge(q.n);
-      if(active!==q.n){
-        if(single)single.activeNodeId=active.id;
-        selected=active;
-        showSelection();updateAttachedStraps(active.id);rebuildAllWraps();
+      const lateral=planeP.x;
+
+      if(Math.abs(lateral)>AXIS_SNAP_OUT){
+        const release=current.clone();
+        release.x=lateral;
+        setNodeWorldPosition(q.n,release);
+        const active=maybeAxisMergeOrEntmerge(q.n);
+        if(active!==q.n){
+          if(single)single.activeNodeId=active.id;
+          selected=active;
+          refreshMaterials();
+          showSelection();
+          updateAttachedStraps(active.id);
+          rebuildAllWraps();
+        }
+        return;
+      }
+
+      // Still snapped: use actual body surface under the pointer for Y/Z,
+      // but force X=0. This allows smooth movement up/down along the center line.
+      const hit=bodyHit(q.x,q.y);
+      if(hit){
+        const p=hit.point.clone();
+        p.x=0;
+        const normal=worldNormal(hit);
+        normal.x=0;
+        if(normal.lengthSq()<1e-8)normal.set(0,0,1);
+        normal.normalize();
+
+        setNodeWorldPosition(q.n,p);
+        q.n.normal=normal.toArray();
+        syncNodeTransform(q.n);
+        updateAttachedStraps(q.n.id);
       }
       return;
     }

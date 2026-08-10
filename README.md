@@ -1,15 +1,15 @@
-# Harness Designer V1.4d — Startup Recovery
+# Harness Designer V1.4e — Interaction / Highlight Cleanup
 
-Fixes the V1.4c startup freeze.
-
-Root cause:
-- `globalAnchorSize` called `setupParam(...)`
-- its PRESETS configuration was missing
-- `setupParam` attempted to read `cfg.min` from `undefined`
-- JavaScript stopped before the render loop, making it look like the mannequin failed to load
-
-Fixes:
-- adds `globalAnchorSize` presets: 8 / 12 / 16 / 20
-- hardens `setupParam` with a slider-derived fallback configuration
-- future missing PRESETS entries therefore cannot crash app startup
-- all V1.4c UX/topology functionality is otherwise unchanged
+- Merged center rings can move smoothly along the mirror axis:
+  - X stays snapped to 0
+  - Y/Z follow the mannequin surface under the finger
+  - lateral drag beyond the release threshold entmerges in the same gesture
+- Deleting one member of a mirrored ring pair deletes both.
+- Deleting one member of a mirrored strap pair deletes both.
+- Clone-based glow is removed.
+- Selection highlight is applied directly to the real node/strap materials.
+- Both members of a mirror pair receive the same highlight.
+- Highlight follows movement, resize and strap deformation automatically.
+- Global selection color picker added to the 3D model/settings panel.
+- Selection color is persisted in localStorage.
+- V1.4d one-shot connect UX and V1.4b topology remain intact.
