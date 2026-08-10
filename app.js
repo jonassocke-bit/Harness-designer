@@ -236,10 +236,22 @@ function autoControlWorld(s){
 }
 function manualControlWorld(s,c){
   const f=strapFrame(s);
+  const slack=THREE.MathUtils.clamp(s.slack/100,0,1);
+
+  // V1.4a: manual points refine the curve, but do not replace slack.
+  // Their offsets scale with current strap length, while the main body-clearance
+  // still comes from the current slack value.
+  const relativeBulge=THREE.MathUtils.clamp(f.length*.28,.018,.24);
+  const baseClearance=THREE.MathUtils.clamp(f.length*.018,.006,.022);
+  const slackOffset=baseClearance + slack*relativeBulge;
+
+  const sideScale=THREE.MathUtils.clamp(f.length,.12,1.2);
+  const manualNormal=(c.normalFactor??0)*relativeBulge;
+  const manualSide=(c.sideFactor??0)*sideScale;
+
   return f.A.clone().lerp(f.B,c.t)
-    .addScaledVector(f.side,c.side)
-    .addScaledVector(f.normal,c.normal)
-    .addScaledVector(WORLD_UP,c.drop);
+    .addScaledVector(f.side,manualSide)
+    .addScaledVector(f.normal,slackOffset + manualNormal);
 }
 function strapCurve(s){
   const A=nodeWorldPosition(nodes.get(s.a)),B=nodeWorldPosition(nodes.get(s.b));
@@ -387,8 +399,17 @@ function splitOneStrapAtNode(s,n,t){
   const original=strapSnapshot(s);
   const a=s.a,b=s.b;
   removeStrapBare(s.id);
+
   const left=makeStrap({a,b:n.id,widthMM:original.widthMM,slack:original.slack,controls:[]});
   const right=makeStrap({a:n.id,b,widthMM:original.widthMM,slack:original.slack,controls:[]});
+
+  // Critical: render both children immediately against the current ring radius.
+  updateStrapGeometry(left);
+  updateStrapGeometry(right);
+  rebuildWrapsForNode(n);
+  rebuildWrapsForNode(nodes.get(a));
+  rebuildWrapsForNode(nodes.get(b));
+
   return {original,children:[left.id,right.id],t};
 }
 function restoreSplitPart(part,n){
@@ -398,21 +419,33 @@ function restoreSplitPart(part,n){
 }
 function convertDynamicPointToRing(n){
   if(!n||n.ringVisible)return;
+
+  // Ring geometry/state must exist BEFORE child straps are generated,
+  // otherwise the first render still treats the node as a point.
+  n.ringVisible=true;
+  rebuildNodeVisual(n);
+  syncNodeTransform(n);
+
   if(n.source==='strap'&&n.parentStrapId){
     const s=straps.get(n.parentStrapId);if(!s)return;
     const part=splitOneStrapAtNode(s,n,n.t);
     n.splitMeta={kind:'single',part};
     n.source='junction';n.parentStrapId=null;
+
   }else if(n.source==='crossing'&&n.crossing){
     const sa=straps.get(n.crossing.strapAId),sb=straps.get(n.crossing.strapBId);
     if(!sa||!sb)return;
+
+    const crossingSnapshot={...n.crossing};
     const partA=splitOneStrapAtNode(sa,n,n.crossing.tA);
     const partB=splitOneStrapAtNode(sb,n,n.crossing.tB);
-    n.splitMeta={kind:'crossing',partA,partB,crossing:{...n.crossing}};
+
+    n.splitMeta={kind:'crossing',partA,partB,crossing:crossingSnapshot};
     n.source='junction';n.crossing=null;n.autoCrossing=false;
   }
-  n.ringVisible=true;
-  rebuildNodeVisual(n);syncNodeTransform(n);rebuildAllWraps();
+
+  updateAttachedStraps(n.id);
+  rebuildAllWraps();
 }
 function convertRingBackToPoint(n){
   if(!n?.ringVisible||!n.splitMeta)return;
@@ -596,7 +629,7 @@ nodeRingToggle.addEventListener('click',()=>{
     else if(partner.ringVisible&&partner.splitMeta)convertRingBackToPoint(partner);
     else{partner.ringVisible=n.ringVisible;copyNodeVisualProps(n,partner)}
   }
-  showSelection();commitHistory();refreshAutomaticCrossings();
+  updateAttachedStraps(n.id);rebuildAllWraps();showSelection();commitHistory();refreshAutomaticCrossings();
 });
 lockSelectedBtn.addEventListener('click',()=>{if(!selected)return;selected.locked=!selected.locked;showSelection();commitHistory()});
 deleteSelectedBtn.addEventListener('click',()=>{
@@ -613,14 +646,14 @@ curvePlusBtn.addEventListener('click',()=>{
   if(!s.controls.length){
     const f=strapFrame(s),auto=autoControlWorld(s),base=f.A.clone().lerp(f.B,.5),d=auto.clone().sub(base);
     s.controls=[
-      {t:.33,side:0,normal:d.dot(f.normal),drop:0},
-      {t:.67,side:0,normal:d.dot(f.normal),drop:0}
+      {t:.33,sideFactor:0,normalFactor:0},
+      {t:.67,sideFactor:0,normalFactor:0}
     ];
   }else{
     const sorted=s.controls.slice().sort((a,b)=>a.t-b.t);
     let bestT=.5,bestGap=-1,prev=0;
     for(const c of [...sorted,{t:1}]){const gap=c.t-prev;if(gap>bestGap){bestGap=gap;bestT=(prev+c.t)/2}prev=c.t}
-    s.controls.push({t:bestT,side:0,normal:.02,drop:0});s.controls.sort((a,b)=>a.t-b.t);
+    s.controls.push({t:bestT,sideFactor:0,normalFactor:0});s.controls.sort((a,b)=>a.t-b.t);
   }
   updateStrapGeometry(s);syncPairedStrapProps(s);showSelection();refreshAutomaticCrossings();commitHistory();
 });
@@ -689,28 +722,65 @@ function bestCrossingBetween(sa,sb){
   }
   return best;
 }
-function clearAutomaticCrossings(){
-  for(const n of [...nodes.values()])if(n.source==='crossing'&&n.autoCrossing&&!n.ringVisible)removeNode(n.id,false);
+
+function crossingKey(sa,sb){
+  return [sa.id,sb.id].sort().join('::');
+}
+function clearAutomaticCrossings(validKeys=null){
+  for(const n of [...nodes.values()]){
+    if(n.source!=='crossing'||!n.autoCrossing||n.ringVisible)continue;
+    const key=n.crossing?.key||null;
+    if(!validKeys||!key||!validKeys.has(key))removeNode(n.id,false);
+  }
 }
 function refreshAutomaticCrossings(){
   if(crossingRefreshBusy)return;
   crossingRefreshBusy=true;
   try{
-    clearAutomaticCrossings();
     const arr=[...straps.values()];
+    const validKeys=new Set();
+
     for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++){
-      const sa=arr[i],sb=arr[j],hit=bestCrossingBetween(sa,sb);if(!hit)continue;
+      const sa=arr[i],sb=arr[j];
+      const hit=bestCrossingBetween(sa,sb);
+      if(!hit)continue;
+
+      const key=crossingKey(sa,sb);
+      validKeys.add(key);
+
       const p=hit.pA.clone().lerp(hit.pB,.5);
       const normal=strapNormalAt(sa,hit.tA).add(strapNormalAt(sb,hit.tB));
-      if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();
-      makeNode({
-        position:p.toArray(),normal:normal.toArray(),ringVisible:false,sizeMM:7,
-        source:'crossing',autoCrossing:true,
-        crossing:{strapAId:sa.id,tA:hit.tA,strapBId:sb.id,tB:hit.tB}
-      });
+      if(normal.lengthSq()<1e-8)normal.set(0,0,1);
+      normal.normalize();
+
+      let n=[...nodes.values()].find(n=>
+        n.source==='crossing'&&n.autoCrossing&&!n.ringVisible&&n.crossing?.key===key
+      );
+
+      if(n){
+        n.crossing={
+          key,
+          strapAId:sa.id,tA:hit.tA,
+          strapBId:sb.id,tB:hit.tB
+        };
+        setNodeWorldPosition(n,p);
+        n.normal=normal.toArray();
+        syncNodeTransform(n);
+      }else{
+        n=makeNode({
+          position:p.toArray(),normal:normal.toArray(),ringVisible:false,sizeMM:7,
+          source:'crossing',autoCrossing:true,
+          crossing:{key,strapAId:sa.id,tA:hit.tA,strapBId:sb.id,tB:hit.tB}
+        });
+      }
     }
-  }finally{crossingRefreshBusy=false}
+
+    clearAutomaticCrossings(validKeys);
+  }finally{
+    crossingRefreshBusy=false;
+  }
 }
+
 const AXIS_SNAP_IN=.095;
 const AXIS_SNAP_OUT=.108;
 
@@ -729,7 +799,10 @@ function copyStrapProps(src,dst){
   if(!src||!dst)return;
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
-  dst.controls=src.controls.map(c=>({...c,side:-c.side}));
+  dst.controls=src.controls.map(c=>({
+    ...c,
+    sideFactor:-(c.sideFactor??0)
+  }));
   updateStrapGeometry(dst);
 }
 

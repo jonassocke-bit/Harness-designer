@@ -1,30 +1,19 @@
-# Harness Designer V1.4 — Anchors, Split/Merge & Crossings
+# Harness Designer V1.4a — Bugfix
 
-Built on V1.3.
+Fixes three V1.4 issues:
 
-## Dynamic strap anchors
-- `+ Anker auf Riemen` creates a dynamic node at t=0.5.
-- Anchor position is editable with a 0–100% slider.
-- Anchor follows the strap automatically.
-- Anchors are pickable connection targets.
-- Mirrored straps create paired mirrored anchors.
+1. Manual curve points no longer disable slack behavior.
+   - Slack remains length-relative and body-outward.
+   - Extra points only refine the curve.
+   - Generated points no longer introduce a fixed oversized offset.
 
-## Point <-> Ring with real topology
-- Turning a strap anchor into a ring physically splits its parent strap into two straps.
-- Turning the ring back into a point removes the two children and restores the original through-strap.
-- Existing side straps attached to the node remain attached.
-- Crossing points use the same mechanism, splitting both crossing straps into four children.
+2. Automatic crossing points are stable.
+   - Each crossing pair gets a stable key based on the two strap IDs.
+   - Existing crossing nodes are updated/reused after movement.
+   - Obsolete crossing nodes are removed.
+   - No duplicate old crossing point should remain after recalculation.
 
-## Automatic crossings
-- Crossings are detected between strap curves after drag/release or structural edits.
-- No global crossing search happens during pointermove.
-- An automatic crossing creates a dynamic point tied to both straps.
-- Crossing point can be selected and converted into a real ring.
-- Shared-endpoint straps are excluded.
-- Automatic non-ring crossing points are rebuilt after relevant changes.
-
-## Retained
-- V1.3 continuous mirror-axis merge/entmerge.
-- topology-preserving ring-pair merge/entmerge.
-- length-relative slack.
-- ring-first touch picking.
+3. Point -> Ring updates immediately.
+   - Ring state is applied before the strap is physically split.
+   - New child straps immediately recalculate visible endpoints against ring radius.
+   - Ring wraps and attached strap geometry refresh immediately.
