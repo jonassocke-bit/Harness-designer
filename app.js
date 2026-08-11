@@ -274,7 +274,6 @@ function reprojectHarnessToBody(){
   // Body shape changed: surface waypoints get one fresh projection too.
   reprojectAllWaypoints();
   for(const s of straps.values())updateStrapGeometry(s);
-  recomputeAllAutoStraps();
   updateAllPanels();
   rebuildAllWraps();
   refreshAutomaticCrossings();
@@ -467,7 +466,7 @@ function projectSurfaceMidpoint(a,b,normalA,normalB){
   return {point:candidate,normal:preferred};
 }
 
-function buildSurfaceGuideChain(s,level,applyClearance=true){
+function buildSurfaceGuideChain(s,level){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return null;
 
@@ -491,209 +490,17 @@ function buildSurfaceGuideChain(s,level,applyClearance=true){
   }
 
   const guides=subdivide(A,B,nA,nB,level);
-  if(applyClearance){
-    const clearance=surfaceClearanceForStrap(s);
-    // Endpoints stay at their actual nodes. Only internal guides are lifted.
-    for(let i=1;i<guides.length-1;i++)guides[i].point.addScaledVector(guides[i].normal,clearance);
-  }
-  return guides;
-}
-
-
-function coarseSegmentCollision(a,b,na,nb,clearance){
-  // Deliberately coarse first pass: 5 samples only.
-  const fs=[.18,.36,.54,.72,.90];
-  let worst=null;
-
-  for(const f of fs){
-    const p=a.clone().lerp(b,f);
-    let n=na.clone().lerp(nb,f);
-    if(n.lengthSq()<1e-8)n=na.clone();
-    n.normalize();
-
-    const hit=nearestBodySurfacePreferred(p,n);
-    if(!hit)continue;
-
-    const signed=p.clone().sub(hit.point).dot(hit.normal);
-    const penetration=clearance-signed;
-
-    if(penetration>0&&(!worst||penetration>worst.penetration)){
-      worst={f,hit,penetration,preferred:n};
-    }
-  }
-
-  if(!worst)return null;
-
-  // Only refine around the worst coarse sample, with 3 extra probes.
-  const span=.18;
-  const lo=Math.max(.05,worst.f-span);
-  const hi=Math.min(.95,worst.f+span);
-  for(const f of [
-    THREE.MathUtils.lerp(lo,hi,.25),
-    THREE.MathUtils.lerp(lo,hi,.50),
-    THREE.MathUtils.lerp(lo,hi,.75)
-  ]){
-    const p=a.clone().lerp(b,f);
-    let n=na.clone().lerp(nb,f);
-    if(n.lengthSq()<1e-8)n=na.clone();
-    n.normalize();
-
-    const hit=nearestBodySurfacePreferred(p,n);
-    if(!hit)continue;
-
-    const signed=p.clone().sub(hit.point).dot(hit.normal);
-    const penetration=clearance-signed;
-    if(penetration>worst.penetration){
-      worst={f,hit,penetration,preferred:n};
-    }
-  }
-
-  return worst;
-}
-
-function simplifyAutoGuides(guides,clearance){
-  if(!guides||guides.length<=2)return guides;
-  let changed=true,guard=0;
-
-  while(changed&&guard++<6){
-    changed=false;
-
-    for(let i=1;i<guides.length-1;i++){
-      const prev=guides[i-1],next=guides[i+1];
-
-      if(!coarseSegmentCollision(prev.point,next.point,prev.normal,next.normal,clearance)){
-        guides.splice(i,1);
-        changed=true;
-        break;
-      }
-    }
-  }
-
-  return guides;
-}
-
-function incrementalAutoGuideChain(s){
-  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
-  if(!aNode||!bNode)return null;
-
-  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
-  const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
-  const clearance=Math.max(.008,surfaceOffsetScene()+.010);
-
-  // Reuse previous solution first. This is usually the cheapest path after a
-  // small ring drag: only bad segments are repaired.
-  let guides=null;
-
-  if(s.autoGuides?.length>=2){
-    guides=s.autoGuides.map(g=>({
-      point:new THREE.Vector3().fromArray(g.point),
-      normal:new THREE.Vector3().fromArray(g.normal).normalize()
-    }));
-
-    guides[0]={point:A.clone(),normal:nA.clone().normalize()};
-    guides[guides.length-1]={point:B.clone(),normal:nB.clone().normalize()};
-  }else{
-    guides=[
-      {point:A.clone(),normal:nA.clone().normalize()},
-      {point:B.clone(),normal:nB.clone().normalize()}
-    ];
-  }
-
-  const MAX_POINTS=10;
-  const MAX_REPAIRS=8;
-  let repairs=0;
-
-  while(repairs<MAX_REPAIRS&&guides.length<MAX_POINTS){
-    let worstSeg=null;
-
-    for(let i=0;i<guides.length-1;i++){
-      const a=guides[i],b=guides[i+1];
-      const col=coarseSegmentCollision(a.point,b.point,a.normal,b.normal,clearance);
-
-      if(col&&(!worstSeg||col.penetration>worstSeg.col.penetration)){
-        worstSeg={i,col,a,b};
-      }
-    }
-
-    if(!worstSeg)break;
-
-    const {i,col,a,b}=worstSeg;
-    const contact={
-      point:col.hit.point.clone(),
-      normal:col.hit.normal.clone().normalize()
-    };
-
-    guides.splice(i+1,0,contact);
-    repairs++;
-  }
-
-  return simplifyAutoGuides(guides,clearance);
-}
-
-function adaptiveAutoGuideChain(s){
-  return incrementalAutoGuideChain(s);
-}
-function computeAutoStrapFit(s){
-  if(!s?.autoFit)return false;
-
-  const guides=incrementalAutoGuideChain(s);
-  if(!guides||guides.length<2){
-    s.autoGuides=null;
-    return false;
-  }
-
-  s.autoGuides=guides.map(g=>({
-    point:g.point.toArray(),
-    normal:g.normal.toArray()
-  }));
-  return true;
-}
-function autoSurfaceCurveData(s){
-  if(!s?.autoFit||!s.autoGuides?.length)return null;
-  const guides=s.autoGuides.map(g=>({
-    point:new THREE.Vector3().fromArray(g.point),
-    normal:new THREE.Vector3().fromArray(g.normal).normalize()
-  }));
-  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
-  if(!aNode||!bNode)return null;
-
   const clearance=surfaceClearanceForStrap(s);
-  for(let i=1;i<guides.length-1;i++)guides[i].point.addScaledVector(guides[i].normal,clearance);
 
-  if(guides.length===2){
-    const a=visibleEndpoint(aNode,guides[1].point),b=visibleEndpoint(bNode,guides[0].point);
-    const points=[a.clone(),b.clone()];
-    return {curve:new THREE.LineCurve3(a,b),guides,points};
+  // Endpoints stay at their actual nodes. Only internal guides sit on/lift off
+  // the body surface; visibleEndpoint later handles the ring radius.
+  for(let i=1;i<guides.length-1;i++){
+    guides[i].point.addScaledVector(guides[i].normal,clearance);
   }
-  const a=visibleEndpoint(aNode,guides[1].point);
-  const b=visibleEndpoint(bNode,guides[guides.length-2].point);
-  const points=guides.map((g,i)=>i===0?a.clone():i===guides.length-1?b.clone():g.point.clone());
-  return {curve:new THREE.CatmullRomCurve3(points,false,'centripetal',.35),guides,points};
+  return guides;
 }
-function finalizeAutoStrapsForNode(nodeId){
-  const handled=new Set();
-  for(const s of straps.values()){
-    if(s.a!==nodeId&&s.b!==nodeId)continue;
-    if(!s.autoFit)continue;
-    const ps=pairOfStrap(s);
-    const master=ps?pairMasterStrap(s):s;
-    if(handled.has(master.id))continue;
-    if(computeAutoStrapFit(master))updateStrapGeometry(master,{skipPairMirror:true});
-    if(ps){const slave=master===s?ps:s;mirrorStrapMeshFromMaster(master,slave)}
-    handled.add(master.id);
-  }
-}
-function recomputeAllAutoStraps(){
-  const handled=new Set();
-  for(const s of straps.values()){
-    if(!s.autoFit)continue;
-    const ps=pairOfStrap(s),master=ps?pairMasterStrap(s):s;
-    if(handled.has(master.id))continue;
-    if(computeAutoStrapFit(master))updateStrapGeometry(master,{skipPairMirror:true});
-    if(ps){const slave=master===s?ps:s;mirrorStrapMeshFromMaster(master,slave)}
-    handled.add(master.id);
-  }
-}
+
+
 
 function surfaceCurveData(s){
   const level=THREE.MathUtils.clamp(Math.round(s.surfaceLevel||0),1,4);
@@ -865,8 +672,6 @@ function mirrorStrapMeshFromMaster(master,slave){
   slave.widthMM=master.widthMM;
   slave.slack=master.slack;
   slave.surfaceLevel=master.surfaceLevel||0;
-  slave.autoFit=!!master.autoFit;
-  slave.autoGuides=master.autoGuides?master.autoGuides.map(g=>({point:[-g.point[0],g.point[1],g.point[2]],normal:[-g.normal[0],g.normal[1],g.normal[2]]})):null;
 
   // Keep materialized waypoint state ready for a future unlink, but do not
   // independently project it while the pair is linked.
@@ -1784,8 +1589,6 @@ function makeStrap(data={}){
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:historyClone(data.controls||[]),
     surfaceLevel:data.surfaceLevel??0,
-    autoFit:data.autoFit!==false,
-    autoGuides:historyClone(data.autoGuides||null),
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
@@ -1796,13 +1599,9 @@ function makeStrap(data={}){
   s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=20;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
-  if(s.autoFit&&bodyMeshes.length){
-    computeAutoStrapFit(s);
-    updateStrapGeometry(s,{skipPairMirror:true});
-  }
   return s;
 }
-function updateStrapGeometry(s,{skipPairMirror=false,previewAuto=false}={}){
+function updateStrapGeometry(s,{skipPairMirror=false}={}){
   if(!skipPairMirror){
     const ps=pairOfStrap(s);
     if(ps){
@@ -1817,7 +1616,6 @@ function updateStrapGeometry(s,{skipPairMirror=false,previewAuto=false}={}){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
 
   const surfaceMode=(s.surfaceLevel||0)>0;
-  const autoMode=!!s.autoFit&&!previewAuto;
   let renderCurve=null;
   let surfaceData=null;
 
@@ -1937,7 +1735,9 @@ function updateStrapGeometry(s,{skipPairMirror=false,previewAuto=false}={}){
     if(ps&&pairMasterStrap(s)===s)mirrorStrapMeshFromMaster(s,ps);
   }
 }
-function updateAttachedStraps(nodeId,{previewAuto=false}={}){
+function updateAttachedStraps(nodeId){
+  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
+}={}){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s,{previewAuto});
 }
 function updateControlHandles(s){
@@ -1964,7 +1764,7 @@ function rebuildAllWraps(){for(const n of nodes.values())rebuildWrapsForNode(n)}
 
 
 function strapSnapshot(s){
-  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0,autoFit:!!s.autoFit,autoGuides:historyClone(s.autoGuides||null),previousPartnerId:s.previousPartnerId||null,manualUnlinked:!!s.manualUnlinked};
+  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0,previousPartnerId:s.previousPartnerId||null,manualUnlinked:!!s.manualUnlinked};
 }
 function removeStrapBare(id){
   const s=straps.get(id);if(!s)return;
@@ -1972,7 +1772,7 @@ function removeStrapBare(id){
 }
 function restoreStrapSnapshot(d){
   if(!d||!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)return null;
-  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0,autoFit:!!d.autoFit,autoGuides:d.autoGuides||null,previousPartnerId:d.previousPartnerId||null,manualUnlinked:!!d.manualUnlinked});
+  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0,previousPartnerId:d.previousPartnerId||null,manualUnlinked:!!d.manualUnlinked});
   return s;
 }
 
@@ -2347,11 +2147,7 @@ function showSelection(){
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
     const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
     const lvl=selected.surfaceLevel||0;
-    if(selected.autoFit){
-      const autoPoints=selected.autoGuides?Math.max(0,selected.autoGuides.length-2):0;
-      curvePointCount.textContent=`Auto · ${autoPoints} ${autoPoints===1?'Punkt':'Punkte'}`;
-    }
-    else if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
+    if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
     else if(lvl){
       const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
@@ -2421,8 +2217,6 @@ function serialize(){
       mirrorId:s.mirrorId||null,
       controls:historyClone(s.controls||[]),
       surfaceLevel:s.surfaceLevel||0,
-      autoFit:!!s.autoFit,
-      autoGuides:historyClone(s.autoGuides||null),
       dynEditStamp:s.dynEditStamp||0,
       previousPartnerId:s.previousPartnerId||null,
       manualUnlinked:!!s.manualUnlinked
@@ -2910,7 +2704,6 @@ function addWaypointFromGuideHit(s,guideHit){
   }
 
   s.surfaceLevel=0;
-  s.autoFit=false;s.autoGuides=null;
   // V1.5f: a manually defined surface route should start fully taut.
   // Otherwise the slack offset immediately lifts the fresh waypoint away
   // from the body and makes the user's chosen route look wrong.
@@ -2924,7 +2717,6 @@ function addWaypointFromGuideHit(s,guideHit){
   const ps=pairOfStrap(s);
   if(ps){
     ps.surfaceLevel=0;
-    ps.autoFit=false;ps.autoGuides=null;
     ps.slack=0;
     const mirrored=mirrorWorldPointX(p);
     const mirroredNormal=mirrorWorldNormalX(normal);
@@ -2939,21 +2731,14 @@ function addWaypointFromGuideHit(s,guideHit){
 
 curveAutoBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
-  const s=selected;
-  s.surfaceLevel=0;s.controls=[];s.autoFit=true;
+  selected.surfaceLevel=0;
+  selected.controls=[];
 
-  const ps=pairOfStrap(s);
-  const master=ps?pairMasterStrap(s):s;
-  if(master!==s){master.surfaceLevel=0;master.controls=[];master.autoFit=true}
-  computeAutoStrapFit(master);
-  updateStrapGeometry(master,{skipPairMirror:true});
-  if(ps){
-    const slave=master===s?ps:s;
-    slave.surfaceLevel=0;slave.controls=[];slave.autoFit=true;
-    slave.autoGuides=master.autoGuides?historyClone(master.autoGuides).map(g=>({point:[-g.point[0],g.point[1],g.point[2]],normal:[-g.normal[0],g.normal[1],g.normal[2]]})):null;
-    mirrorStrapMeshFromMaster(master,slave);
-  }
-  showSelection();refreshAutomaticCrossings();commitHistory();showToast('Auto-Fit berechnet');
+  const ps=pairOfStrap(selected);
+  if(ps){ps.surfaceLevel=0;ps.controls=[];updateStrapGeometry(ps)}
+
+  updateStrapGeometry(selected);
+  showSelection();refreshAutomaticCrossings();commitHistory();
 });
 
 curvePlusBtn.addEventListener('click',()=>{
@@ -2971,8 +2756,8 @@ curveMinusBtn.addEventListener('click',()=>{
 
   const i=[...s.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint&&!x.c.inheritedRoute).at(-1)?.i;
   if(i===undefined){
-    if(s.autoFit){s.autoFit=false;s.autoGuides=null;updateStrapGeometry(s)}
-    else if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
+    // One click also converts an old recursive surface strap back to Standard.
+    if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
   }else{
     s.controls.splice(i,1);
     updateStrapGeometry(s);
@@ -3191,7 +2976,7 @@ function clearCurrentPair(a,b){
 }
 function manuallyUnlinkSelected(){
   if(!selected)return false;
-  const partner=selected.kind==='node'?pairOfNode(selected):selected.kind==='strap'?pairOfStrap(selected):pairOfPanel(selected);
+  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
   if(!partner)return false;
 
   rememberFormerPartners(selected,partner);
@@ -3260,14 +3045,14 @@ function reconnectSelected(){
   return reconnectStrapToFormerPartner(selected);
 }
 function updateLinkButton(){
-  if(!selected||selected.kind==='panel'){
+  if(!selected){
     linkSelectedBtn.disabled=true;
     linkSelectedBtn.classList.remove('active','unlinked');
     linkSelectedBtn.setAttribute('aria-pressed','false');
     return;
   }
 
-  const partner=selected.kind==='node'?pairOfNode(selected):selected.kind==='strap'?pairOfStrap(selected):pairOfPanel(selected);
+  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
   const formerId=selected.previousPartnerId;
   const formerExists=selected.kind==='node'?nodes.has(formerId):straps.has(formerId);
   const linked=!!partner;
@@ -3367,7 +3152,6 @@ function copyStrapProps(src,dst){
   if(!src||!dst)return;
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
-  dst.autoFit=!!src.autoFit;dst.autoGuides=historyClone(src.autoGuides||null);
 
   const master=pairMasterStrap(src);
   const slave=master===src?dst:src;
@@ -3469,9 +3253,6 @@ function mergeRingPair(a,b){
   const merged=makeNode({position:p.toArray(),normal:n.toArray(),ringVisible:true,diameterMM:a.diameterMM,thicknessMM:a.thicknessMM,sizeMM:a.sizeMM});
   merged.mergedState=state;
 
-  // Panels keep their logical boundary slots even while visible nodes collapse.
-  panelHandleNodeMerge(a,b,merged);
-
   for(const s of straps.values()){
     if(s.a===a.id||s.a===b.id)s.a=merged.id;
     if(s.b===a.id||s.b===b.id)s.b=merged.id;
@@ -3512,7 +3293,6 @@ function entmergeRing(merged,p){
   left.mirrorId=right.id;right.mirrorId=left.id;
   copyNodeVisualProps(merged,left);copyNodeVisualProps(merged,right);
   restoreTopologyAfterEntmerge(merged,left,right,state);
-  panelHandleNodeEntmerge(merged,left,right);
   nodeRoot.remove(merged.group);nodes.delete(merged.id);
   selected=p.x<0?left:right;rebuildAllWraps();return selected;
 }
@@ -3547,61 +3327,21 @@ function mirrorNode(n){
 mirrorToggle.addEventListener('click',()=>{mirrorMode=!mirrorMode;mirrorToggle.classList.toggle('active',mirrorMode);mirrorToggle.setAttribute('aria-pressed',String(mirrorMode))});
 mirrorSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
-
   if(selected.kind==='node'){
-    const m=mirrorNode(selected);
-    syncNodeTransform(m);
-    dynReconcileSymmetry({syncProps:true});
-    commitHistory();
-    showToast('Gespiegelt');
-    return;
-  }
-
-  if(selected.kind==='strap'){
+    const m=mirrorNode(selected);syncNodeTransform(m);commitHistory();showToast('Gespiegelt');
+  }else{
     const a=mirrorNode(nodes.get(selected.a)),b=mirrorNode(nodes.get(selected.b));
-    let existing=[...straps.values()].find(s=>
-      (s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id)
-    );
-
+    let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
     if(!existing){
       const hasWp=selected.controls.some(c=>c.waypoint);
-      const m=makeStrap({
-        a:a.id,b:b.id,
-        widthMM:selected.widthMM,
-        slack:selected.slack,
-        controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),
-        surfaceLevel:hasWp?0:(selected.surfaceLevel||0),autoFit:!!selected.autoFit,autoGuides:selected.autoGuides?historyClone(selected.autoGuides):null
-      });
-
+      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:hasWp?0:(selected.surfaceLevel||0)});
       if(hasWp){
-        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t)){
-          m.controls.push(waypointControlAt(m,c.t));
-        }
+        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t))m.controls.push(waypointControlAt(m,c.t));
         updateStrapGeometry(m);
       }
-
-      selected.mirrorId=m.id;
-      m.mirrorId=selected.id;
-      rememberFormerPartners(selected,m);
-      existing=m;
+      selected.mirrorId=m.id;m.mirrorId=selected.id;rememberFormerPartners(selected,m);
     }
-
-    dynReconcileSymmetry({syncProps:true});
-    rebuildAllWraps();
-    commitHistory();
-    showToast('Riemen gespiegelt');
-    return;
-  }
-
-  if(selected.kind==='panel'){
-    const m=mirrorPanelFrom(selected);
-    if(m){
-      selectObject(selected);
-      commitHistory();
-      showToast('Fläche gespiegelt');
-    }else{
-      showToast('Fläche kann nicht gespiegelt werden');
-    }
+    rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
   }
 });
 
@@ -3799,9 +3539,6 @@ function interactiveHit(x,y){
     if(sh.distance<=bodyDistance+.055)return {kind:'strap',id:sh.object.userData.id};
   }
 
-  const ph=panelHit(x,y);
-  if(ph)return ph;
-
   return null;
 }
 function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
@@ -3832,7 +3569,7 @@ function requestNodeDrag(n,x,y){
           selected=active;
           refreshMaterials();
           showSelection();
-          updateAttachedStraps(active.id,{previewAuto:true});
+          updateAttachedStraps(active.id);
           rebuildAllWraps();
         }
         return;
@@ -3848,7 +3585,7 @@ function requestNodeDrag(n,x,y){
         setNodeWorldPosition(q.n,p);
         q.n.normal=normal.toArray();
         syncNodeTransform(q.n);
-        updateAttachedStraps(q.n.id,{previewAuto:true});
+        updateAttachedStraps(q.n.id);
       }
       return;
     }
@@ -3869,7 +3606,7 @@ function requestNodeDrag(n,x,y){
 
       setNodeWorldPosition(master,p);master.normal=normal.toArray();syncNodeTransform(master);
       forceMirrorNodeFromMaster(master,slave);
-      updateAttachedStraps(master.id,{previewAuto:true});
+      updateAttachedStraps(master.id);
 
       // Do not independently solve the slave-side attached straps.
       for(const s of straps.values()){
@@ -3877,7 +3614,7 @@ function requestNodeDrag(n,x,y){
         if(!ps)continue;
         const sm=pairMasterStrap(s),ss=sm===s?ps:s;
         if(s.a===master.id||s.b===master.id||s.a===slave.id||s.b===slave.id){
-          updateStrapGeometry(sm,{skipPairMirror:true,previewAuto:true});
+          updateStrapGeometry(sm,{skipPairMirror:true});
           mirrorStrapMeshFromMaster(sm,ss);
         }
       }
@@ -3890,14 +3627,12 @@ function requestNodeDrag(n,x,y){
       }
     }else{
       setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
-      updateAttachedStraps(q.n.id,{previewAuto:true});
+      updateAttachedStraps(q.n.id);
     }
 
     // Preserve the user's manual route while the endpoint moves.
     // This is only weighted translation + the existing cheap geometry update.
     if(single?.waypointDragState)updateEndpointWaypointDragState(single.waypointDragState);
-    updatePanelsForNode(q.n.id);
-    const qp=pairOfNode(q.n);if(qp)updatePanelsForNode(qp.id);
   });
 }
 function screenPlanePoint(x,y,point){
@@ -4006,7 +3741,6 @@ canvas.addEventListener('pointerup',e=>{
       // The route already followed the endpoint during the drag.
       // Now project that moved route once back to the mannequin.
       finalizeEndpointWaypointDragState(was.waypointDragState);
-      finalizeAutoStrapsForNode(movedNode.id);
       const movedPartner=pairOfNode(movedNode);if(movedPartner)finalizeAutoStrapsForNode(movedPartner.id);
     }
     finalizeDirtyPanels();
