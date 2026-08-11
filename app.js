@@ -1619,8 +1619,8 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   let renderCurve=null;
   let surfaceData=null;
 
-  if(autoMode){
-    surfaceData=autoSurfaceCurveData(s);
+  if(){
+    surfaceData=(s);
     if(surfaceData)renderCurve=surfaceData.curve;
   }
 
@@ -1737,8 +1737,6 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
 }
 function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
-}={}){
-  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s,{previewAuto});
 }
 function updateControlHandles(s){
   // V1.1: generated curve points are internal only.
@@ -3741,7 +3739,6 @@ canvas.addEventListener('pointerup',e=>{
       // The route already followed the endpoint during the drag.
       // Now project that moved route once back to the mannequin.
       finalizeEndpointWaypointDragState(was.waypointDragState);
-      const movedPartner=pairOfNode(movedNode);if(movedPartner)finalizeAutoStrapsForNode(movedPartner.id);
     }
     finalizeDirtyPanels();
     rebuildAllWraps();refreshAutomaticCrossings();
