@@ -759,13 +759,10 @@ function autoControlWorld(s){
 function waypointFramePosition(s,c){
   const f=strapFrame(s);
   const base=f.A.clone().lerp(f.B,THREE.MathUtils.clamp(c.t??.5,0,1));
-
-  // Soft local offsets: preserve route intent without pinning the strap.
-  const follow=.42;
   return base
-    .addScaledVector(f.tangent,(c.offsetTangent||0)*follow)
-    .addScaledVector(f.side,(c.offsetSide||0)*follow)
-    .addScaledVector(f.normal,(c.offsetNormal||0)*follow);
+    .addScaledVector(f.tangent,c.offsetTangent||0)
+    .addScaledVector(f.side,c.offsetSide||0)
+    .addScaledVector(f.normal,c.offsetNormal||0);
 }
 function bindWaypointToFrame(s,c,worldPos,worldNormal){
   const f=strapFrame(s);
@@ -816,22 +813,12 @@ function addSurfaceWaypoint(s,t=nextWaypointT(s)){
   updateStrapGeometry(s);
   return c;
 }
-function reprojectWaypoint(s,c,{followEndpoints=false}={}){
+function reprojectWaypoint(s,c){
   if(!c?.waypoint)return;
-
-  const f=strapFrame(s);
-  let candidate;
-
-  if(followEndpoints){
-    // Waypoint is route guidance, not a fixed world-space nail.
-    candidate=f.A.clone().lerp(f.B,THREE.MathUtils.clamp(c.t??.5,0,1));
-  }else{
-    candidate=waypointFramePosition(s,c);
-  }
-
+  const candidate=waypointFramePosition(s,c);
   const preferred=c.surfaceNormal
     ?new THREE.Vector3().fromArray(c.surfaceNormal).normalize()
-    :f.normal.clone();
+    :strapFrame(s).normal.clone();
 
   const hit=nearestBodySurfacePreferred(candidate,preferred)||
             nearestBodySurface(candidate);
@@ -839,9 +826,9 @@ function reprojectWaypoint(s,c,{followEndpoints=false}={}){
 
   bindWaypointToFrame(s,c,hit.point,hit.normal);
 }
-function reprojectStrapWaypoints(s,{followEndpoints=false}={}){
+function reprojectStrapWaypoints(s){
   if(!s?.controls?.some(c=>c.waypoint))return;
-  for(const c of s.controls)if(c.waypoint)reprojectWaypoint(s,c,{followEndpoints});
+  for(const c of s.controls)if(c.waypoint)reprojectWaypoint(s,c);
   updateStrapGeometry(s);
 }
 function mirrorWaypointsToPartner(src,dst){
@@ -859,6 +846,87 @@ function mirrorWaypointsToPartner(src,dst){
   }
   updateStrapGeometry(dst);
 }
+
+function captureEndpointWaypointDragState(nodeId){
+  const state=[];
+  for(const s of straps.values()){
+    if(s.a!==nodeId&&s.b!==nodeId)continue;
+    const wp=s.controls.filter(c=>c.waypoint);
+    if(!wp.length)continue;
+
+    const a=nodes.get(s.a),b=nodes.get(s.b);
+    if(!a||!b)continue;
+
+    state.push({
+      strapId:s.id,
+      startA:nodeWorldPosition(a).toArray(),
+      startB:nodeWorldPosition(b).toArray(),
+      points:wp.map(c=>({
+        ref:c,
+        t:THREE.MathUtils.clamp(c.t??.5,0,1),
+        surfacePos:c.surfacePos?[...c.surfacePos]:waypointFramePosition(s,c).toArray(),
+        surfaceNormal:c.surfaceNormal?[...c.surfaceNormal]:strapFrame(s).normal.toArray()
+      }))
+    });
+  }
+  return state;
+}
+
+function updateEndpointWaypointDragState(state){
+  if(!state?.length)return;
+
+  for(const d of state){
+    const s=straps.get(d.strapId);
+    if(!s)continue;
+    const a=nodes.get(s.a),b=nodes.get(s.b);
+    if(!a||!b)continue;
+
+    const oldA=new THREE.Vector3().fromArray(d.startA);
+    const oldB=new THREE.Vector3().fromArray(d.startB);
+    const newA=nodeWorldPosition(a),newB=nodeWorldPosition(b);
+    const deltaA=newA.clone().sub(oldA);
+    const deltaB=newB.clone().sub(oldB);
+
+    for(const p of d.points){
+      if(!s.controls.includes(p.ref))continue;
+
+      // Deform the old user-defined route with the moved endpoints:
+      // a waypoint near A follows mostly A; near B mostly B.
+      // No raycast is performed while dragging.
+      const translated=new THREE.Vector3().fromArray(p.surfacePos)
+        .addScaledVector(deltaA,1-p.t)
+        .addScaledVector(deltaB,p.t);
+
+      const normal=new THREE.Vector3().fromArray(p.surfaceNormal).normalize();
+      bindWaypointToFrame(s,p.ref,translated,normal);
+    }
+
+    updateStrapGeometry(s);
+  }
+}
+
+function finalizeEndpointWaypointDragState(state){
+  if(!state?.length)return;
+  const handled=new Set();
+
+  for(const d of state){
+    const s=straps.get(d.strapId);
+    if(!s||handled.has(s.id))continue;
+
+    const ps=pairOfStrap(s);
+    const master=ps?pairMasterStrap(s):s;
+    const mate=ps?(master===s?ps:s):null;
+
+    // V1.6a's original reprojection is intentionally retained:
+    // project the translated route itself, NOT a straight A-B chord.
+    reprojectStrapWaypoints(master);
+    if(mate)mirrorWaypointsToPartner(master,mate);
+
+    handled.add(master.id);
+    if(mate)handled.add(mate.id);
+  }
+}
+
 function reprojectAttachedWaypoints(nodeId){
   const touched=new Set();
   for(const s of straps.values()){
@@ -868,7 +936,7 @@ function reprojectAttachedWaypoints(nodeId){
       const master=ps && s.id>ps.id ? ps : s;
       const mate=ps ? (master===s?ps:s) : null;
       if(!touched.has(master.id)){
-        reprojectStrapWaypoints(master,{followEndpoints:true});
+        reprojectStrapWaypoints(master);
         if(mate)mirrorWaypointsToPartner(master,mate);
         touched.add(master.id);
         if(mate)touched.add(mate.id);
@@ -2710,6 +2778,10 @@ function requestNodeDrag(n,x,y){
       setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
       updateAttachedStraps(q.n.id);
     }
+
+    // Preserve the user's manual route while the endpoint moves.
+    // This is only weighted translation + the existing cheap geometry update.
+    if(single?.waypointDragState)updateEndpointWaypointDragState(single.waypointDragState);
   });
 }
 function screenPlanePoint(x,y,point){
@@ -2737,7 +2809,11 @@ canvas.addEventListener('pointerdown',e=>{
     const a=[...pointers.values()];gesture={dist:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,camDist,target:target.clone(),camAz,camEl};single=null;return;
   }
   const hit=interactiveHit(e.clientX,e.clientY);
-  single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit,activeNodeId:hit?.kind==='node'?hit.id:null};
+  single={
+    sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,
+    moved:false,hit,activeNodeId:hit?.kind==='node'?hit.id:null,
+    waypointDragState:hit?.kind==='node'?captureEndpointWaypointDragState(hit.id):null
+  };
   if(hit?.kind==='node'){
     const n=nodes.get(hit.id);selectObject(n);
   }else if(hit?.kind==='strap'){
@@ -2809,12 +2885,9 @@ canvas.addEventListener('pointerup',e=>{
     if(movedNode){
       dynTouchEntity(movedNode);
 
-      // During drag waypoints follow cheaply and softly.
-      // On release rebuild them from the NEW endpoints and project once,
-      // so previous body positions cannot pin the strap in place.
-      reprojectAttachedWaypoints(movedNode.id);
-      const partner=pairOfNode(movedNode);
-      if(partner)reprojectAttachedWaypoints(partner.id);
+      // The route already followed the endpoint during the drag.
+      // Now project that moved route once back to the mannequin.
+      finalizeEndpointWaypointDragState(was.waypointDragState);
     }
     rebuildAllWraps();refreshAutomaticCrossings();
     dynReconcileSymmetry({syncProps:true});
