@@ -1427,7 +1427,7 @@ function makeStrap(data={}){
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
-    autoProject:!!data.autoProject,
+    autoProject:data.autoProject!==false,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -1435,6 +1435,12 @@ function makeStrap(data={}){
   s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=5;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
+
+  if(s.autoProject&&bodyMeshes.length){
+    rebuildAutoProjection(s);
+    updateControlHandles(s);
+  }
+
   return s;
 }
 function updateStrapGeometry(s,{skipPairMirror=false}={}){
@@ -2419,9 +2425,9 @@ function projectedChordSamples(s,{count=null,lift=0}={}){
   const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
   const length=A.distanceTo(B);
 
-  // Approx. one projection sample every 1.7 cm.
-  // Existing scene scale: 1 mm ≈ 0.0037 scene units => ~17 mm ≈ 0.062.
-  const segments=count??THREE.MathUtils.clamp(Math.ceil(length/.062),5,64);
+  // Approx. one projection sample every 1 cm.
+  // Existing scene scale: 1 mm ≈ 0.0037 scene units => 10 mm ≈ 0.037.
+  const segments=count??THREE.MathUtils.clamp(Math.ceil(length/.037),7,96);
   const raw=[];
 
   for(let i=0;i<=segments;i++){
@@ -2525,12 +2531,9 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
-  let samples=meshSurfacePathSamples(s,{lift:surfaceClearanceForStrap(s)});
-  if(samples.length<3){
-    samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
-    samples=refineProjectedGuide(s,samples,surfaceClearanceForStrap(s),2);
-  }
+  let samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
   if(samples.length<3)return;
+  samples=refineProjectedGuide(s,samples,surfaceClearanceForStrap(s),2);
   const reduced=simplifyProjectedRoute(samples,8);
   s.surfaceLevel=0;
   s.controls=[];
@@ -2616,239 +2619,15 @@ function refineProjectedGuide(s,samples,lift,maxDepth=2){
   }
   return out;
 }
-
-// V1.8h EXPERIMENT: true surface path over the mannequin triangle graph.
-// Unlike the raycast guide, consecutive guide points are connected through
-// actual body-mesh edges, so the cyan line cannot chord through a convex shoulder.
-const surfaceGraphCache=new WeakMap();
-
-function bodyPathMesh(){
-  let best=null,bestCount=0;
-  for(const m of bodyMeshes){
-    const count=m?.geometry?.attributes?.position?.count||0;
-    if(count>bestCount){best=m;bestCount=count}
-  }
-  return best;
-}
-function surfaceGraphForMesh(mesh){
-  if(!mesh?.geometry)return null;
-  const g=mesh.geometry;
-  const cached=surfaceGraphCache.get(g);
-  if(cached)return cached;
-
-  const count=g.attributes.position?.count||0;
-  if(!count)return null;
-  const sets=Array.from({length:count},()=>new Set());
-  const add=(a,b)=>{if(a===b)return;sets[a].add(b);sets[b].add(a)};
-
-  if(g.index){
-    const a=g.index.array;
-    for(let i=0;i+2<a.length;i+=3){
-      const x=a[i],y=a[i+1],z=a[i+2];
-      add(x,y);add(y,z);add(z,x);
-    }
-  }else{
-    for(let i=0;i+2<count;i+=3){
-      add(i,i+1);add(i+1,i+2);add(i+2,i);
-    }
-  }
-
-  const graph={neighbors:sets.map(s=>Array.from(s)),count};
-  surfaceGraphCache.set(g,graph);
-  return graph;
-}
-function meshVertexWorld(mesh,index,target=new THREE.Vector3()){
-  if(mesh.getVertexPosition){
-    mesh.getVertexPosition(index,target);
-  }else{
-    target.fromBufferAttribute(mesh.geometry.attributes.position,index);
-  }
-  return target.applyMatrix4(mesh.matrixWorld);
-}
-function meshVertexWorldNormal(mesh,index,target=new THREE.Vector3()){
-  const normalAttr=mesh.geometry.attributes.normal;
-  if(normalAttr)target.fromBufferAttribute(normalAttr,index);
-  else target.set(0,0,1);
-  const nm=new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
-  return target.applyMatrix3(nm).normalize();
-}
-function pointSegmentDistance3(p,a,b){
-  const ab=b.clone().sub(a),den=Math.max(ab.lengthSq(),1e-10);
-  const t=THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/den,0,1);
-  return p.distanceTo(a.clone().addScaledVector(ab,t));
-}
-function nearestMeshVertex(mesh,worldPoint){
-  const count=mesh.geometry.attributes.position.count;
-  const p=new THREE.Vector3();
-  let best=-1,bestD=Infinity;
-  for(let i=0;i<count;i++){
-    meshVertexWorld(mesh,i,p);
-    const d=p.distanceToSquared(worldPoint);
-    if(d<bestD){bestD=d;best=i}
-  }
-  return best;
-}
-class SurfaceMinHeap{
-  constructor(){this.a=[]}
-  push(item){
-    const a=this.a;a.push(item);let i=a.length-1;
-    while(i>0){
-      const p=(i-1)>>1;if(a[p].f<=item.f)break;
-      a[i]=a[p];i=p;
-    }
-    a[i]=item;
-  }
-  pop(){
-    const a=this.a;if(!a.length)return null;
-    const root=a[0],last=a.pop();
-    if(a.length){
-      let i=0;
-      while(true){
-        let l=i*2+1,r=l+1;if(l>=a.length)break;
-        let c=r<a.length&&a[r].f<a[l].f?r:l;
-        if(a[c].f>=last.f)break;
-        a[i]=a[c];i=c;
-      }
-      a[i]=last;
-    }
-    return root;
-  }
-  get length(){return this.a.length}
-}
-function meshSurfaceVertexPath(mesh,startWorld,endWorld){
-  const graph=surfaceGraphForMesh(mesh);
-  if(!graph)return null;
-
-  mesh.updateMatrixWorld(true);
-  const start=nearestMeshVertex(mesh,startWorld);
-  const goal=nearestMeshVertex(mesh,endWorld);
-  if(start<0||goal<0)return null;
-  if(start===goal)return [start];
-
-  const n=graph.count;
-  const gScore=new Float64Array(n);gScore.fill(Infinity);
-  const parent=new Int32Array(n);parent.fill(-1);
-  const closed=new Uint8Array(n);
-  const heap=new SurfaceMinHeap();
-
-  const worldCache=new Array(n);
-  const wp=i=>{
-    let p=worldCache[i];
-    if(!p){p=meshVertexWorld(mesh,i,new THREE.Vector3()).clone();worldCache[i]=p}
-    return p;
-  };
-
-  const chordLen=startWorld.distanceTo(endWorld);
-  const corridor=Math.max(.22,chordLen*.42);
-  const heuristic=i=>wp(i).distanceTo(endWorld);
-
-  gScore[start]=0;
-  heap.push({i:start,f:heuristic(start)});
-
-  let visited=0;
-  const visitBudget=Math.min(n,22000);
-
-  while(heap.length&&visited<visitBudget){
-    const cur=heap.pop();const u=cur.i;
-    if(closed[u])continue;
-    closed[u]=1;visited++;
-    if(u===goal)break;
-
-    const pu=wp(u);
-    for(const v of graph.neighbors[u]){
-      if(closed[v])continue;
-      const pv=wp(v);
-      const edge=pu.distanceTo(pv);
-
-      // Stay near the user's intended A→B chord, but never prohibit the
-      // surface detour required around a breast/shoulder.
-      const dChord=pointSegmentDistance3(pv,startWorld,endWorld);
-      const ratio=dChord/corridor;
-      const corridorPenalty=ratio<=1?ratio*ratio*.28:(ratio*ratio)*1.8;
-      const tentative=gScore[u]+edge*(1+corridorPenalty);
-
-      if(tentative<gScore[v]){
-        gScore[v]=tentative;parent[v]=u;
-        heap.push({i:v,f:tentative+heuristic(v)});
-      }
-    }
-  }
-
-  if(parent[goal]===-1)return null;
-  const path=[];
-  let u=goal,guard=0;
-  while(u!==-1&&guard++<n+2){
-    path.push(u);
-    if(u===start)break;
-    u=parent[u];
-  }
-  path.reverse();
-  return path[0]===start?path:null;
-}
-function resampleSurfaceVertexPath(mesh,indices,startWorld,endWorld,lift=0){
-  if(!indices?.length)return [];
-  const pts=indices.map(i=>({
-    point:meshVertexWorld(mesh,i,new THREE.Vector3()).clone(),
-    normal:meshVertexWorldNormal(mesh,i,new THREE.Vector3()).clone()
-  }));
-
-  // Preserve exact logical endpoints, then walk the actual mesh-edge polyline.
-  pts[0]={point:startWorld.clone(),normal:pts[0].normal};
-  pts[pts.length-1]={point:endWorld.clone(),normal:pts[pts.length-1].normal};
-
-  const cumulative=[0];
-  for(let i=1;i<pts.length;i++)cumulative.push(cumulative[i-1]+pts[i-1].point.distanceTo(pts[i].point));
-  const total=cumulative[cumulative.length-1];
-  if(total<1e-8)return [];
-
-  // Same approximately 1.7 cm interaction density as V1.8g, but positions
-  // are sampled from an actual surface polyline rather than independent rays.
-  const segments=THREE.MathUtils.clamp(Math.ceil(total/.062),5,72);
-  const out=[];
-
-  for(let k=0;k<=segments;k++){
-    const dist=total*(k/segments);
-    let i=1;
-    while(i<cumulative.length&&cumulative[i]<dist)i++;
-    i=Math.min(i,cumulative.length-1);
-    const d0=cumulative[i-1],d1=cumulative[i];
-    const u=d1>d0?(dist-d0)/(d1-d0):0;
-    const p=pts[i-1].point.clone().lerp(pts[i].point,u);
-    let n=pts[i-1].normal.clone().lerp(pts[i].normal,u);
-    if(n.lengthSq()<1e-8)n=pts[i-1].normal.clone();
-    n.normalize();
-
-    out.push({
-      t:k/segments,
-      point:p,
-      normal:n,
-      displayPoint:p.clone().addScaledVector(n,lift)
-    });
-  }
-  return out;
-}
-function meshSurfacePathSamples(s,{lift=0}={}){
-  const a=nodes.get(s.a),b=nodes.get(s.b);
-  if(!a||!b)return [];
-  const mesh=bodyPathMesh();
-  if(!mesh)return [];
-
-  const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
-  const indices=meshSurfaceVertexPath(mesh,A,B);
-  if(!indices?.length)return [];
-
-  return resampleSurfaceVertexPath(mesh,indices,A,B,lift);
-}
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-  let samples=meshSurfacePathSamples(s,{lift:.011});
-  if(samples.length<2){
-    // Fallback keeps the app usable for fallback/non-indexed body variants.
-    samples=projectedChordSamples(s,{lift:.011});
-    samples=refineProjectedGuide(s,samples,.011,2);
-  }
+  let samples=projectedChordSamples(s,{lift:.011});
   if(samples.length<2)return false;
+
+  // Keep the normal ~1.7 cm density, but locally add only the samples needed
+  // to keep the cyan guide outside strongly convex body regions.
+  samples=refineProjectedGuide(s,samples,.011,2);
   waypointGuideSamples=samples;
 
   const positions=[];

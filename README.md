@@ -1,20 +1,15 @@
-# Harness Designer V1.8h MESH PATH — experimental side-by-side build
+# Harness Designer V1.8i
 
-This build is based directly on V1.8g so it can be compared against it.
+Based on the preferred V1.8g raycast-projection branch.
 
-Difference:
-V1.8g projects discrete chord samples with raycasts.
-V1.8h computes an A* route over the actual triangle-vertex graph of the mannequin.
-
-Mesh-path method:
-1. Find body mesh vertices nearest Ring A and Ring B.
-2. Build/reuse body triangle adjacency.
-3. A* searches an actual connected surface-edge route between those vertices.
-4. Search cost mildly prefers the original straight A→B chord, preventing needless paths around the back.
-5. The resulting mesh-edge polyline is resampled at approximately 1.7 cm spacing.
-6. Cyan guide and Auto both use this same surface path.
-7. If the graph method is unavailable, V1.8g projection is used as fallback.
-
-Because every raw path segment is a real mesh edge, a convex shoulder cannot make the guide chord through the mannequin between projected samples.
-
-Panels are unchanged.
+Changes:
+- projection interval reduced from ~1.7 cm to ~1.0 cm
+- dynamic projection range increased to 7–96 segments
+- local convex refinement from V1.8g remains enabled
+- Auto is ON by default for every newly created strap
+- Auto is still a toggle; pressing it switches Auto off/on
+- manual +Punkt switches Auto off for that strap
+- newly created Auto straps immediately build their projected route
+- two-finger zoom/pan in +Punkt mode remains enabled
+- panels are unchanged
+- V1.8h mesh-path experiment is not included
