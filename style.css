@@ -213,3 +213,6 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
   box-shadow:0 8px 24px rgba(0,0,0,.28);white-space:nowrap
 }
 .panel-confirm-floating.hidden{display:none}
+
+/* V1.7c auto-fit panels */
+#panelControls .parameter{padding-top:4px}

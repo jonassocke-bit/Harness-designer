@@ -11,7 +11,7 @@ const undoBtn=$('undoBtn'),redoBtn=$('redoBtn');
 const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),rotateModelBtn=$('rotateModelBtn');
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
 const panelToggle=$('panelToggle'),panelConfirmBtn=$('panelConfirmBtn');
-const panelControls=$('panelControls'),panelPointCount=$('panelPointCount'),panelPointPlusBtn=$('panelPointPlusBtn'),panelPointMinusBtn=$('panelPointMinusBtn'),panelPointAutoBtn=$('panelPointAutoBtn');
+const panelControls=$('panelControls'),panelOffsetSlider=$('panelOffsetSlider'),panelOffsetTools=$('panelOffsetTools');
 const modelInput=$('modelInput'),uploadModelBtn=$('uploadModelBtn'),reloadModelBtn=$('reloadModelBtn');
 const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationResetBtn');
 const bodyFemaleBtn=$('bodyFemaleBtn'),bodyMaleBtn=$('bodyMaleBtn');
@@ -88,14 +88,13 @@ let globalAnchorSizeMM=Number(localStorage.getItem('hd:anchorSize'))||12;
 let selectionColorHex=localStorage.getItem('hd:selectionColor')||'#00d8ff';
 let ringDefaults=(()=>{try{return {...{diameterMM:40,thicknessMM:6},...JSON.parse(localStorage.getItem('hd:ringDefaults')||'{}')}}catch{return {diameterMM:40,thicknessMM:6}}})();
 let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localStorage.getItem('hd:strapDefaults')||'{}')}}catch{return {widthMM:30,slack:8}}})();
+let panelDefaults=(()=>{try{return {...{offsetMM:1},...JSON.parse(localStorage.getItem('hd:panelDefaults')||'{}')}}catch{return {offsetMM:1}}})();
 let selected=null,connectStart=null;
 let waypointPlacementStrapId=null;
 let waypointGuideSamples=null;
 let nextNodeId=1,nextStrapId=1,nextPanelId=1;
 let panels=new Map();
 let panelBuildNodes=[];
-let panelGuideSamples=null;
-let panelPointPlacementId=null;
 let panelDirty=new Set(),panelRebuildRaf=0;
 let nodes=new Map(),straps=new Map();
 let undoStack=[],redoStack=[],restoring=false;
@@ -1075,11 +1074,42 @@ function visibleEndpoint(node,targetPoint){
 }
 
 
+
+function normalizePanelSlots(data){
+  if(Array.isArray(data?.boundarySlots)&&data.boundarySlots.length){
+    return historyClone(data.boundarySlots).map(s=>({
+      currentId:s.currentId,
+      mergeStack:Array.isArray(s.mergeStack)?historyClone(s.mergeStack):[]
+    }));
+  }
+  return (data?.nodeIds||[]).map(id=>({currentId:id,mergeStack:[]}));
+}
+function panelCurrentIds(panel,{unique=true}={}){
+  const raw=panel.boundarySlots.map(s=>s.currentId).filter(id=>nodes.has(id));
+  if(!unique)return raw;
+
+  // Collapse coincident logical slots only for rendering. The logical slots
+  // themselves stay intact so an Entmerge can restore the original boundary.
+  const out=[];
+  for(const id of raw){
+    if(out[out.length-1]!==id)out.push(id);
+  }
+  if(out.length>1&&out[0]===out[out.length-1])out.pop();
+
+  const seen=new Set(),uniqueIds=[];
+  for(const id of out)if(!seen.has(id)){seen.add(id);uniqueIds.push(id)}
+  return uniqueIds;
+}
+function syncPanelNodeIds(panel){
+  panel.nodeIds=panelCurrentIds(panel,{unique:true});
+}
 function panelBoundaryWorld(panel){
+  syncPanelNodeIds(panel);
   return panel.nodeIds.map(id=>nodes.get(id)).filter(Boolean).map(nodeWorldPosition);
 }
 function panelAverageNormal(panel){
-  const ns=panel.nodeIds.map(id=>nodes.get(id)).filter(Boolean).map(nodeWorldNormal);
+  const ids=panelCurrentIds(panel,{unique:true});
+  const ns=ids.map(id=>nodes.get(id)).filter(Boolean).map(nodeWorldNormal);
   const n=new THREE.Vector3();
   for(const x of ns)n.add(x);
   if(n.lengthSq()<1e-8)n.set(0,0,1);
@@ -1108,36 +1138,83 @@ function pointInPoly2(p,poly){
   }
   return inside;
 }
-function panelSurfacePoint(candidate,normal){
-  const hit=nearestBodySurfacePreferred(candidate,normal)||nearestBodySurface(candidate);
-  return hit?{point:hit.point.clone(),normal:hit.normal.clone().normalize()}:{point:candidate.clone(),normal:normal.clone()};
-}
-function panelApplyControls(panel,p,normal){
-  if(!panel.controls?.length)return {point:p,normal};
-  let out=p.clone(),nout=normal.clone(),sum=0;
-  for(const c of panel.controls){
-    if(!c.surfacePos)continue;
-    const cp=new THREE.Vector3().fromArray(c.surfacePos);
-    const d=Math.max(.025,p.distanceTo(cp));
-    const w=1/(d*d);
-    const delta=cp.clone().sub(p);
-    out.addScaledVector(delta,Math.min(.55,w*.0025));
-    if(c.surfaceNormal)nout.lerp(new THREE.Vector3().fromArray(c.surfaceNormal).normalize(),Math.min(.45,w*.0018));
-    sum+=w;
+function panelSurfacePoint(candidate,preferredNormal){
+  const n=preferredNormal.clone().normalize();
+  let best=null,bestScore=Infinity;
+
+  // Small panels are best solved along their own local normal. Unlike the
+  // generic nearest-surface search this cannot jump sideways onto a breast,
+  // arm or the opposite side of the torso.
+  for(const sign of [1,-1]){
+    const origin=candidate.clone().addScaledVector(n,sign*1.25);
+    const dir=n.clone().multiplyScalar(-sign);
+    raycaster.set(origin,dir);
+    const hits=raycaster.intersectObjects(bodyMeshes,true);
+
+    for(const h of hits.slice(0,6)){
+      const normal=worldNormal(h);
+      const dist=h.point.distanceTo(candidate);
+      const alignment=Math.abs(normal.dot(n));
+      const score=dist+(1-alignment)*.08;
+      if(score<bestScore){
+        bestScore=score;
+        best={point:h.point.clone(),normal};
+      }
+    }
   }
-  return {point:out,normal:nout.normalize()};
+  return best||{point:candidate.clone(),normal:n};
 }
-function buildPanelGeometry(panel){
+function panelOffsetScene(panel){
+  return Math.max(0,Number(panel.offsetMM??panelDefaults.offsetMM))*0.0037;
+}
+function panelHasArea(panel){
   const boundary=panelBoundaryWorld(panel);
-  if(boundary.length<3)return new THREE.BufferGeometry();
+  if(boundary.length<3)return false;
+  const basis=panelBasis(panel);
+  const poly=boundary.map(p=>panel2D(panel,p,basis));
+  let area=0;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++)area+=poly[j].x*poly[i].y-poly[i].x*poly[j].y;
+  return Math.abs(area)*.5>0.00012;
+}
+function panelCutRings(panel){
+  return panelCurrentIds(panel,{unique:true})
+    .map(id=>nodes.get(id))
+    .filter(n=>n?.ringVisible)
+    .map(n=>({p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.35}));
+}
+function buildPanelPreviewGeometry(panel){
+  if(!panelHasArea(panel))return new THREE.BufferGeometry();
+  const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
   const contour=boundary.map(p=>panel2D(panel,p,basis));
-  let tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const positions=[],normals=[];
+  const lift=panelOffsetScene(panel);
+  for(const tri of tris){
+    for(const idx of tri){
+      const p=boundary[idx].clone().addScaledVector(basis.normal,lift);
+      positions.push(p.x,p.y,p.z);
+      normals.push(basis.normal.x,basis.normal.y,basis.normal.z);
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  g.computeBoundingSphere();
+  return g;
+}
+function buildPanelGeometry(panel){
+  if(!panelHasArea(panel))return new THREE.BufferGeometry();
+
+  const boundary=panelBoundaryWorld(panel);
+  const basis=panelBasis(panel);
+  const contour=boundary.map(p=>panel2D(panel,p,basis));
+  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
   if(!tris.length)return new THREE.BufferGeometry();
 
-  // Start from triangulated boundary, then subdivide twice for small curved panels.
+  // Dense only in the committed state. During ring drag a flat preview is used.
   let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
-  for(let pass=0;pass<2;pass++){
+  for(let pass=0;pass<3;pass++){
     const next=[];
     for(const [a,b,c] of triWorld){
       const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
@@ -1146,23 +1223,30 @@ function buildPanelGeometry(panel){
     triWorld=next;
   }
 
-  const positions=[], normals=[];
-  const cutRings=panel.nodeIds.map(id=>nodes.get(id)).filter(n=>n?.ringVisible).map(n=>({
-    p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.7
-  }));
+  const positions=[],normals=[];
+  const cutRings=panelCutRings(panel);
+  const lift=panelOffsetScene(panel);
+
   for(const tri of triWorld){
     const solved=tri.map(raw=>{
       const surf=panelSurfacePoint(raw,basis.normal);
-      const adjusted=panelApplyControls(panel,surf.point,surf.normal);
-      return {q:adjusted.point.clone().addScaledVector(adjusted.normal,Math.max(.001,surfaceOffsetScene()*.35)),n:adjusted.normal};
+      return {
+        q:surf.point.clone().addScaledVector(surf.normal,lift),
+        n:surf.normal
+      };
     });
+
+    // Fine subdivision makes these ring openings local instead of deleting
+    // giant triangles through the middle of the panel.
     const centroid=solved.reduce((a,x)=>a.add(x.q),new THREE.Vector3()).multiplyScalar(1/3);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+
     for(const x of solved){
       positions.push(x.q.x,x.q.y,x.q.z);
       normals.push(x.n.x,x.n.y,x.n.z);
     }
   }
+
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
@@ -1172,84 +1256,135 @@ function buildPanelGeometry(panel){
 function makePanel(data={}){
   const id=data.id||`P${nextPanelId++}`;
   const num=Number(id.replace(/\D/g,''));if(Number.isFinite(num))nextPanelId=Math.max(nextPanelId,num+1);
+
   const panel={
     id,kind:'panel',
-    nodeIds:[...(data.nodeIds||[])],
-    controls:historyClone(data.controls||[]),
+    boundarySlots:normalizePanelSlots(data),
+    nodeIds:[],
+    offsetMM:data.offsetMM??panelDefaults.offsetMM,
     mirrorId:data.mirrorId||null,
     locked:!!data.locked,
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
     group:new THREE.Group(),mesh:null
   };
+  syncPanelNodeIds(panel);
+
   panel.mesh=new THREE.Mesh(buildPanelGeometry(panel),selected?.id===id?PANEL_SEL:PANEL_MAT);
   panel.mesh.userData={kind:'panelMesh',id};
-  panel.mesh.renderOrder=1;panel.group.add(panel.mesh);panelRoot.add(panel.group);panels.set(id,panel);
+  panel.mesh.renderOrder=1;
+  panel.group.add(panel.mesh);
+  panelRoot.add(panel.group);
+  panels.set(id,panel);
   return panel;
-}
-function buildPanelPreviewGeometry(panel){
-  const boundary=panelBoundaryWorld(panel);
-  if(boundary.length<3)return new THREE.BufferGeometry();
-  const basis=panelBasis(panel);
-  const contour=boundary.map(p=>panel2D(panel,p,basis));
-  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
-  const positions=[],normals=[];
-  const cutRings=panel.nodeIds.map(id=>nodes.get(id)).filter(n=>n?.ringVisible).map(n=>({p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.7}));
-  for(const tri of tris){
-    const pts=tri.map(idx=>boundary[idx].clone().addScaledVector(basis.normal,Math.max(.001,surfaceOffsetScene()*.35)));
-    const centroid=pts.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/3);
-    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-    for(const p of pts){positions.push(p.x,p.y,p.z);normals.push(basis.normal.x,basis.normal.y,basis.normal.z)}
-  }
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
-  g.computeBoundingSphere();return g;
 }
 function updatePanelGeometry(panel,{preview=false}={}){
   if(!panel)return;
+  syncPanelNodeIds(panel);
   const old=panel.mesh.geometry;
   panel.mesh.geometry=preview?buildPanelPreviewGeometry(panel):buildPanelGeometry(panel);
   old?.dispose?.();
+  panel.mesh.visible=panel.nodeIds.length>=3&&panelHasArea(panel);
 }
 function updatePanelsForNode(nodeId,{preview=true}={}){
   for(const p of panels.values()){
-    if(!p.nodeIds.includes(nodeId))continue;
+    if(!p.boundarySlots.some(s=>s.currentId===nodeId))continue;
     if(preview){
       panelDirty.add(p.id);
       updatePanelGeometry(p,{preview:true});
-    }else updatePanelGeometry(p);
+    }else{
+      updatePanelGeometry(p);
+    }
   }
 }
 function finalizeDirtyPanels(){
   if(!panelDirty.size)return;
-  const ids=[...panelDirty];panelDirty.clear();
-  // Defer expensive body projection until interaction is over.
-  requestAnimationFrame(()=>{for(const id of ids){const p=panels.get(id);if(p)updatePanelGeometry(p)}});
+  const ids=[...panelDirty];
+  panelDirty.clear();
+  requestAnimationFrame(()=>{
+    for(const id of ids){
+      const p=panels.get(id);
+      if(p)updatePanelGeometry(p);
+    }
+  });
+}
+function panelHandleNodeMerge(left,right,merged){
+  for(const panel of panels.values()){
+    let touched=false;
+    for(const slot of panel.boundarySlots){
+      if(slot.currentId===left.id){
+        slot.mergeStack.push({mergedId:merged.id,branch:'left'});
+        slot.currentId=merged.id;touched=true;
+      }else if(slot.currentId===right.id){
+        slot.mergeStack.push({mergedId:merged.id,branch:'right'});
+        slot.currentId=merged.id;touched=true;
+      }
+    }
+    if(touched){
+      syncPanelNodeIds(panel);
+      panelDirty.add(panel.id);
+      updatePanelGeometry(panel,{preview:true});
+    }
+  }
+}
+function panelHandleNodeEntmerge(merged,left,right){
+  for(const panel of panels.values()){
+    let touched=false;
+    for(const slot of panel.boundarySlots){
+      if(slot.currentId!==merged.id)continue;
+      const rec=slot.mergeStack[slot.mergeStack.length-1];
+      if(!rec||rec.mergedId!==merged.id)continue;
+      slot.mergeStack.pop();
+      slot.currentId=rec.branch==='left'?left.id:right.id;
+      touched=true;
+    }
+    if(touched){
+      syncPanelNodeIds(panel);
+      panelDirty.add(panel.id);
+      updatePanelGeometry(panel,{preview:true});
+    }
+  }
 }
 function removePanel(id){
   const p=panels.get(id);if(!p)return;
-  p.mesh.geometry?.dispose?.();panelRoot.remove(p.group);panels.delete(id);
+  p.mesh.geometry?.dispose?.();
+  panelRoot.remove(p.group);
+  panels.delete(id);
+  panelDirty.delete(id);
 }
 function pairOfPanel(p){return p?.mirrorId&&panels.has(p.mirrorId)?panels.get(p.mirrorId):null}
 function mirrorPanelFrom(panel){
   if(!panel)return null;
-  const mirroredIds=panel.nodeIds.map(id=>{
-    const n=nodes.get(id),m=n?pairOfNode(n):null;
+
+  const mirroredSlots=[];
+  for(const slot of panel.boundarySlots){
+    const n=nodes.get(slot.currentId);
     if(!n)return null;
-    if(Math.abs(nodeWorldPosition(n).x)<AXIS_SNAP_IN)return id;
-    return m?.id||null;
+
+    let mid=slot.currentId;
+    if(Math.abs(nodeWorldPosition(n).x)>=AXIS_SNAP_IN){
+      const m=pairOfNode(n);
+      if(!m)return null;
+      mid=m.id;
+    }
+    mirroredSlots.push({currentId:mid,mergeStack:[]});
+  }
+
+  const mirroredIds=mirroredSlots.map(s=>s.currentId);
+  if(mirroredIds.every((x,i)=>x===panel.boundarySlots[i]?.currentId))return null;
+
+  const existing=[...panels.values()].find(p=>{
+    const ids=p.boundarySlots.map(s=>s.currentId);
+    return p!==panel&&ids.length===mirroredIds.length&&ids.every((id,i)=>id===mirroredIds[i]);
   });
-  if(mirroredIds.some(x=>!x))return null;
-  if(mirroredIds.every((x,i)=>x===panel.nodeIds[i]))return null;
-  const existing=[...panels.values()].find(p=>p!==panel&&p.nodeIds.length===mirroredIds.length&&p.nodeIds.every((id,i)=>id===mirroredIds[i]));
-  if(existing){panel.mirrorId=existing.id;existing.mirrorId=panel.id;return existing}
-  const controls=panel.controls.map(c=>({
-    ...c,
-    surfacePos:c.surfacePos?[-c.surfacePos[0],c.surfacePos[1],c.surfacePos[2]]:c.surfacePos,
-    surfaceNormal:c.surfaceNormal?[-c.surfaceNormal[0],c.surfaceNormal[1],c.surfaceNormal[2]]:c.surfaceNormal
-  }));
-  const m=makePanel({nodeIds:mirroredIds,controls});
+  if(existing){
+    panel.mirrorId=existing.id;existing.mirrorId=panel.id;return existing;
+  }
+
+  const m=makePanel({
+    boundarySlots:mirroredSlots,
+    offsetMM:panel.offsetMM
+  });
   panel.mirrorId=m.id;m.mirrorId=panel.id;
   return m;
 }
@@ -1258,84 +1393,15 @@ function panelHit(x,y){
   setPointer(x,y);
   const bh=raycaster.intersectObjects(bodyMeshes,true)[0]?.distance??Infinity;
   setPointer(x,y);
-  const hits=raycaster.intersectObjects([...panels.values()].map(p=>p.mesh),false);
+  const hits=raycaster.intersectObjects([...panels.values()].filter(p=>p.mesh.visible).map(p=>p.mesh),false);
   for(const h of hits)if(h.distance<=bh+.08)return {kind:'panel',id:h.object.userData.id};
   return null;
 }
-function clearPanelGuide(){
-  panelGuideSamples=null;
-  while(panelGuideRoot.children.length){
-    const o=panelGuideRoot.children.pop();o.geometry?.dispose?.();if(o.material!==PANEL_GUIDE_MAT)o.material?.dispose?.();
-  }
-}
-function buildPanelGuide(panel){
-  clearPanelGuide();if(!panel)return false;
-  const boundary=panelBoundaryWorld(panel);if(boundary.length<3)return false;
-  const basis=panelBasis(panel),poly=boundary.map(p=>panel2D(panel,p,basis));
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  for(const p of poly){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y)}
-  const samples=[];
-  const NX=8,NY=8;
-  for(let iy=1;iy<NY;iy++)for(let ix=1;ix<NX;ix++){
-    const q2=new THREE.Vector2(THREE.MathUtils.lerp(minX,maxX,ix/NX),THREE.MathUtils.lerp(minY,maxY,iy/NY));
-    if(!pointInPoly2(q2,poly))continue;
-    const candidate=basis.origin.clone().addScaledVector(basis.u,q2.x).addScaledVector(basis.v,q2.y);
-
-    // A useful control exists only where the camera ray through this panel
-    // position actually meets the mannequin close to the panel depth.
-    const projected=candidate.clone().project(camera);
-    if(projected.z<-1||projected.z>1)continue;
-    raycaster.setFromCamera(new THREE.Vector2(projected.x,projected.y),camera);
-    const bodyHitHere=raycaster.intersectObjects(bodyMeshes,true)[0];
-    if(!bodyHitHere)continue;
-    const panelDepth=camera.position.distanceTo(candidate);
-    if(Math.abs(bodyHitHere.distance-panelDepth)>.32)continue;
-
-    const surf={point:bodyHitHere.point.clone(),normal:worldNormal(bodyHitHere)};
-    const display=surf.point.clone().addScaledVector(surf.normal,.012);
-    samples.push({point:surf.point,normal:surf.normal,displayPoint:display});
-  }
-  if(!samples.length)return false;
-  panelGuideSamples=samples;
-  const pos=[];for(const s of samples)pos.push(s.displayPoint.x,s.displayPoint.y,s.displayPoint.z);
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  const pts=new THREE.Points(g,PANEL_GUIDE_MAT);pts.renderOrder=25;panelGuideRoot.add(pts);
-  return true;
-}
-function panelGuideHit(x,y){
-  if(!panelGuideSamples?.length)return null;
-  const rect=canvas.getBoundingClientRect(),px=x-rect.left,py=y-rect.top;
-  let best=null,bestD=Infinity;
-  for(const s of panelGuideSamples){
-    const q=s.displayPoint.clone().project(camera);
-    if(q.z<-1||q.z>1)continue;
-    const sx=(q.x*.5+.5)*rect.width,sy=(-q.y*.5+.5)*rect.height,d=Math.hypot(px-sx,py-sy);
-    if(d<bestD){bestD=d;best=s}
-  }
-  return best&&bestD<=38?best:null;
-}
-function beginPanelPointPlacement(panel){
-  panelPointPlacementId=panel.id;
-  if(buildPanelGuide(panel))showToast('Auf einen cyanfarbenen Rasterpunkt tippen');
-  else{panelPointPlacementId=null;showToast('Raster konnte nicht berechnet werden')}
-}
-function addPanelSurfaceControl(panel,hit){
-  if(!panel||!hit)return false;
-  panel.controls.push({surfacePos:hit.point.toArray(),surfaceNormal:hit.normal.toArray()});
-  updatePanelGeometry(panel);
-  const pp=pairOfPanel(panel);
-  if(pp){
-    pp.controls.push({
-      surfacePos:[-hit.point.x,hit.point.y,hit.point.z],
-      surfaceNormal:[-hit.normal.x,hit.normal.y,hit.normal.z]
-    });
-    updatePanelGeometry(pp);
-  }
-  return true;
-}
 function updateAllPanels(){
+  panelDirty.clear();
   for(const p of panels.values())updatePanelGeometry(p);
 }
+
 
 const STRAP_SAMPLES=18;
 function initStrapGeometry(){
@@ -1808,7 +1874,7 @@ function removeStrap(id){
 function removeNode(id,removeConnected=true){
   const n=nodes.get(id);if(!n)return;
   if(removeConnected){
-    for(const p of [...panels.values()])if(p.nodeIds.includes(id))removePanel(p.id);
+    for(const p of [...panels.values()])if(p.boundarySlots.some(s=>s.currentId===id))removePanel(p.id);
     for(const s of [...straps.values()])if(s.a===id||s.b===id)removeStrap(s.id);
   }
   nodeRoot.remove(n.group);nodes.delete(id);
@@ -1817,8 +1883,8 @@ function clearHarness(){
   for(const p of [...panels.values()])removePanel(p.id);
   for(const s of [...straps.values()])removeStrap(s.id);
   for(const n of [...nodes.values()])removeNode(n.id,false);
-  nodes.clear();straps.clear();panels.clear();selected=null;connectStart=null;panelBuildNodes=[];panelPointPlacementId=null;
-  helperRoot.clear();clearPanelGuide();hideSelection();
+  nodes.clear();straps.clear();panels.clear();selected=null;connectStart=null;panelBuildNodes=[];
+  helperRoot.clear();hideSelection();
 }
 
 
@@ -1915,8 +1981,8 @@ function showSelection(){
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
     }else curvePointCount.textContent='Standard';
   }else if(selected.kind==='panel'){
-    const pc=selected.controls.length;
-    panelPointCount.textContent=`${pc} ${pc===1?'Punkt':'Punkte'}`;
+    panelOffsetSlider.value=selected.offsetMM??panelDefaults.offsetMM;
+    syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
@@ -1986,7 +2052,8 @@ function serialize(){
     panels:[...panels.values()].map(p=>({
       id:p.id,
       nodeIds:[...p.nodeIds],
-      controls:historyClone(p.controls||[]),
+      boundarySlots:historyClone(p.boundarySlots||[]),
+      offsetMM:p.offsetMM??panelDefaults.offsetMM,
       mirrorId:p.mirrorId||null,
       locked:!!p.locked,
       previousPartnerId:p.previousPartnerId||null,
@@ -2028,7 +2095,10 @@ function restore(snap){
     }
     for(const d0 of snap.panels||[]){
       const d=historyClone(d0);
-      if((d.nodeIds||[]).length<3||d.nodeIds.some(id=>!nodes.has(id)))continue;
+      const ids=(d.boundarySlots||[]).length
+        ? d.boundarySlots.map(s=>s.currentId)
+        : (d.nodeIds||[]);
+      if(ids.length<3||ids.some(id=>!nodes.has(id)))continue;
       makePanel(d);
     }
 
@@ -2125,7 +2195,8 @@ const PRESETS={
   rotY:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   rotZ:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   surfaceOffset:{defaults:[0,2,5,10],min:0,max:30,step:.5},
-  globalAnchorSize:{defaults:[8,12,16,20],min:4,max:30,step:1}
+  globalAnchorSize:{defaults:[8,12,16,20],min:4,max:30,step:1},
+  panelOffset:{defaults:[0,1,2,5],min:0,max:12,step:.5}
 };
 const PARAMS=new Map();
 function setupParam(name,slider,tools,onInput){
@@ -2177,6 +2248,15 @@ strapSlackSlider.addEventListener('change',refreshAutomaticCrossings);
 setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathUtils.degToRad(v)});
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
+setupParam('panelOffset',panelOffsetSlider,panelOffsetTools,v=>{
+  if(selected?.kind!=='panel')return;
+  selected.offsetMM=v;
+  panelDefaults.offsetMM=v;
+  try{localStorage.setItem('hd:panelDefaults',JSON.stringify(panelDefaults))}catch{}
+  updatePanelGeometry(selected);
+  const pp=pairOfPanel(selected);
+  if(pp){pp.offsetMM=v;updatePanelGeometry(pp)}
+});
 setupParam('surfaceOffset',surfaceOffsetSlider,$('surfaceOffsetTools'),v=>{surfaceOffsetMM=v;for(const n of nodes.values())syncNodeTransform(n);for(const s of straps.values())updateStrapGeometry(s);updateAllPanels()});
 globalAnchorSizeSlider.value=globalAnchorSizeMM;
 
@@ -2308,24 +2388,6 @@ deleteSelectedBtn.addEventListener('click',()=>{
   rebuildAllWraps();
   refreshAutomaticCrossings();
   commitHistory();
-});
-
-panelPointPlusBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='panel')return;
-  if(panelPointPlacementId===selected.id){panelPointPlacementId=null;clearPanelGuide();return}
-  beginPanelPointPlacement(selected);
-});
-panelPointMinusBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='panel'||!selected.controls.length)return;
-  selected.controls.pop();updatePanelGeometry(selected);
-  const pp=pairOfPanel(selected);if(pp?.controls.length){pp.controls.pop();updatePanelGeometry(pp)}
-  showSelection();commitHistory();
-});
-panelPointAutoBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='panel')return;
-  selected.controls=[];updatePanelGeometry(selected);
-  const pp=pairOfPanel(selected);if(pp){pp.controls=[];updatePanelGeometry(pp)}
-  showSelection();commitHistory();
 });
 
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
@@ -3019,6 +3081,9 @@ function mergeRingPair(a,b){
   const merged=makeNode({position:p.toArray(),normal:n.toArray(),ringVisible:true,diameterMM:a.diameterMM,thicknessMM:a.thicknessMM,sizeMM:a.sizeMM});
   merged.mergedState=state;
 
+  // Panels keep their logical boundary slots even while visible nodes collapse.
+  panelHandleNodeMerge(a,b,merged);
+
   for(const s of straps.values()){
     if(s.a===a.id||s.a===b.id)s.a=merged.id;
     if(s.b===a.id||s.b===b.id)s.b=merged.id;
@@ -3059,6 +3124,7 @@ function entmergeRing(merged,p){
   left.mirrorId=right.id;right.mirrorId=left.id;
   copyNodeVisualProps(merged,left);copyNodeVisualProps(merged,right);
   restoreTopologyAfterEntmerge(merged,left,right,state);
+  panelHandleNodeEntmerge(merged,left,right);
   nodeRoot.remove(merged.group);nodes.delete(merged.id);
   selected=p.x<0?left:right;rebuildAllWraps();return selected;
 }
@@ -3466,10 +3532,6 @@ canvas.addEventListener('pointerdown',e=>{
     single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,waypointPlacement:true};
     return;
   }
-  if(panelPointPlacementId){
-    single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,panelPointPlacement:true};
-    return;
-  }
 
   if(pointers.size===2){
     const a=[...pointers.values()];gesture={dist:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,camDist,target:target.clone(),camAz,camEl};single=null;return;
@@ -3498,15 +3560,6 @@ canvas.addEventListener('pointermove',e=>{
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
   if(single.waypointPlacement){
     // Point mode does not freeze navigation: drag rotates, tap places.
-    if(single.moved){
-      camAz-=(e.clientX-single.lx)*.007;
-      camEl=THREE.MathUtils.clamp(camEl+(e.clientY-single.ly)*.006,-1.2,1.2);
-      updateCamera();
-    }
-    single.lx=e.clientX;single.ly=e.clientY;
-    return;
-  }
-  if(single.panelPointPlacement){
     if(single.moved){
       camAz-=(e.clientX-single.lx)*.007;
       camEl=THREE.MathUtils.clamp(camEl+(e.clientY-single.ly)*.006,-1.2,1.2);
@@ -3555,17 +3608,6 @@ canvas.addEventListener('pointerup',e=>{
     return;
   }
 
-  if(was.panelPointPlacement){
-    if(was.moved)return;
-    const panel=panelPointPlacementId?panels.get(panelPointPlacementId):null;
-    const gh=panelGuideHit(e.clientX,e.clientY);
-    if(!gh){showToast('Bitte auf einen cyanfarbenen Rasterpunkt tippen');return}
-    if(panel&&addPanelSurfaceControl(panel,gh)){
-      panelPointPlacementId=null;clearPanelGuide();
-      selectObject(panel);showSelection();commitHistory();showToast('Flächenpunkt gesetzt');
-    }
-    return;
-  }
 
 
   if(was.moved){
