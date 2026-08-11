@@ -991,7 +991,15 @@ function manualControlWorld(s,c){
   if(c.waypoint){
     const p=waypointFramePosition(s,c);
     const n=c.surfaceNormal?new THREE.Vector3().fromArray(c.surfaceNormal).normalize():f.normal;
-    return p.addScaledVector(n,clearance);
+
+    // V1.6d: waypoint straps still obey Lockerheit.
+    // At 0 they hug the chosen surface route. Increasing Lockerheit lifts
+    // the middle of the route progressively, while endpoint-near controls
+    // move less so the ring connections remain natural.
+    const t=THREE.MathUtils.clamp(c.t??.5,0,1);
+    const centerWeight=Math.sin(Math.PI*t);
+    const waypointBulge=slack*THREE.MathUtils.clamp(f.length*.34,.025,.32)*centerWeight;
+    return p.addScaledVector(n,baseClearance+waypointBulge);
   }
 
   // Legacy explicit surface controls from old saved projects.
@@ -1363,36 +1371,96 @@ function repairSplitPairingForNodes(a,b){
     pairSplitChildren(a.splitMeta.part,b.splitMeta.part);
   }
 }
+
+function sampleRouteForSplit(s,splitT){
+  const curve=effectiveStrapCurve(s);
+  const out={left:[],right:[]};
+
+  function sample(parentT,leftSide){
+    const localT=remapTForSplit(parentT,splitT,leftSide);
+    if(localT<=.015||localT>=.985)return;
+
+    const point=curve.getPoint(parentT);
+    let normal;
+    try{normal=strapNormalAt(s,parentT)}
+    catch{normal=strapFrame(s).normal.clone()}
+    if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
+    normal.normalize();
+
+    const c={
+      t:localT,
+      waypoint:true,
+      inheritedRoute:true,
+      surfacePos:point.toArray(),
+      surfaceNormal:normal.toArray()
+    };
+    (leftSide?out.left:out.right).push(c);
+  }
+
+  // Three internal samples per child are enough to preserve the visible
+  // 18-segment parent route very closely without adding expensive live logic.
+  if(splitT>.04){
+    sample(splitT*.25,true);
+    sample(splitT*.50,true);
+    sample(splitT*.75,true);
+  }
+  if(splitT<.96){
+    sample(splitT+(1-splitT)*.25,false);
+    sample(splitT+(1-splitT)*.50,false);
+    sample(splitT+(1-splitT)*.75,false);
+  }
+
+  return out;
+}
+function bindInheritedSplitControls(child,controls){
+  child.controls=[];
+  for(const src of controls){
+    const c={...src};
+    const p=new THREE.Vector3().fromArray(src.surfacePos);
+    const n=new THREE.Vector3().fromArray(src.surfaceNormal).normalize();
+    bindWaypointToFrame(child,c,p,n);
+    c.inheritedRoute=true;
+    child.controls.push(c);
+  }
+  child.controls.sort((a,b)=>a.t-b.t);
+}
+
 function splitOneStrapAtNode(s,n,t){
   if(!s||!n)return null;
+
+  // Snapshot the actual visible route BEFORE deleting the parent strap.
+  // Child straps inherit this route rather than starting from scratch.
+  const preserved=sampleRouteForSplit(s,t);
   const original=strapSnapshot(s);
   const a=s.a,b=s.b;
   const originalId=s.id;
 
   removeStrapBare(originalId);
 
-  // Both pieces inherit the exact same strap settings from the parent.
   const left=makeStrap({
     a,b:n.id,
     widthMM:original.widthMM,
     slack:original.slack,
     controls:[],
-    surfaceLevel:original.surfaceLevel||0
+    surfaceLevel:0
   });
   const right=makeStrap({
     a:n.id,b,
     widthMM:original.widthMM,
     slack:original.slack,
     controls:[],
-    surfaceLevel:original.surfaceLevel||0
+    surfaceLevel:0
   });
 
-  // Move every surviving dynamic point away from the deleted parent strap.
-  // Auto crossing points are removed and recalculated later.
-  migrateDynamicNodesAfterSplit(originalId,n,t,left,right);
-
+  // Reconstruct both child routes from the exact parent curve samples.
+  bindInheritedSplitControls(left,preserved.left);
+  bindInheritedSplitControls(right,preserved.right);
   updateStrapGeometry(left);
   updateStrapGeometry(right);
+
+  // Move every surviving dynamic point away from the deleted parent strap.
+  migrateDynamicNodesAfterSplit(originalId,n,t,left,right);
+
   rebuildWrapsForNode(n);
   rebuildWrapsForNode(nodes.get(a));
   rebuildWrapsForNode(nodes.get(b));
@@ -1548,7 +1616,7 @@ function showSelection(){
   }else{
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
-    const wp=selected.controls.filter(c=>c.waypoint).length;
+    const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
     const lvl=selected.surfaceLevel||0;
     if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
     else if(lvl){
@@ -1948,7 +2016,7 @@ curveAutoBtn.addEventListener('click',()=>{
 curvePlusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
-  const wpCount=s.controls.filter(c=>c.waypoint).length;
+  const wpCount=s.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
   if(wpCount>=6){showToast('Maximal 6 Auflagepunkte');return}
   if(waypointPlacementStrapId===s.id){cancelWaypointPlacement();return}
   beginWaypointPlacement(s);
@@ -1958,7 +2026,7 @@ curveMinusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
 
-  const i=[...s.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint).at(-1)?.i;
+  const i=[...s.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint&&!x.c.inheritedRoute).at(-1)?.i;
   if(i===undefined){
     // One click also converts an old recursive surface strap back to Standard.
     if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
@@ -1969,7 +2037,7 @@ curveMinusBtn.addEventListener('click',()=>{
 
   const ps=pairOfStrap(s);
   if(ps){
-    const pi=[...ps.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint).at(-1)?.i;
+    const pi=[...ps.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint&&!x.c.inheritedRoute).at(-1)?.i;
     if(pi!==undefined)ps.controls.splice(pi,1);
     else ps.surfaceLevel=0;
     updateStrapGeometry(ps);
@@ -2337,6 +2405,7 @@ function dynReconcileSymmetry({syncProps=true}={}){
     }
     if(best){dynPairStraps(a,best,syncProps);usedS.add(a.id);usedS.add(best.id)}
   }
+  mergeCollapsedMirrorStraps();
   enforcePairMasterVisuals();
 }
 
@@ -2398,6 +2467,55 @@ function captureMergeTopology(a,b){
     .map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0}));
 }
 
+
+function sameUnorderedEndpoints(a,b){
+  return !!a&&!!b&&(
+    (a.a===b.a&&a.b===b.b)||
+    (a.a===b.b&&a.b===b.a)
+  );
+}
+function migrateDuplicateStrapDependents(from,to){
+  if(!from||!to)return;
+
+  for(const n of nodes.values()){
+    if(n.source==='strap'&&n.parentStrapId===from.id){
+      n.parentStrapId=to.id;
+      syncNodeTransform(n);
+    }else if(n.source==='crossing'&&n.crossing){
+      if(n.crossing.strapAId===from.id)n.crossing.strapAId=to.id;
+      if(n.crossing.strapBId===from.id)n.crossing.strapBId=to.id;
+    }
+  }
+}
+function mergeCollapsedMirrorStraps(){
+  const done=new Set();
+
+  for(const s of [...straps.values()]){
+    if(done.has(s.id))continue;
+    const p=pairOfStrap(s);
+    if(!p||done.has(p.id)||!sameUnorderedEndpoints(s,p))continue;
+
+    const master=pairMasterStrap(s);
+    const slave=master===s?p:s;
+
+    // A mirrored pair whose endpoints have collapsed into the same two rings
+    // is now one physical strap, exactly analogous to a merged ring pair.
+    master.mirrorId=null;
+    master.previousPartnerId=slave.id;
+    master.manualUnlinked=false;
+
+    migrateDuplicateStrapDependents(slave,master);
+
+    if(selected?.kind==='strap'&&selected.id===slave.id)selected=master;
+
+    removeStrapBare(slave.id);
+    done.add(master.id);
+    done.add(slave.id);
+
+    updateStrapGeometry(master,{skipPairMirror:true});
+  }
+}
+
 function mergeRingPair(a,b){
   if(!a||!b||a.id===b.id)return a;
   const pa=nodeWorldPosition(a),pb=nodeWorldPosition(b);
@@ -2416,6 +2534,11 @@ function mergeRingPair(a,b){
 
   nodeRoot.remove(a.group);nodes.delete(a.id);
   nodeRoot.remove(b.group);nodes.delete(b.id);
+
+  // If both ends of a mirrored strap pair have now collapsed to the same
+  // center rings, the two straps become one physical strap too.
+  mergeCollapsedMirrorStraps();
+
   selected=merged;rebuildWrapsForNode(merged);return merged;
 }
 
