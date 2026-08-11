@@ -1,16 +1,14 @@
-# Harness Designer V1.8b CLEAN — startup repair
+# Harness Designer V1.8c CLEAN
 
-Based on V1.8a CLEAN.
+This build deliberately uses the last panel version that was confirmed to start and work (V1.7c),
+before any automatic strap solver experiments were introduced.
 
-Startup failure cause:
-V1.8a still contained orphan fragments from the later automatic strap solver,
-including an undefined auto-mode branch and a malformed extra body following
-`updateAttachedStraps()`.
+Important:
+- strap system is the pre-auto-solver system
+- no autoFit / autoGuides / collision solver exists
+- panels use cheap drag preview + body fit after release
+- panels keep logical boundary slots across merge / entmerge
+- panel body-distance slider is present
+- robust Undo/Redo panel snapshots are present
 
-V1.8b:
-- reapplies the critical strap functions directly from V1.6e
-- removes every later auto-solver helper/call/property
-- keeps the isolated panel implementation from the clean build
-- changes no intended panel feature
-
-This is the corrected clean baseline.
+This is intended as the stable clean baseline for the next panel redesign.

@@ -60,13 +60,13 @@ const METAL_MAT=new THREE.MeshStandardMaterial({color:0xc7c8cc,roughness:.25,met
 const METAL_SEL=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.18,metalness:.9,emissive:0x6a6038,emissiveIntensity:.25});
 const POINT_MAT=new THREE.MeshBasicMaterial({color:0xffffff});
 const POINT_SEL=new THREE.MeshBasicMaterial({color:0xffffff});
-const STRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3});
-const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,metalness:0,side:THREE.DoubleSide,emissive:0x302916,emissiveIntensity:.55,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3});
+const STRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
+const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,metalness:0,side:THREE.DoubleSide,emissive:0x302916,emissiveIntensity:.55});
 const WRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
 const CONTROL_MAT=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.78});
 const PANEL_PICK_MAT=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.2,metalness:.55,emissive:0x007c96,emissiveIntensity:.55});
-const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,depthWrite:false,polygonOffset:true,polygonOffsetFactor:6,polygonOffsetUnits:6});
-const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,depthWrite:false,polygonOffset:true,polygonOffsetFactor:6,polygonOffsetUnits:6});
+const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
+const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
 const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
 let bodyMeshes=[];
@@ -500,8 +500,6 @@ function buildSurfaceGuideChain(s,level){
   return guides;
 }
 
-
-
 function surfaceCurveData(s){
   const level=THREE.MathUtils.clamp(Math.round(s.surfaceLevel||0),1,4);
   const guides=buildSurfaceGuideChain(s,level);
@@ -612,7 +610,6 @@ function rebuildNodeVisual(n){
     hit=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r,.055),12,8),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
   }
   visual.userData={kind:'nodeVisual',id:n.id};hit.userData={kind:'nodeHit',id:n.id};
-  visual.renderOrder=30;
   n.visual=visual;n.hit=hit;n.group.add(visual,hit);
 }
 
@@ -1183,229 +1180,67 @@ function panelCutRings(panel){
   return panelCurrentIds(panel,{unique:true})
     .map(id=>nodes.get(id))
     .filter(n=>n?.ringVisible)
-    .map(n=>({p:nodeWorldPosition(n),r:Math.max(.001,ringMajor(n)-ringTube(n)*1.12)}));
+    .map(n=>({p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.35}));
 }
 function buildPanelPreviewGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
-
   const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
-  const rawContour=boundary.map(p=>panel2D(panel,p,basis));
-  const contour=panelInsetContour2(panel,basis,boundary,rawContour);
-  const holes=panelRingHoles2(panel,basis);
-  const tris=THREE.ShapeUtils.triangulateShape(contour,holes);
-
-  const flat2=[...contour];
-  for(const h of holes)flat2.push(...h);
-  const baseWorld=flat2.map(q=>panel2ToWorld(q,basis));
-
+  const contour=boundary.map(p=>panel2D(panel,p,basis));
+  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
   const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
-
   for(const tri of tris){
     for(const idx of tri){
-      const p=baseWorld[idx].clone().addScaledVector(basis.normal,lift);
+      const p=boundary[idx].clone().addScaledVector(basis.normal,lift);
       positions.push(p.x,p.y,p.z);
       normals.push(basis.normal.x,basis.normal.y,basis.normal.z);
     }
   }
-
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
   g.computeBoundingSphere();
   return g;
 }
-function panelSubdivisionLevel(panel,boundary){
-  let maxSpan=0;
-  for(let i=0;i<boundary.length;i++)for(let j=i+1;j<boundary.length;j++)
-    maxSpan=Math.max(maxSpan,boundary[i].distanceTo(boundary[j]));
-  const basis=panelBasis(panel),poly=boundary.map(p=>panel2D(panel,p,basis));
-  let area=0;for(let i=0,j=poly.length-1;i<poly.length;j=i++)area+=poly[j].x*poly[i].y-poly[i].x*poly[j].y;
-  area=Math.abs(area)*.5;
-  if(maxSpan>.95||area>.42)return 4;
-  if(maxSpan>.48||area>.13)return 3;
-  return 2;
-}
-function panelBoundaryStraps(panel){
-  const ids=panelCurrentIds(panel,{unique:true}),out=[];
-  for(let i=0;i<ids.length;i++){
-    const a=ids[i],b=ids[(i+1)%ids.length];
-    const s=[...straps.values()].find(q=>(q.a===a&&q.b===b)||(q.a===b&&q.b===a));
-    if(s)out.push(s);
-  }
-  return out;
-}
-function pointDistanceToStrapCenterline(point,s){
-  const curve=effectiveStrapCurve(s);let best=Infinity;
-  for(let i=0;i<=20;i++)best=Math.min(best,point.distanceTo(curve.getPoint(i/20)));
-  return best;
-}
-function panelTriangleHiddenByBoundaryStrap(centroid,boundaryStraps){
-  for(const s of boundaryStraps){
-    const halfWidth=Math.max(.008,s.widthMM*.0037*.5);
-    if(pointDistanceToStrapCenterline(centroid,s)<=halfWidth+.006)return true;
-  }
-  return false;
-}
-
-function polygonSignedArea2(poly){
-  let a=0;
-  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
-    a+=poly[j].x*poly[i].y-poly[i].x*poly[j].y;
-  }
-  return a*.5;
-}
-function boundaryStrapForEdge(aId,bId){
-  return [...straps.values()].find(s=>
-    (s.a===aId&&s.b===bId)||(s.a===bId&&s.b===aId)
-  )||null;
-}
-function lineIntersection2(p1,d1,p2,d2){
-  const cross=d1.x*d2.y-d1.y*d2.x;
-  if(Math.abs(cross)<1e-8)return null;
-  const dx=p2.x-p1.x,dy=p2.y-p1.y;
-  const t=(dx*d2.y-dy*d2.x)/cross;
-  return new THREE.Vector2(p1.x+d1.x*t,p1.y+d1.y*t);
-}
-function panelInsetContour2(panel,basis,boundary,poly){
-  const ids=panelCurrentIds(panel,{unique:true});
-  if(poly.length<3)return poly.map(p=>p.clone());
-
-  const ccw=polygonSignedArea2(poly)>0;
-  const edges=[];
-
-  for(let i=0;i<poly.length;i++){
-    const a=poly[i],b=poly[(i+1)%poly.length];
-    const dir=b.clone().sub(a);
-    const len=dir.length();
-    if(len<1e-8){
-      edges.push({a:a.clone(),dir:new THREE.Vector2(1,0),inset:0});
-      continue;
-    }
-    dir.multiplyScalar(1/len);
-    // For CCW contour, interior lies to the left of each directed edge.
-    const inward=ccw
-      ? new THREE.Vector2(-dir.y,dir.x)
-      : new THREE.Vector2(dir.y,-dir.x);
-
-    const s=boundaryStrapForEdge(ids[i],ids[(i+1)%ids.length]);
-    const inset=s
-      ? Math.max(.004,s.widthMM*.0037*.5-.002)
-      : 0;
-
-    edges.push({
-      a:a.clone().addScaledVector(inward,inset),
-      dir,
-      inward,
-      inset
-    });
-  }
-
-  const out=[];
-  for(let i=0;i<poly.length;i++){
-    const prev=edges[(i-1+edges.length)%edges.length];
-    const next=edges[i];
-    let q=lineIntersection2(prev.a,prev.dir,next.a,next.dir);
-
-    if(!q){
-      // Parallel/near-collinear fallback.
-      const n=prev.inward.clone().multiplyScalar(prev.inset)
-        .add(next.inward.clone().multiplyScalar(next.inset));
-      q=poly[i].clone().add(n.multiplyScalar(.5));
-    }
-
-    // Clamp pathological miters at very acute corners.
-    const maxMove=Math.max(.02,(prev.inset+next.inset)*2.4);
-    const delta=q.clone().sub(poly[i]);
-    if(delta.length()>maxMove)q=poly[i].clone().add(delta.setLength(maxMove));
-    out.push(q);
-  }
-  return out;
-}
-function panelRingHoles2(panel,basis){
-  const holes=[];
-  for(const id of panelCurrentIds(panel,{unique:true})){
-    const n=nodes.get(id);
-    if(!n?.ringVisible)continue;
-
-    const center=panel2D(panel,nodeWorldPosition(n),basis);
-    // Hole reaches almost exactly to the ring's inner visible edge.
-    const radius=Math.max(.002,ringMajor(n)-ringTube(n)*1.05);
-    const pts=[];
-    const segments=24;
-    for(let i=0;i<segments;i++){
-      const a=(i/segments)*Math.PI*2;
-      pts.push(new THREE.Vector2(
-        center.x+Math.cos(a)*radius,
-        center.y+Math.sin(a)*radius
-      ));
-    }
-    holes.push(pts);
-  }
-  return holes;
-}
-function panel2ToWorld(q,basis){
-  return basis.origin.clone()
-    .addScaledVector(basis.u,q.x)
-    .addScaledVector(basis.v,q.y);
-}
-
 function buildPanelGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
 
   const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
-  const rawContour=boundary.map(p=>panel2D(panel,p,basis));
-
-  // The outer contour itself is moved to the INNER edge of any strap that
-  // bounds this panel. This produces a smooth edge instead of deleting triangles.
-  const contour=panelInsetContour2(panel,basis,boundary,rawContour);
-  const holeContours=panelRingHoles2(panel,basis);
-
-  const tris=THREE.ShapeUtils.triangulateShape(contour,holeContours);
+  const contour=boundary.map(p=>panel2D(panel,p,basis));
+  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
   if(!tris.length)return new THREE.BufferGeometry();
 
-  // triangulateShape indexes into [contour, ...holes] flattened in that order.
-  const flat2=[...contour];
-  for(const h of holeContours)flat2.push(...h);
-  const baseWorld=flat2.map(q=>panel2ToWorld(q,basis));
-
-  let triWorld=tris.map(t=>t.map(i=>baseWorld[i].clone()));
-
-  // Dynamic density remains size dependent.
-  const subdivisionLevel=panelSubdivisionLevel(panel,boundary);
-  for(let pass=0;pass<subdivisionLevel;pass++){
+  // Dense only in the committed state. During ring drag a flat preview is used.
+  let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
+  for(let pass=0;pass<3;pass++){
     const next=[];
     for(const [a,b,c] of triWorld){
-      const ab=a.clone().lerp(b,.5);
-      const bc=b.clone().lerp(c,.5);
-      const ca=c.clone().lerp(a,.5);
+      const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
       next.push([a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]);
     }
     triWorld=next;
   }
 
   const positions=[],normals=[];
+  const cutRings=panelCutRings(panel);
   const lift=panelOffsetScene(panel);
-  const surfaceCache=new Map();
-
-  const solveRaw=raw=>{
-    const key=`${Math.round(raw.x*10000)},${Math.round(raw.y*10000)},${Math.round(raw.z*10000)}`;
-    let solved=surfaceCache.get(key);
-    if(!solved){
-      const surf=panelSurfacePoint(raw,basis.normal);
-      solved={
-        q:surf.point.clone().addScaledVector(surf.normal,lift),
-        n:surf.normal.clone()
-      };
-      surfaceCache.set(key,solved);
-    }
-    return solved;
-  };
 
   for(const tri of triWorld){
-    const solved=tri.map(solveRaw);
+    const solved=tri.map(raw=>{
+      const surf=panelSurfacePoint(raw,basis.normal);
+      return {
+        q:surf.point.clone().addScaledVector(surf.normal,lift),
+        n:surf.normal
+      };
+    });
+
+    // Fine subdivision makes these ring openings local instead of deleting
+    // giant triangles through the middle of the panel.
+    const centroid=solved.reduce((a,x)=>a.add(x.q),new THREE.Vector3()).multiplyScalar(1/3);
+    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+
     for(const x of solved){
       positions.push(x.q.x,x.q.y,x.q.z);
       normals.push(x.n.x,x.n.y,x.n.z);
@@ -1596,7 +1431,7 @@ function makeStrap(data={}){
     controlGroup:new THREE.Group()
   };
   s.mesh=new THREE.Mesh(s.geometry,selected?.id===id?STRAP_SEL:STRAP_MAT);
-  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=20;s.group.add(s.mesh,s.controlGroup);
+  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=5;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
   return s;
@@ -1619,12 +1454,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   let renderCurve=null;
   let surfaceData=null;
 
-  if(){
-    surfaceData=(s);
-    if(surfaceData)renderCurve=surfaceData.curve;
-  }
-
-  if(!renderCurve&&!surfaceMode){
+  if(!surfaceMode){
     // IMPORTANT: untouched fast V1.4h standard path.
     const curve=strapCurve(s);
     const firstGuide=curve.getPoint(1/STRAP_SAMPLES),lastGuide=curve.getPoint(1-1/STRAP_SAMPLES);
@@ -1640,7 +1470,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
       renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
     }
-  }else if(!renderCurve){
+  }else{
     surfaceData=surfaceCurveData(s);
     if(!surfaceData){
       // Fail-safe fallback to the known-good standard geometry.
@@ -2974,7 +2804,7 @@ function clearCurrentPair(a,b){
 }
 function manuallyUnlinkSelected(){
   if(!selected)return false;
-  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
+  const partner=selected.kind==='node'?pairOfNode(selected):selected.kind==='strap'?pairOfStrap(selected):pairOfPanel(selected);
   if(!partner)return false;
 
   rememberFormerPartners(selected,partner);
@@ -3043,14 +2873,14 @@ function reconnectSelected(){
   return reconnectStrapToFormerPartner(selected);
 }
 function updateLinkButton(){
-  if(!selected){
+  if(!selected||selected.kind==='panel'){
     linkSelectedBtn.disabled=true;
     linkSelectedBtn.classList.remove('active','unlinked');
     linkSelectedBtn.setAttribute('aria-pressed','false');
     return;
   }
 
-  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
+  const partner=selected.kind==='node'?pairOfNode(selected):selected.kind==='strap'?pairOfStrap(selected):pairOfPanel(selected);
   const formerId=selected.previousPartnerId;
   const formerExists=selected.kind==='node'?nodes.has(formerId):straps.has(formerId);
   const linked=!!partner;
@@ -3251,6 +3081,9 @@ function mergeRingPair(a,b){
   const merged=makeNode({position:p.toArray(),normal:n.toArray(),ringVisible:true,diameterMM:a.diameterMM,thicknessMM:a.thicknessMM,sizeMM:a.sizeMM});
   merged.mergedState=state;
 
+  // Panels keep their logical boundary slots even while visible nodes collapse.
+  panelHandleNodeMerge(a,b,merged);
+
   for(const s of straps.values()){
     if(s.a===a.id||s.a===b.id)s.a=merged.id;
     if(s.b===a.id||s.b===b.id)s.b=merged.id;
@@ -3291,6 +3124,7 @@ function entmergeRing(merged,p){
   left.mirrorId=right.id;right.mirrorId=left.id;
   copyNodeVisualProps(merged,left);copyNodeVisualProps(merged,right);
   restoreTopologyAfterEntmerge(merged,left,right,state);
+  panelHandleNodeEntmerge(merged,left,right);
   nodeRoot.remove(merged.group);nodes.delete(merged.id);
   selected=p.x<0?left:right;rebuildAllWraps();return selected;
 }
@@ -3325,21 +3159,61 @@ function mirrorNode(n){
 mirrorToggle.addEventListener('click',()=>{mirrorMode=!mirrorMode;mirrorToggle.classList.toggle('active',mirrorMode);mirrorToggle.setAttribute('aria-pressed',String(mirrorMode))});
 mirrorSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
+
   if(selected.kind==='node'){
-    const m=mirrorNode(selected);syncNodeTransform(m);commitHistory();showToast('Gespiegelt');
-  }else{
+    const m=mirrorNode(selected);
+    syncNodeTransform(m);
+    dynReconcileSymmetry({syncProps:true});
+    commitHistory();
+    showToast('Gespiegelt');
+    return;
+  }
+
+  if(selected.kind==='strap'){
     const a=mirrorNode(nodes.get(selected.a)),b=mirrorNode(nodes.get(selected.b));
-    let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
+    let existing=[...straps.values()].find(s=>
+      (s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id)
+    );
+
     if(!existing){
       const hasWp=selected.controls.some(c=>c.waypoint);
-      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:hasWp?0:(selected.surfaceLevel||0)});
+      const m=makeStrap({
+        a:a.id,b:b.id,
+        widthMM:selected.widthMM,
+        slack:selected.slack,
+        controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),
+        surfaceLevel:hasWp?0:(selected.surfaceLevel||0)
+      });
+
       if(hasWp){
-        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t))m.controls.push(waypointControlAt(m,c.t));
+        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t)){
+          m.controls.push(waypointControlAt(m,c.t));
+        }
         updateStrapGeometry(m);
       }
-      selected.mirrorId=m.id;m.mirrorId=selected.id;rememberFormerPartners(selected,m);
+
+      selected.mirrorId=m.id;
+      m.mirrorId=selected.id;
+      rememberFormerPartners(selected,m);
+      existing=m;
     }
-    rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
+
+    dynReconcileSymmetry({syncProps:true});
+    rebuildAllWraps();
+    commitHistory();
+    showToast('Riemen gespiegelt');
+    return;
+  }
+
+  if(selected.kind==='panel'){
+    const m=mirrorPanelFrom(selected);
+    if(m){
+      selectObject(selected);
+      commitHistory();
+      showToast('Fläche gespiegelt');
+    }else{
+      showToast('Fläche kann nicht gespiegelt werden');
+    }
   }
 });
 
@@ -3537,6 +3411,9 @@ function interactiveHit(x,y){
     if(sh.distance<=bodyDistance+.055)return {kind:'strap',id:sh.object.userData.id};
   }
 
+  const ph=panelHit(x,y);
+  if(ph)return ph;
+
   return null;
 }
 function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
@@ -3631,6 +3508,8 @@ function requestNodeDrag(n,x,y){
     // Preserve the user's manual route while the endpoint moves.
     // This is only weighted translation + the existing cheap geometry update.
     if(single?.waypointDragState)updateEndpointWaypointDragState(single.waypointDragState);
+    updatePanelsForNode(q.n.id);
+    const qp=pairOfNode(q.n);if(qp)updatePanelsForNode(qp.id);
   });
 }
 function screenPlanePoint(x,y,point){
