@@ -1,31 +1,37 @@
-# Harness Designer V1.7f
+# Harness Designer V1.7g — minimal-contact straps + fixed panel borders
 
-Built on V1.7e.
+Built on V1.7f.
 
-## Auto is now the default strap mode
-New straps start with Auto-Fit enabled automatically.
+## Minimal-contact automatic straps
+Auto straps no longer interpret "far from body surface" as a reason to hug the body.
 
-Adaptive fitting is stricter:
-- max recursion depth 6
-- minimum segment 0.075
-- position tolerance ~0.009 scene units
-- normal tolerance 0.12
-- accepted longer segments receive an additional 1/3 + 2/3 verification pass
+For each candidate strap segment:
+- sample 20/40/50/60/80%
+- find the nearby body surface and its outward normal
+- compute signed clearance `(candidate - surface) dot normal`
+- only if the segment enters the body / safety clearance is a contact guide inserted
+- recursive refinement occurs only around blocked sections
 
-This intentionally prefers one extra guide point over a visible body intersection.
+After refinement a simplification pass removes each internal contact guide whose two
+neighbours can be connected collision-free.
 
-Manual `+ Punkt` remains available when a specific artistic route is desired.
+Result:
+- free span stays free / taut
+- strap contacts a breast, shoulder or hip only while that body volume blocks it
+- as soon as the body falls away, the strap leaves the body tangentially
+- a lower ring can force a second contact region if necessary
 
-## Smooth panel boundaries
-The previous panel-edge method removed complete triangles under straps/rings,
-which caused jagged/sawtooth edges and occasional overlap.
+## Hardware-locked panel boundary
+Panel outer boundaries now follow actual hardware rather than a planar approximation.
 
-V1.7f changes the actual panel topology:
-- each panel edge that has a boundary strap is inset to the strap's inner edge
-- consecutive offset edges are intersected to form a smooth new contour
-- rings are true circular holes passed directly to `THREE.ShapeUtils.triangulateShape`
-- no triangle-centroid clipping is required for the visible boundary
+For each boundary edge:
+- if a strap exists, its actual current 3D curve is sampled
+- samples are offset to the strap's inner edge
+- at ring corners neighbouring edges are connected by an arc on the ring's inner edge
 
-The same smooth contour is used for both drag preview and committed body-fit geometry.
+The committed panel fit keeps this hardware contour fixed in 3D.
+Only interior vertices are projected to the mannequin. A transition band smoothly blends
+from the fixed boundary to the fully body-fitted interior.
 
-Dynamic panel subdivision by physical size from V1.7e remains active.
+This prevents large curved panels from pulling their outer edge away from straps/rings.
+The same hardware contour is used during the fast drag preview.
