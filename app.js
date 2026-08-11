@@ -500,10 +500,38 @@ function buildSurfaceGuideChain(s,level,applyClearance=true){
 }
 
 
+function adaptiveAutoGuideChain(s){
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return null;
+  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
+  const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
+  const maxDepth=5,minSegment=.10,posTol=.014,normTol=.19;
+
+  function solve(a,b,na,nb,depth){
+    const candidate=a.clone().lerp(b,.5);
+    let preferred=na.clone().add(nb);
+    if(preferred.lengthSq()<1e-8)preferred=na.clone();
+    preferred.normalize();
+    const hit=nearestBodySurfacePreferred(candidate,preferred);
+    if(!hit)return [{point:a.clone(),normal:na.clone().normalize()},{point:b.clone(),normal:nb.clone().normalize()}];
+
+    const deviation=hit.point.distanceTo(candidate);
+    const normalChange=1-Math.abs(hit.normal.dot(preferred));
+    const needsPoint=deviation>posTol||normalChange>normTol;
+    if(!needsPoint||depth>=maxDepth||a.distanceTo(b)<minSegment)
+      return [{point:a.clone(),normal:na.clone().normalize()},{point:b.clone(),normal:nb.clone().normalize()}];
+
+    const mid={point:hit.point.clone(),normal:hit.normal.clone().normalize()};
+    const left=solve(a,mid.point,na,mid.normal,depth+1);
+    const right=solve(mid.point,b,mid.normal,nb,depth+1);
+    return left.slice(0,-1).concat(right);
+  }
+  return solve(A,B,nA,nB,0);
+}
 function computeAutoStrapFit(s){
   if(!s?.autoFit)return false;
-  const guides=buildSurfaceGuideChain(s,3,false);
-  if(!guides||guides.length<3){s.autoGuides=null;return false}
+  const guides=adaptiveAutoGuideChain(s);
+  if(!guides||guides.length<2){s.autoGuides=null;return false}
   s.autoGuides=guides.map(g=>({point:g.point.toArray(),normal:g.normal.toArray()}));
   return true;
 }
@@ -519,6 +547,11 @@ function autoSurfaceCurveData(s){
   const clearance=surfaceClearanceForStrap(s);
   for(let i=1;i<guides.length-1;i++)guides[i].point.addScaledVector(guides[i].normal,clearance);
 
+  if(guides.length===2){
+    const a=visibleEndpoint(aNode,guides[1].point),b=visibleEndpoint(bNode,guides[0].point);
+    const points=[a.clone(),b.clone()];
+    return {curve:new THREE.LineCurve3(a,b),guides,points};
+  }
   const a=visibleEndpoint(aNode,guides[1].point);
   const b=visibleEndpoint(bNode,guides[guides.length-2].point);
   const points=guides.map((g,i)=>i===0?a.clone():i===guides.length-1?b.clone():g.point.clone());
@@ -1232,7 +1265,7 @@ function panelCutRings(panel){
   return panelCurrentIds(panel,{unique:true})
     .map(id=>nodes.get(id))
     .filter(n=>n?.ringVisible)
-    .map(n=>({p:nodeWorldPosition(n),r:Math.max(.001,ringMajor(n)-ringTube(n)*.92)}));
+    .map(n=>({p:nodeWorldPosition(n),r:Math.max(.001,ringMajor(n)-ringTube(n)*1.12)}));
 }
 function buildPanelPreviewGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
@@ -1255,6 +1288,38 @@ function buildPanelPreviewGeometry(panel){
   g.computeBoundingSphere();
   return g;
 }
+function panelSubdivisionLevel(panel,boundary){
+  let maxSpan=0;
+  for(let i=0;i<boundary.length;i++)for(let j=i+1;j<boundary.length;j++)
+    maxSpan=Math.max(maxSpan,boundary[i].distanceTo(boundary[j]));
+  const basis=panelBasis(panel),poly=boundary.map(p=>panel2D(panel,p,basis));
+  let area=0;for(let i=0,j=poly.length-1;i<poly.length;j=i++)area+=poly[j].x*poly[i].y-poly[i].x*poly[j].y;
+  area=Math.abs(area)*.5;
+  if(maxSpan>.95||area>.42)return 4;
+  if(maxSpan>.48||area>.13)return 3;
+  return 2;
+}
+function panelBoundaryStraps(panel){
+  const ids=panelCurrentIds(panel,{unique:true}),out=[];
+  for(let i=0;i<ids.length;i++){
+    const a=ids[i],b=ids[(i+1)%ids.length];
+    const s=[...straps.values()].find(q=>(q.a===a&&q.b===b)||(q.a===b&&q.b===a));
+    if(s)out.push(s);
+  }
+  return out;
+}
+function pointDistanceToStrapCenterline(point,s){
+  const curve=effectiveStrapCurve(s);let best=Infinity;
+  for(let i=0;i<=20;i++)best=Math.min(best,point.distanceTo(curve.getPoint(i/20)));
+  return best;
+}
+function panelTriangleHiddenByBoundaryStrap(centroid,boundaryStraps){
+  for(const s of boundaryStraps){
+    const halfWidth=Math.max(.008,s.widthMM*.0037*.5);
+    if(pointDistanceToStrapCenterline(centroid,s)<=halfWidth+.006)return true;
+  }
+  return false;
+}
 function buildPanelGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
 
@@ -1266,7 +1331,8 @@ function buildPanelGeometry(panel){
 
   // Dense only in the committed state. During ring drag a flat preview is used.
   let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
-  for(let pass=0;pass<3;pass++){
+  const subdivisionLevel=panelSubdivisionLevel(panel,boundary);
+  for(let pass=0;pass<subdivisionLevel;pass++){
     const next=[];
     for(const [a,b,c] of triWorld){
       const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
@@ -1277,6 +1343,7 @@ function buildPanelGeometry(panel){
 
   const positions=[],normals=[];
   const cutRings=panelCutRings(panel);
+  const boundaryStraps=panelBoundaryStraps(panel);
   const lift=panelOffsetScene(panel);
 
   // Shared subdivision vertices occur in many triangles. Project each unique
@@ -1300,6 +1367,7 @@ function buildPanelGeometry(panel){
     // giant triangles through the middle of the panel.
     const centroid=solved.reduce((a,x)=>a.add(x.q),new THREE.Vector3()).multiplyScalar(1/3);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+    if(panelTriangleHiddenByBoundaryStrap(centroid,boundaryStraps))continue;
 
     for(const x of solved){
       positions.push(x.q.x,x.q.y,x.q.z);
@@ -2043,7 +2111,10 @@ function showSelection(){
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
     const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
     const lvl=selected.surfaceLevel||0;
-    if(selected.autoFit)curvePointCount.textContent='Auto-Fit';
+    if(selected.autoFit){
+      const autoPoints=selected.autoGuides?Math.max(0,selected.autoGuides.length-2):0;
+      curvePointCount.textContent=`Auto · ${autoPoints} ${autoPoints===1?'Punkt':'Punkte'}`;
+    }
     else if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
     else if(lvl){
       const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
