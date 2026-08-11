@@ -60,13 +60,13 @@ const METAL_MAT=new THREE.MeshStandardMaterial({color:0xc7c8cc,roughness:.25,met
 const METAL_SEL=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.18,metalness:.9,emissive:0x6a6038,emissiveIntensity:.25});
 const POINT_MAT=new THREE.MeshBasicMaterial({color:0xffffff});
 const POINT_SEL=new THREE.MeshBasicMaterial({color:0xffffff});
-const STRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
-const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,metalness:0,side:THREE.DoubleSide,emissive:0x302916,emissiveIntensity:.55});
+const STRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3});
+const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,metalness:0,side:THREE.DoubleSide,emissive:0x302916,emissiveIntensity:.55,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3});
 const WRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
 const CONTROL_MAT=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.78});
 const PANEL_PICK_MAT=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.2,metalness:.55,emissive:0x007c96,emissiveIntensity:.55});
-const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
-const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
+const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,depthWrite:false,polygonOffset:true,polygonOffsetFactor:6,polygonOffsetUnits:6});
+const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,depthWrite:false,polygonOffset:true,polygonOffsetFactor:6,polygonOffsetUnits:6});
 const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
 let bodyMeshes=[];
@@ -274,6 +274,7 @@ function reprojectHarnessToBody(){
   // Body shape changed: surface waypoints get one fresh projection too.
   reprojectAllWaypoints();
   for(const s of straps.values())updateStrapGeometry(s);
+  recomputeAllAutoStraps();
   updateAllPanels();
   rebuildAllWraps();
   refreshAutomaticCrossings();
@@ -466,7 +467,7 @@ function projectSurfaceMidpoint(a,b,normalA,normalB){
   return {point:candidate,normal:preferred};
 }
 
-function buildSurfaceGuideChain(s,level){
+function buildSurfaceGuideChain(s,level,applyClearance=true){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return null;
 
@@ -490,14 +491,62 @@ function buildSurfaceGuideChain(s,level){
   }
 
   const guides=subdivide(A,B,nA,nB,level);
-  const clearance=surfaceClearanceForStrap(s);
-
-  // Endpoints stay at their actual nodes. Only internal guides sit on/lift off
-  // the body surface; visibleEndpoint later handles the ring radius.
-  for(let i=1;i<guides.length-1;i++){
-    guides[i].point.addScaledVector(guides[i].normal,clearance);
+  if(applyClearance){
+    const clearance=surfaceClearanceForStrap(s);
+    // Endpoints stay at their actual nodes. Only internal guides are lifted.
+    for(let i=1;i<guides.length-1;i++)guides[i].point.addScaledVector(guides[i].normal,clearance);
   }
   return guides;
+}
+
+
+function computeAutoStrapFit(s){
+  if(!s?.autoFit)return false;
+  const guides=buildSurfaceGuideChain(s,3,false);
+  if(!guides||guides.length<3){s.autoGuides=null;return false}
+  s.autoGuides=guides.map(g=>({point:g.point.toArray(),normal:g.normal.toArray()}));
+  return true;
+}
+function autoSurfaceCurveData(s){
+  if(!s?.autoFit||!s.autoGuides?.length)return null;
+  const guides=s.autoGuides.map(g=>({
+    point:new THREE.Vector3().fromArray(g.point),
+    normal:new THREE.Vector3().fromArray(g.normal).normalize()
+  }));
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return null;
+
+  const clearance=surfaceClearanceForStrap(s);
+  for(let i=1;i<guides.length-1;i++)guides[i].point.addScaledVector(guides[i].normal,clearance);
+
+  const a=visibleEndpoint(aNode,guides[1].point);
+  const b=visibleEndpoint(bNode,guides[guides.length-2].point);
+  const points=guides.map((g,i)=>i===0?a.clone():i===guides.length-1?b.clone():g.point.clone());
+  return {curve:new THREE.CatmullRomCurve3(points,false,'centripetal',.35),guides,points};
+}
+function finalizeAutoStrapsForNode(nodeId){
+  const handled=new Set();
+  for(const s of straps.values()){
+    if(s.a!==nodeId&&s.b!==nodeId)continue;
+    if(!s.autoFit)continue;
+    const ps=pairOfStrap(s);
+    const master=ps?pairMasterStrap(s):s;
+    if(handled.has(master.id))continue;
+    if(computeAutoStrapFit(master))updateStrapGeometry(master,{skipPairMirror:true});
+    if(ps){const slave=master===s?ps:s;mirrorStrapMeshFromMaster(master,slave)}
+    handled.add(master.id);
+  }
+}
+function recomputeAllAutoStraps(){
+  const handled=new Set();
+  for(const s of straps.values()){
+    if(!s.autoFit)continue;
+    const ps=pairOfStrap(s),master=ps?pairMasterStrap(s):s;
+    if(handled.has(master.id))continue;
+    if(computeAutoStrapFit(master))updateStrapGeometry(master,{skipPairMirror:true});
+    if(ps){const slave=master===s?ps:s;mirrorStrapMeshFromMaster(master,slave)}
+    handled.add(master.id);
+  }
 }
 
 function surfaceCurveData(s){
@@ -610,6 +659,7 @@ function rebuildNodeVisual(n){
     hit=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r,.055),12,8),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
   }
   visual.userData={kind:'nodeVisual',id:n.id};hit.userData={kind:'nodeHit',id:n.id};
+  visual.renderOrder=30;
   n.visual=visual;n.hit=hit;n.group.add(visual,hit);
 }
 
@@ -669,6 +719,8 @@ function mirrorStrapMeshFromMaster(master,slave){
   slave.widthMM=master.widthMM;
   slave.slack=master.slack;
   slave.surfaceLevel=master.surfaceLevel||0;
+  slave.autoFit=!!master.autoFit;
+  slave.autoGuides=master.autoGuides?master.autoGuides.map(g=>({point:[-g.point[0],g.point[1],g.point[2]],normal:[-g.normal[0],g.normal[1],g.normal[2]]})):null;
 
   // Keep materialized waypoint state ready for a future unlink, but do not
   // independently project it while the pair is linked.
@@ -1180,7 +1232,7 @@ function panelCutRings(panel){
   return panelCurrentIds(panel,{unique:true})
     .map(id=>nodes.get(id))
     .filter(n=>n?.ringVisible)
-    .map(n=>({p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.35}));
+    .map(n=>({p:nodeWorldPosition(n),r:Math.max(.001,ringMajor(n)-ringTube(n)*.92)}));
 }
 function buildPanelPreviewGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
@@ -1227,14 +1279,22 @@ function buildPanelGeometry(panel){
   const cutRings=panelCutRings(panel);
   const lift=panelOffsetScene(panel);
 
-  for(const tri of triWorld){
-    const solved=tri.map(raw=>{
+  // Shared subdivision vertices occur in many triangles. Project each unique
+  // location only once; this removes most of the expensive body raycasts.
+  const surfaceCache=new Map();
+  const solveRaw=raw=>{
+    const key=`${Math.round(raw.x*10000)},${Math.round(raw.y*10000)},${Math.round(raw.z*10000)}`;
+    let solved=surfaceCache.get(key);
+    if(!solved){
       const surf=panelSurfacePoint(raw,basis.normal);
-      return {
-        q:surf.point.clone().addScaledVector(surf.normal,lift),
-        n:surf.normal
-      };
-    });
+      solved={q:surf.point.clone().addScaledVector(surf.normal,lift),n:surf.normal.clone()};
+      surfaceCache.set(key,solved);
+    }
+    return solved;
+  };
+
+  for(const tri of triWorld){
+    const solved=tri.map(solveRaw);
 
     // Fine subdivision makes these ring openings local instead of deleting
     // giant triangles through the middle of the panel.
@@ -1424,6 +1484,8 @@ function makeStrap(data={}){
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:historyClone(data.controls||[]),
     surfaceLevel:data.surfaceLevel??0,
+    autoFit:!!data.autoFit,
+    autoGuides:historyClone(data.autoGuides||null),
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
@@ -1431,12 +1493,12 @@ function makeStrap(data={}){
     controlGroup:new THREE.Group()
   };
   s.mesh=new THREE.Mesh(s.geometry,selected?.id===id?STRAP_SEL:STRAP_MAT);
-  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=5;s.group.add(s.mesh,s.controlGroup);
+  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=20;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
   return s;
 }
-function updateStrapGeometry(s,{skipPairMirror=false}={}){
+function updateStrapGeometry(s,{skipPairMirror=false,previewAuto=false}={}){
   if(!skipPairMirror){
     const ps=pairOfStrap(s);
     if(ps){
@@ -1451,10 +1513,16 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
 
   const surfaceMode=(s.surfaceLevel||0)>0;
+  const autoMode=!!s.autoFit&&!previewAuto;
   let renderCurve=null;
   let surfaceData=null;
 
-  if(!surfaceMode){
+  if(autoMode){
+    surfaceData=autoSurfaceCurveData(s);
+    if(surfaceData)renderCurve=surfaceData.curve;
+  }
+
+  if(!renderCurve&&!surfaceMode){
     // IMPORTANT: untouched fast V1.4h standard path.
     const curve=strapCurve(s);
     const firstGuide=curve.getPoint(1/STRAP_SAMPLES),lastGuide=curve.getPoint(1-1/STRAP_SAMPLES);
@@ -1470,7 +1538,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
       renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
     }
-  }else{
+  }else if(!renderCurve){
     surfaceData=surfaceCurveData(s);
     if(!surfaceData){
       // Fail-safe fallback to the known-good standard geometry.
@@ -1565,8 +1633,8 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
     if(ps&&pairMasterStrap(s)===s)mirrorStrapMeshFromMaster(s,ps);
   }
 }
-function updateAttachedStraps(nodeId){
-  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
+function updateAttachedStraps(nodeId,{previewAuto=false}={}){
+  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s,{previewAuto});
 }
 function updateControlHandles(s){
   // V1.1: generated curve points are internal only.
@@ -1592,7 +1660,7 @@ function rebuildAllWraps(){for(const n of nodes.values())rebuildWrapsForNode(n)}
 
 
 function strapSnapshot(s){
-  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0,previousPartnerId:s.previousPartnerId||null,manualUnlinked:!!s.manualUnlinked};
+  return {id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId||null,controls:s.controls.map(c=>({...c})),surfaceLevel:s.surfaceLevel||0,autoFit:!!s.autoFit,autoGuides:historyClone(s.autoGuides||null),previousPartnerId:s.previousPartnerId||null,manualUnlinked:!!s.manualUnlinked};
 }
 function removeStrapBare(id){
   const s=straps.get(id);if(!s)return;
@@ -1600,7 +1668,7 @@ function removeStrapBare(id){
 }
 function restoreStrapSnapshot(d){
   if(!d||!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)return null;
-  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0,previousPartnerId:d.previousPartnerId||null,manualUnlinked:!!d.manualUnlinked});
+  const s=makeStrap({id:d.id,a:d.a,b:d.b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,mirrorId:d.mirrorId,controls:d.controls,surfaceLevel:d.surfaceLevel||0,autoFit:!!d.autoFit,autoGuides:d.autoGuides||null,previousPartnerId:d.previousPartnerId||null,manualUnlinked:!!d.manualUnlinked});
   return s;
 }
 
@@ -1975,7 +2043,8 @@ function showSelection(){
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
     const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
     const lvl=selected.surfaceLevel||0;
-    if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
+    if(selected.autoFit)curvePointCount.textContent='Auto-Fit';
+    else if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
     else if(lvl){
       const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
@@ -2045,6 +2114,8 @@ function serialize(){
       mirrorId:s.mirrorId||null,
       controls:historyClone(s.controls||[]),
       surfaceLevel:s.surfaceLevel||0,
+      autoFit:!!s.autoFit,
+      autoGuides:historyClone(s.autoGuides||null),
       dynEditStamp:s.dynEditStamp||0,
       previousPartnerId:s.previousPartnerId||null,
       manualUnlinked:!!s.manualUnlinked
@@ -2532,6 +2603,7 @@ function addWaypointFromGuideHit(s,guideHit){
   }
 
   s.surfaceLevel=0;
+  s.autoFit=false;s.autoGuides=null;
   // V1.5f: a manually defined surface route should start fully taut.
   // Otherwise the slack offset immediately lifts the fresh waypoint away
   // from the body and makes the user's chosen route look wrong.
@@ -2545,6 +2617,7 @@ function addWaypointFromGuideHit(s,guideHit){
   const ps=pairOfStrap(s);
   if(ps){
     ps.surfaceLevel=0;
+    ps.autoFit=false;ps.autoGuides=null;
     ps.slack=0;
     const mirrored=mirrorWorldPointX(p);
     const mirroredNormal=mirrorWorldNormalX(normal);
@@ -2559,14 +2632,21 @@ function addWaypointFromGuideHit(s,guideHit){
 
 curveAutoBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
-  selected.surfaceLevel=0;
-  selected.controls=[];
+  const s=selected;
+  s.surfaceLevel=0;s.controls=[];s.autoFit=true;
 
-  const ps=pairOfStrap(selected);
-  if(ps){ps.surfaceLevel=0;ps.controls=[];updateStrapGeometry(ps)}
-
-  updateStrapGeometry(selected);
-  showSelection();refreshAutomaticCrossings();commitHistory();
+  const ps=pairOfStrap(s);
+  const master=ps?pairMasterStrap(s):s;
+  if(master!==s){master.surfaceLevel=0;master.controls=[];master.autoFit=true}
+  computeAutoStrapFit(master);
+  updateStrapGeometry(master,{skipPairMirror:true});
+  if(ps){
+    const slave=master===s?ps:s;
+    slave.surfaceLevel=0;slave.controls=[];slave.autoFit=true;
+    slave.autoGuides=master.autoGuides?historyClone(master.autoGuides).map(g=>({point:[-g.point[0],g.point[1],g.point[2]],normal:[-g.normal[0],g.normal[1],g.normal[2]]})):null;
+    mirrorStrapMeshFromMaster(master,slave);
+  }
+  showSelection();refreshAutomaticCrossings();commitHistory();showToast('Auto-Fit berechnet');
 });
 
 curvePlusBtn.addEventListener('click',()=>{
@@ -2584,8 +2664,8 @@ curveMinusBtn.addEventListener('click',()=>{
 
   const i=[...s.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint&&!x.c.inheritedRoute).at(-1)?.i;
   if(i===undefined){
-    // One click also converts an old recursive surface strap back to Standard.
-    if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
+    if(s.autoFit){s.autoFit=false;s.autoGuides=null;updateStrapGeometry(s)}
+    else if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
   }else{
     s.controls.splice(i,1);
     updateStrapGeometry(s);
@@ -2980,6 +3060,7 @@ function copyStrapProps(src,dst){
   if(!src||!dst)return;
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
+  dst.autoFit=!!src.autoFit;dst.autoGuides=historyClone(src.autoGuides||null);
 
   const master=pairMasterStrap(src);
   const slave=master===src?dst:src;
@@ -3182,7 +3263,7 @@ mirrorSelectedBtn.addEventListener('click',()=>{
         widthMM:selected.widthMM,
         slack:selected.slack,
         controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),
-        surfaceLevel:hasWp?0:(selected.surfaceLevel||0)
+        surfaceLevel:hasWp?0:(selected.surfaceLevel||0),autoFit:!!selected.autoFit,autoGuides:selected.autoGuides?historyClone(selected.autoGuides):null
       });
 
       if(hasWp){
@@ -3444,7 +3525,7 @@ function requestNodeDrag(n,x,y){
           selected=active;
           refreshMaterials();
           showSelection();
-          updateAttachedStraps(active.id);
+          updateAttachedStraps(active.id,{previewAuto:true});
           rebuildAllWraps();
         }
         return;
@@ -3460,7 +3541,7 @@ function requestNodeDrag(n,x,y){
         setNodeWorldPosition(q.n,p);
         q.n.normal=normal.toArray();
         syncNodeTransform(q.n);
-        updateAttachedStraps(q.n.id);
+        updateAttachedStraps(q.n.id,{previewAuto:true});
       }
       return;
     }
@@ -3481,7 +3562,7 @@ function requestNodeDrag(n,x,y){
 
       setNodeWorldPosition(master,p);master.normal=normal.toArray();syncNodeTransform(master);
       forceMirrorNodeFromMaster(master,slave);
-      updateAttachedStraps(master.id);
+      updateAttachedStraps(master.id,{previewAuto:true});
 
       // Do not independently solve the slave-side attached straps.
       for(const s of straps.values()){
@@ -3489,7 +3570,7 @@ function requestNodeDrag(n,x,y){
         if(!ps)continue;
         const sm=pairMasterStrap(s),ss=sm===s?ps:s;
         if(s.a===master.id||s.b===master.id||s.a===slave.id||s.b===slave.id){
-          updateStrapGeometry(sm,{skipPairMirror:true});
+          updateStrapGeometry(sm,{skipPairMirror:true,previewAuto:true});
           mirrorStrapMeshFromMaster(sm,ss);
         }
       }
@@ -3502,7 +3583,7 @@ function requestNodeDrag(n,x,y){
       }
     }else{
       setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
-      updateAttachedStraps(q.n.id);
+      updateAttachedStraps(q.n.id,{previewAuto:true});
     }
 
     // Preserve the user's manual route while the endpoint moves.
@@ -3618,6 +3699,8 @@ canvas.addEventListener('pointerup',e=>{
       // The route already followed the endpoint during the drag.
       // Now project that moved route once back to the mannequin.
       finalizeEndpointWaypointDragState(was.waypointDragState);
+      finalizeAutoStrapsForNode(movedNode.id);
+      const movedPartner=pairOfNode(movedNode);if(movedPartner)finalizeAutoStrapsForNode(movedPartner.id);
     }
     finalizeDirtyPanels();
     rebuildAllWraps();refreshAutomaticCrossings();
