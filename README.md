@@ -1,20 +1,36 @@
-# Harness Designer V1.5d
+# Harness Designer V1.5e
 
-## Manual surface waypoint placement
-Select a strap -> `+ Punkt` -> tap the desired location directly on the mannequin.
+Built on V1.5d.
 
-The tapped 3D body surface position becomes the waypoint. The app only derives
-the waypoint order (`t`) from the current strap curve. The user therefore tells
-the strap where it should pass, rather than merely which part of the strap is bad.
+## Exact design symmetry
+The bundled Female and Male source meshes/morphs are already mathematically
+symmetric around X=0. V1.5e now also enforces symmetry in the SURFACE-PROJECTION
+pipeline:
 
-Waypoint mode is one-shot and returns to normal interaction after one valid tap.
-A paired strap receives the mirrored body-space waypoint and projects it onto its
-own side of the mannequin.
+- mirrored node pairs use one canonical surface projection
+- the partner point and normal are exact X mirrors
+- body morph/height reprojection cannot let paired rings drift apart
+- paired strap waypoints are likewise mirrored exactly rather than independently
+  raycast on each side
 
-## Immediate symmetry reconciliation
-New mirrored rings and newly created mirrored straps now run dynamic symmetry
-reconciliation in the same creation transaction, rather than waiting for a later
-move/add action.
+This removes small triangle/raycast differences that previously broke an otherwise
+symmetric harness.
 
-Built on V1.5c; V1.5a picking fix, V1.5b center-axis orientation and V1.5 body
-system are retained.
+## Constrained surface waypoint placement
+Select strap -> `+ Punkt`.
+
+The app now computes a cyan surface guideline once:
+- current strap is sampled at 28 sections
+- samples are projected to the mannequin surface
+- a visible cyan line/point guide is drawn on the body
+- hidden/back-side sections remain occluded by the body in the render
+
+A waypoint can only be placed within a 34 px touch corridor around this guide.
+The tap snaps to the nearest point of the guide, so a strap can no longer be
+pulled arbitrarily across the mannequin.
+
+The guide calculation occurs only when entering `+ Punkt` mode, not during normal
+building or dragging.
+
+V1.5a picking fix, V1.5b center-axis orientation, V1.5d immediate symmetry
+reconciliation and the V1.5 body system are retained.

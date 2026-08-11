@@ -193,3 +193,6 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
   outline:2px solid var(--accent);
   outline-offset:1px;
 }
+
+/* V1.5e constrained waypoint guide */
+#viewport canvas.placing-waypoint{cursor:crosshair}

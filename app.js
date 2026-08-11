@@ -49,6 +49,7 @@ const modelRoot=new THREE.Group();scene.add(modelRoot);
 const nodeRoot=new THREE.Group();scene.add(nodeRoot);
 const strapRoot=new THREE.Group();scene.add(strapRoot);
 const helperRoot=new THREE.Group();scene.add(helperRoot);
+const waypointGuideRoot=new THREE.Group();scene.add(waypointGuideRoot);
 
 const BODY_MAT=new THREE.MeshStandardMaterial({color:0xe9e9e9,roughness:.72,metalness:0});
 const METAL_MAT=new THREE.MeshStandardMaterial({color:0xc7c8cc,roughness:.25,metalness:.85});
@@ -81,6 +82,7 @@ let ringDefaults=(()=>{try{return {...{diameterMM:40,thicknessMM:6},...JSON.pars
 let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localStorage.getItem('hd:strapDefaults')||'{}')}}catch{return {widthMM:30,slack:8}}})();
 let selected=null,connectStart=null;
 let waypointPlacementStrapId=null;
+let waypointGuideSamples=null;
 let nextNodeId=1,nextStrapId=1;
 let nodes=new Map(),straps=new Map();
 let undoStack=[],redoStack=[],restoring=false;
@@ -223,15 +225,38 @@ function collectIntegratedBodyMeshes(obj){
 function reprojectHarnessToBody(){
   if(!usingIntegratedBody||!bodyMeshes.length||!nodes.size)return;
 
-  // Only user-placed surface nodes/rings are projected.
+  // The source GLBs are already geometrically symmetric. Here we additionally
+  // guarantee that all mirrored design objects use one shared surface solution,
+  // so tiny triangle/raycast differences can never break visual symmetry.
+  const handled=new Set();
   for(const n of nodes.values()){
+    if(handled.has(n.id))continue;
     if(n.source==='strap'||n.source==='crossing')continue;
+
+    const partner=pairOfNode(n);
+    if(partner&&partner.source!=='strap'&&partner.source!=='crossing'){
+      // Use the left object as canonical master where possible.
+      const master=nodeWorldPosition(n).x<=0?n:partner;
+      const mate=master===n?partner:n;
+      const current=nodeWorldPosition(master);
+      const hit=nearestBodySurface(current);
+      if(hit)applyMirroredNodeSurface(master,mate,hit.point,hit.normal);
+      handled.add(master.id);handled.add(mate.id);
+      continue;
+    }
+
     const current=nodeWorldPosition(n);
     const hit=nearestBodySurface(current);
     if(!hit)continue;
-    setNodeWorldPosition(n,hit.point);
-    n.normal=hit.normal.toArray();
+    let p=hit.point.clone(),normal=hit.normal.clone();
+    if(Math.abs(p.x)<AXIS_SNAP_IN){
+      p.x=0;
+      normal=symmetryAxisNormal(normal);
+    }
+    setNodeWorldPosition(n,p);
+    n.normal=normal.toArray();
     syncNodeTransform(n);
+    handled.add(n.id);
   }
 
   // Body shape changed: surface waypoints get one fresh projection too.
@@ -501,6 +526,27 @@ function worldNormal(hit){
   const nm=new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
   return hit.face.normal.clone().applyMatrix3(nm).normalize();
 }
+
+function mirrorWorldPointX(p){
+  return new THREE.Vector3(-p.x,p.y,p.z);
+}
+function mirrorWorldNormalX(n){
+  return new THREE.Vector3(-n.x,n.y,n.z).normalize();
+}
+function applyMirroredNodeSurface(master,partner,point,normal){
+  setNodeWorldPosition(master,point);
+  master.normal=normal.toArray();
+  syncNodeTransform(master);
+
+  if(partner){
+    const mp=mirrorWorldPointX(point);
+    const mn=mirrorWorldNormalX(normal);
+    setNodeWorldPosition(partner,mp);
+    partner.normal=mn.toArray();
+    syncNodeTransform(partner);
+  }
+}
+
 function nodeWorldNormal(n){return new THREE.Vector3().fromArray(n.normal).normalize()}
 function nodeWorldPosition(n){return new THREE.Vector3().fromArray(n.position)}
 function setNodeWorldPosition(n,p){n.position=p.toArray()}
@@ -698,18 +744,51 @@ function reprojectStrapWaypoints(s){
   for(const c of s.controls)if(c.waypoint)reprojectWaypoint(s,c);
   updateStrapGeometry(s);
 }
+function mirrorWaypointsToPartner(src,dst){
+  if(!src||!dst)return;
+  const sw=src.controls.filter(c=>c.waypoint).slice().sort((a,b)=>a.t-b.t);
+  const dw=dst.controls.filter(c=>c.waypoint).slice().sort((a,b)=>a.t-b.t);
+  if(sw.length!==dw.length)return;
+
+  for(let i=0;i<sw.length;i++){
+    if(!sw[i].surfacePos||!sw[i].surfaceNormal)continue;
+    const p=mirrorWorldPointX(new THREE.Vector3().fromArray(sw[i].surfacePos));
+    const n=mirrorWorldNormalX(new THREE.Vector3().fromArray(sw[i].surfaceNormal));
+    dw[i].t=sw[i].t;
+    bindWaypointToFrame(dst,dw[i],p,n);
+  }
+  updateStrapGeometry(dst);
+}
 function reprojectAttachedWaypoints(nodeId){
   const touched=new Set();
   for(const s of straps.values()){
+    if(touched.has(s.id))continue;
     if((s.a===nodeId||s.b===nodeId)&&s.controls.some(c=>c.waypoint)){
-      reprojectStrapWaypoints(s);
-      touched.add(s.id);
+      const ps=pairOfStrap(s);
+      const master=ps && s.id>ps.id ? ps : s;
+      const mate=ps ? (master===s?ps:s) : null;
+      if(!touched.has(master.id)){
+        reprojectStrapWaypoints(master);
+        if(mate)mirrorWaypointsToPartner(master,mate);
+        touched.add(master.id);
+        if(mate)touched.add(mate.id);
+      }
     }
   }
   return touched;
 }
 function reprojectAllWaypoints(){
-  for(const s of straps.values())if(s.controls.some(c=>c.waypoint))reprojectStrapWaypoints(s);
+  const handled=new Set();
+  for(const s of straps.values()){
+    if(handled.has(s.id)||!s.controls.some(c=>c.waypoint))continue;
+    const ps=pairOfStrap(s);
+    const master=ps && s.id>ps.id ? ps : s;
+    const mate=ps ? (master===s?ps:s) : null;
+    reprojectStrapWaypoints(master);
+    if(mate)mirrorWaypointsToPartner(master,mate);
+    handled.add(master.id);
+    if(mate)handled.add(mate.id);
+  }
 }
 function waypointPatternMatches(a,b){
   const ac=a.controls.filter(c=>c.waypoint),bc=b.controls.filter(c=>c.waypoint);
@@ -1506,9 +1585,111 @@ deleteSelectedBtn.addEventListener('click',()=>{
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
 
+
+function clearWaypointGuide(){
+  waypointGuideSamples=null;
+  while(waypointGuideRoot.children.length){
+    const o=waypointGuideRoot.children.pop();
+    o.geometry?.dispose?.();
+    o.material?.dispose?.();
+  }
+}
+function buildWaypointGuide(s){
+  clearWaypointGuide();
+  if(!s)return false;
+
+  const curve=effectiveStrapCurve(s);
+  const samples=[];
+  const N=28;
+
+  for(let i=0;i<=N;i++){
+    const t=i/N;
+    const candidate=curve.getPoint(t);
+    let preferred;
+    try{preferred=strapNormalAt(s,t)}catch{preferred=strapFrame(s).normal.clone()}
+    if(preferred.lengthSq()<1e-8)preferred=strapFrame(s).normal.clone();
+
+    const hit=nearestBodySurfacePreferred(candidate,preferred)||
+              nearestBodySurface(candidate);
+    if(!hit)continue;
+
+    // Lift by a few mm purely for z-fighting-safe visualization.
+    const surfacePoint=hit.point.clone();
+    const normal=hit.normal.clone().normalize();
+    const displayPoint=surfacePoint.clone().addScaledVector(normal,.009);
+    samples.push({t,point:surfacePoint,normal,displayPoint});
+  }
+
+  if(samples.length<2)return false;
+  waypointGuideSamples=samples;
+
+  const positions=[];
+  for(const g of samples)positions.push(g.displayPoint.x,g.displayPoint.y,g.displayPoint.z);
+
+  const geom=new THREE.BufferGeometry();
+  geom.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  const mat=new THREE.LineBasicMaterial({
+    color:0x00d8ff,transparent:true,opacity:.96,depthTest:true,depthWrite:false
+  });
+  const line=new THREE.Line(geom,mat);
+  line.renderOrder=20;
+  waypointGuideRoot.add(line);
+
+  const pgeom=geom.clone();
+  const pmat=new THREE.PointsMaterial({
+    color:0x00d8ff,size:4.5,sizeAttenuation:false,
+    transparent:true,opacity:.8,depthTest:true,depthWrite:false
+  });
+  const points=new THREE.Points(pgeom,pmat);
+  points.renderOrder=21;
+  waypointGuideRoot.add(points);
+  return true;
+}
+function waypointGuideHit(x,y){
+  if(!waypointGuideSamples?.length)return null;
+  const rect=canvas.getBoundingClientRect();
+  const px=x-rect.left,py=y-rect.top;
+
+  let best=null,bestD=Infinity;
+  for(let i=0;i<waypointGuideSamples.length-1;i++){
+    const a=waypointGuideSamples[i],b=waypointGuideSamples[i+1];
+    const qa=a.displayPoint.clone().project(camera);
+    const qb=b.displayPoint.clone().project(camera);
+    if(qa.z<-1||qa.z>1||qb.z<-1||qb.z>1)continue;
+
+    const ax=(qa.x*.5+.5)*rect.width, ay=(-qa.y*.5+.5)*rect.height;
+    const bx=(qb.x*.5+.5)*rect.width, by=(-qb.y*.5+.5)*rect.height;
+    const abx=bx-ax,aby=by-ay,len2=abx*abx+aby*aby;
+    if(len2<1e-8)continue;
+
+    const u=THREE.MathUtils.clamp(((px-ax)*abx+(py-ay)*aby)/len2,0,1);
+    const sx=ax+u*abx,sy=ay+u*aby,d=Math.hypot(px-sx,py-sy);
+    if(d>=bestD)continue;
+
+    const point=a.point.clone().lerp(b.point,u);
+    let normal=a.normal.clone().lerp(b.normal,u);
+    if(normal.lengthSq()<1e-8)normal=a.normal.clone();
+    normal.normalize();
+
+    // Do not allow selecting a guide segment hidden behind the mannequin.
+    const visibilityProbe=point.clone().addScaledVector(normal,.012);
+    if(bodyOccludesWorldPoint(visibilityProbe,.025))continue;
+
+    bestD=d;
+    best={
+      t:THREE.MathUtils.lerp(a.t,b.t,u),
+      point,normal,distancePx:d
+    };
+  }
+
+  // Fairly generous touch corridor around the visible cyan line.
+  return best&&bestD<=34?best:null;
+}
+
 function cancelWaypointPlacement({quiet=false}={}){
   const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
   waypointPlacementStrapId=null;
+  clearWaypointGuide();
   curvePlusBtn.classList.remove('active');
   canvas.classList.remove('placing-waypoint');
   if(s)refreshMaterials();
@@ -1521,20 +1702,17 @@ function beginWaypointPlacement(s){
   canvas.classList.add('placing-waypoint');
   selectObject(s);
   refreshMaterials();
-  showToast('Auf die gewünschte Stelle am Körper tippen');
-}
-function addWaypointFromBodyHit(s,hit){
-  if(!s||!hit)return false;
-  const p=hit.point.clone(),normal=worldNormal(hit);
 
-  // t is used only to order the user-selected surface points along the strap.
-  const curve=effectiveStrapCurve(s);
-  let bestT=.5,bestD=Infinity;
-  for(let i=0;i<=100;i++){
-    const t=i/100,d=curve.getPoint(t).distanceToSquared(p);
-    if(d<bestD){bestD=d;bestT=t}
+  if(buildWaypointGuide(s))showToast('Auf die cyanfarbene Auflagelinie tippen');
+  else{
+    cancelWaypointPlacement({quiet:true});
+    showToast('Auflagelinie konnte nicht berechnet werden');
   }
-  bestT=THREE.MathUtils.clamp(bestT,.025,.975);
+}
+function addWaypointFromGuideHit(s,guideHit){
+  if(!s||!guideHit)return false;
+  const p=guideHit.point.clone(),normal=guideHit.normal.clone().normalize();
+  const bestT=THREE.MathUtils.clamp(guideHit.t,.025,.975);
 
   s.surfaceLevel=0;
   const c={t:bestT,waypoint:true};
@@ -1546,11 +1724,10 @@ function addWaypointFromBodyHit(s,hit){
   const ps=pairOfStrap(s);
   if(ps){
     ps.surfaceLevel=0;
-    const mirrored=p.clone();mirrored.x*=-1;
-    const mirroredNormal=normal.clone();mirroredNormal.x*=-1;
-    const ph=nearestBodySurfacePreferred(mirrored,mirroredNormal)||nearestBodySurface(mirrored);
+    const mirrored=mirrorWorldPointX(p);
+    const mirroredNormal=mirrorWorldNormalX(normal);
     const pc={t:bestT,waypoint:true};
-    bindWaypointToFrame(ps,pc,ph?.point||mirrored,ph?.normal||mirroredNormal);
+    bindWaypointToFrame(ps,pc,mirrored,mirroredNormal);
     ps.controls.push(pc);
     ps.controls.sort((a,b)=>a.t-b.t);
     updateStrapGeometry(ps);
@@ -2425,11 +2602,12 @@ canvas.addEventListener('pointerup',e=>{
   if(was.waypointPlacement){
     const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
     if(was.moved){showToast('Bitte die gewünschte Körperstelle antippen');return}
-    const bh=bodyHit(e.clientX,e.clientY);
-    if(!bh){showToast('Bitte direkt auf das Mannequin tippen');return}
+    const gh=waypointGuideHit(e.clientX,e.clientY);
+    if(!gh){showToast('Bitte direkt auf die cyanfarbene Linie tippen');return}
 
-    if(s&&addWaypointFromBodyHit(s,bh)){
+    if(s&&addWaypointFromGuideHit(s,gh)){
       waypointPlacementStrapId=null;
+      clearWaypointGuide();
       curvePlusBtn.classList.remove('active');
       canvas.classList.remove('placing-waypoint');
       selectObject(s);
