@@ -10,6 +10,8 @@ const linkSelectedBtn=$('linkSelectedBtn'),lockSelectedBtn=$('lockSelectedBtn'),
 const undoBtn=$('undoBtn'),redoBtn=$('redoBtn');
 const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),rotateModelBtn=$('rotateModelBtn');
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
+const panelToggle=$('panelToggle'),panelConfirmBtn=$('panelConfirmBtn');
+const panelControls=$('panelControls'),panelPointCount=$('panelPointCount'),panelPointPlusBtn=$('panelPointPlusBtn'),panelPointMinusBtn=$('panelPointMinusBtn'),panelPointAutoBtn=$('panelPointAutoBtn');
 const modelInput=$('modelInput'),uploadModelBtn=$('uploadModelBtn'),reloadModelBtn=$('reloadModelBtn');
 const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationResetBtn');
 const bodyFemaleBtn=$('bodyFemaleBtn'),bodyMaleBtn=$('bodyMaleBtn');
@@ -49,6 +51,8 @@ const modelRoot=new THREE.Group();scene.add(modelRoot);
 const nodeRoot=new THREE.Group();scene.add(nodeRoot);
 const strapRoot=new THREE.Group();scene.add(strapRoot);
 const helperRoot=new THREE.Group();scene.add(helperRoot);
+const panelRoot=new THREE.Group();scene.add(panelRoot);
+const panelGuideRoot=new THREE.Group();scene.add(panelGuideRoot);
 const waypointGuideRoot=new THREE.Group();scene.add(waypointGuideRoot);
 
 const BODY_MAT=new THREE.MeshStandardMaterial({color:0xe9e9e9,roughness:.72,metalness:0});
@@ -60,6 +64,9 @@ const STRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,met
 const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,metalness:0,side:THREE.DoubleSide,emissive:0x302916,emissiveIntensity:.55});
 const WRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
 const CONTROL_MAT=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.78});
+const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92});
+const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x302d24,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x55461f,emissiveIntensity:.55,transparent:true,opacity:.96});
+const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
 let bodyMeshes=[];
 let importedModel=null;
@@ -83,7 +90,11 @@ let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localS
 let selected=null,connectStart=null;
 let waypointPlacementStrapId=null;
 let waypointGuideSamples=null;
-let nextNodeId=1,nextStrapId=1;
+let nextNodeId=1,nextStrapId=1,nextPanelId=1;
+let panels=new Map();
+let panelBuildNodes=[];
+let panelGuideSamples=null;
+let panelPointPlacementId=null;
 let nodes=new Map(),straps=new Map();
 let undoStack=[],redoStack=[],restoring=false;
 let toastTimer=null;
@@ -262,6 +273,7 @@ function reprojectHarnessToBody(){
   // Body shape changed: surface waypoints get one fresh projection too.
   reprojectAllWaypoints();
   for(const s of straps.values())updateStrapGeometry(s);
+  updateAllPanels();
   rebuildAllWraps();
   refreshAutomaticCrossings();
   dynReconcileSymmetry({syncProps:true});
@@ -559,13 +571,14 @@ function makeNode(data={}){
   const num=Number(id.replace(/\D/g,''));if(Number.isFinite(num))nextNodeId=Math.max(nextNodeId,num+1);
   const n={
     id,kind:'node',
-    position:data.position||[0,0,0],normal:data.normal||[0,0,1],
+    position:data.position?[...data.position]:[0,0,0],normal:data.normal?[...data.normal]:[0,0,1],
     ringVisible:data.ringVisible!==false,
     diameterMM:data.diameterMM??ringDefaults.diameterMM,thicknessMM:data.thicknessMM??ringDefaults.thicknessMM,sizeMM:data.sizeMM??globalAnchorSizeMM,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     source:data.source||'surface',parentStrapId:data.parentStrapId||null,t:data.t??.5,
-    crossing:data.crossing||null,autoCrossing:!!data.autoCrossing,
-    splitMeta:data.splitMeta||null,mergedState:data.mergedState||null,
+    crossing:data.crossing?historyClone(data.crossing):null,autoCrossing:!!data.autoCrossing,
+    splitMeta:data.splitMeta?historyClone(data.splitMeta):null,
+    mergedState:data.mergedState?historyClone(data.mergedState):null,
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
@@ -1059,6 +1072,221 @@ function visibleEndpoint(node,targetPoint){
   return center.add(d.normalize().multiplyScalar(ringMajor(node)));
 }
 
+
+function panelBoundaryWorld(panel){
+  return panel.nodeIds.map(id=>nodes.get(id)).filter(Boolean).map(nodeWorldPosition);
+}
+function panelAverageNormal(panel){
+  const ns=panel.nodeIds.map(id=>nodes.get(id)).filter(Boolean).map(nodeWorldNormal);
+  const n=new THREE.Vector3();
+  for(const x of ns)n.add(x);
+  if(n.lengthSq()<1e-8)n.set(0,0,1);
+  return n.normalize();
+}
+function panelBasis(panel){
+  const pts=panelBoundaryWorld(panel);
+  const origin=pts.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/Math.max(pts.length,1));
+  let normal=panelAverageNormal(panel);
+  let u=pts.length>1?pts[1].clone().sub(pts[0]):new THREE.Vector3(1,0,0);
+  u.addScaledVector(normal,-u.dot(normal));
+  if(u.lengthSq()<1e-8)u=new THREE.Vector3(1,0,0).addScaledVector(normal,-normal.x);
+  u.normalize();
+  const v=new THREE.Vector3().crossVectors(normal,u).normalize();
+  return {origin,normal,u,v};
+}
+function panel2D(panel,world,basis=panelBasis(panel)){
+  const d=world.clone().sub(basis.origin);
+  return new THREE.Vector2(d.dot(basis.u),d.dot(basis.v));
+}
+function pointInPoly2(p,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const a=poly[i],b=poly[j];
+    if(((a.y>p.y)!=(b.y>p.y))&&(p.x<(b.x-a.x)*(p.y-a.y)/((b.y-a.y)||1e-9)+a.x))inside=!inside;
+  }
+  return inside;
+}
+function panelSurfacePoint(candidate,normal){
+  const hit=nearestBodySurfacePreferred(candidate,normal)||nearestBodySurface(candidate);
+  return hit?{point:hit.point.clone(),normal:hit.normal.clone().normalize()}:{point:candidate.clone(),normal:normal.clone()};
+}
+function panelApplyControls(panel,p,normal){
+  if(!panel.controls?.length)return {point:p,normal};
+  let out=p.clone(),nout=normal.clone(),sum=0;
+  for(const c of panel.controls){
+    if(!c.surfacePos)continue;
+    const cp=new THREE.Vector3().fromArray(c.surfacePos);
+    const d=Math.max(.025,p.distanceTo(cp));
+    const w=1/(d*d);
+    const delta=cp.clone().sub(p);
+    out.addScaledVector(delta,Math.min(.55,w*.0025));
+    if(c.surfaceNormal)nout.lerp(new THREE.Vector3().fromArray(c.surfaceNormal).normalize(),Math.min(.45,w*.0018));
+    sum+=w;
+  }
+  return {point:out,normal:nout.normalize()};
+}
+function buildPanelGeometry(panel){
+  const boundary=panelBoundaryWorld(panel);
+  if(boundary.length<3)return new THREE.BufferGeometry();
+  const basis=panelBasis(panel);
+  const contour=boundary.map(p=>panel2D(panel,p,basis));
+  let tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  if(!tris.length)return new THREE.BufferGeometry();
+
+  // Start from triangulated boundary, then subdivide twice for small curved panels.
+  let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
+  for(let pass=0;pass<2;pass++){
+    const next=[];
+    for(const [a,b,c] of triWorld){
+      const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
+      next.push([a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]);
+    }
+    triWorld=next;
+  }
+
+  const positions=[], normals=[];
+  for(const tri of triWorld){
+    for(const raw of tri){
+      const surf=panelSurfacePoint(raw,basis.normal);
+      const adjusted=panelApplyControls(panel,surf.point,surf.normal);
+      const q=adjusted.point.clone().addScaledVector(adjusted.normal,surfaceOffsetScene()+.004);
+      positions.push(q.x,q.y,q.z);
+      normals.push(adjusted.normal.x,adjusted.normal.y,adjusted.normal.z);
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  g.computeBoundingSphere();
+  return g;
+}
+function makePanel(data={}){
+  const id=data.id||`P${nextPanelId++}`;
+  const num=Number(id.replace(/\D/g,''));if(Number.isFinite(num))nextPanelId=Math.max(nextPanelId,num+1);
+  const panel={
+    id,kind:'panel',
+    nodeIds:[...(data.nodeIds||[])],
+    controls:historyClone(data.controls||[]),
+    mirrorId:data.mirrorId||null,
+    locked:!!data.locked,
+    previousPartnerId:data.previousPartnerId||null,
+    manualUnlinked:!!data.manualUnlinked,
+    group:new THREE.Group(),mesh:null
+  };
+  panel.mesh=new THREE.Mesh(buildPanelGeometry(panel),selected?.id===id?PANEL_SEL:PANEL_MAT);
+  panel.mesh.userData={kind:'panelMesh',id};
+  panel.group.add(panel.mesh);panelRoot.add(panel.group);panels.set(id,panel);
+  return panel;
+}
+function updatePanelGeometry(panel){
+  if(!panel)return;
+  const old=panel.mesh.geometry;
+  panel.mesh.geometry=buildPanelGeometry(panel);
+  old?.dispose?.();
+}
+function updatePanelsForNode(nodeId){
+  for(const p of panels.values())if(p.nodeIds.includes(nodeId))updatePanelGeometry(p);
+}
+function removePanel(id){
+  const p=panels.get(id);if(!p)return;
+  p.mesh.geometry?.dispose?.();panelRoot.remove(p.group);panels.delete(id);
+}
+function pairOfPanel(p){return p?.mirrorId&&panels.has(p.mirrorId)?panels.get(p.mirrorId):null}
+function mirrorPanelFrom(panel){
+  if(!panel)return null;
+  const mirroredIds=panel.nodeIds.map(id=>{
+    const n=nodes.get(id),m=n?pairOfNode(n):null;
+    if(!n)return null;
+    if(Math.abs(nodeWorldPosition(n).x)<AXIS_SNAP_IN)return id;
+    return m?.id||null;
+  });
+  if(mirroredIds.some(x=>!x))return null;
+  if(mirroredIds.every((x,i)=>x===panel.nodeIds[i]))return null;
+  const existing=[...panels.values()].find(p=>p!==panel&&p.nodeIds.length===mirroredIds.length&&p.nodeIds.every((id,i)=>id===mirroredIds[i]));
+  if(existing){panel.mirrorId=existing.id;existing.mirrorId=panel.id;return existing}
+  const controls=panel.controls.map(c=>({
+    ...c,
+    surfacePos:c.surfacePos?[-c.surfacePos[0],c.surfacePos[1],c.surfacePos[2]]:c.surfacePos,
+    surfaceNormal:c.surfaceNormal?[-c.surfaceNormal[0],c.surfaceNormal[1],c.surfaceNormal[2]]:c.surfaceNormal
+  }));
+  const m=makePanel({nodeIds:mirroredIds,controls});
+  panel.mirrorId=m.id;m.mirrorId=panel.id;
+  return m;
+}
+function panelHit(x,y){
+  if(!panels.size)return null;
+  setPointer(x,y);
+  const bh=raycaster.intersectObjects(bodyMeshes,true)[0]?.distance??Infinity;
+  setPointer(x,y);
+  const hits=raycaster.intersectObjects([...panels.values()].map(p=>p.mesh),false);
+  for(const h of hits)if(h.distance<=bh+.08)return {kind:'panel',id:h.object.userData.id};
+  return null;
+}
+function clearPanelGuide(){
+  panelGuideSamples=null;
+  while(panelGuideRoot.children.length){
+    const o=panelGuideRoot.children.pop();o.geometry?.dispose?.();if(o.material!==PANEL_GUIDE_MAT)o.material?.dispose?.();
+  }
+}
+function buildPanelGuide(panel){
+  clearPanelGuide();if(!panel)return false;
+  const boundary=panelBoundaryWorld(panel);if(boundary.length<3)return false;
+  const basis=panelBasis(panel),poly=boundary.map(p=>panel2D(panel,p,basis));
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const p of poly){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y)}
+  const samples=[];
+  const NX=6,NY=6;
+  for(let iy=1;iy<NY;iy++)for(let ix=1;ix<NX;ix++){
+    const q2=new THREE.Vector2(THREE.MathUtils.lerp(minX,maxX,ix/NX),THREE.MathUtils.lerp(minY,maxY,iy/NY));
+    if(!pointInPoly2(q2,poly))continue;
+    const candidate=basis.origin.clone().addScaledVector(basis.u,q2.x).addScaledVector(basis.v,q2.y);
+    const surf=panelSurfacePoint(candidate,basis.normal);
+    const display=surf.point.clone().addScaledVector(surf.normal,.012);
+    if(bodyOccludesWorldPoint(display,.025))continue;
+    samples.push({point:surf.point,normal:surf.normal,displayPoint:display});
+  }
+  if(!samples.length)return false;
+  panelGuideSamples=samples;
+  const pos=[];for(const s of samples)pos.push(s.displayPoint.x,s.displayPoint.y,s.displayPoint.z);
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const pts=new THREE.Points(g,PANEL_GUIDE_MAT);pts.renderOrder=25;panelGuideRoot.add(pts);
+  return true;
+}
+function panelGuideHit(x,y){
+  if(!panelGuideSamples?.length)return null;
+  const rect=canvas.getBoundingClientRect(),px=x-rect.left,py=y-rect.top;
+  let best=null,bestD=Infinity;
+  for(const s of panelGuideSamples){
+    const q=s.displayPoint.clone().project(camera);
+    if(q.z<-1||q.z>1)continue;
+    const sx=(q.x*.5+.5)*rect.width,sy=(-q.y*.5+.5)*rect.height,d=Math.hypot(px-sx,py-sy);
+    if(d<bestD){bestD=d;best=s}
+  }
+  return best&&bestD<=38?best:null;
+}
+function beginPanelPointPlacement(panel){
+  panelPointPlacementId=panel.id;
+  if(buildPanelGuide(panel))showToast('Auf einen cyanfarbenen Rasterpunkt tippen');
+  else{panelPointPlacementId=null;showToast('Raster konnte nicht berechnet werden')}
+}
+function addPanelSurfaceControl(panel,hit){
+  if(!panel||!hit)return false;
+  panel.controls.push({surfacePos:hit.point.toArray(),surfaceNormal:hit.normal.toArray()});
+  updatePanelGeometry(panel);
+  const pp=pairOfPanel(panel);
+  if(pp){
+    pp.controls.push({
+      surfacePos:[-hit.point.x,hit.point.y,hit.point.z],
+      surfaceNormal:[-hit.normal.x,hit.normal.y,hit.normal.z]
+    });
+    updatePanelGeometry(pp);
+  }
+  return true;
+}
+function updateAllPanels(){
+  for(const p of panels.values())updatePanelGeometry(p);
+}
+
 const STRAP_SAMPLES=18;
 function initStrapGeometry(){
   const positions=new Float32Array((STRAP_SAMPLES+1)*4*3);
@@ -1078,7 +1306,7 @@ function makeStrap(data={}){
   const s={
     id,kind:'strap',a:data.a,b:data.b,widthMM:data.widthMM??strapDefaults.widthMM,slack:data.slack??strapDefaults.slack,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
-    controls:(data.controls||[]).map(c=>({...c})),
+    controls:historyClone(data.controls||[]),
     surfaceLevel:data.surfaceLevel??0,
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
@@ -1529,13 +1757,18 @@ function removeStrap(id){
 }
 function removeNode(id,removeConnected=true){
   const n=nodes.get(id);if(!n)return;
-  if(removeConnected)for(const s of [...straps.values()])if(s.a===id||s.b===id)removeStrap(s.id);
+  if(removeConnected){
+    for(const p of [...panels.values()])if(p.nodeIds.includes(id))removePanel(p.id);
+    for(const s of [...straps.values()])if(s.a===id||s.b===id)removeStrap(s.id);
+  }
   nodeRoot.remove(n.group);nodes.delete(id);
 }
 function clearHarness(){
+  for(const p of [...panels.values()])removePanel(p.id);
   for(const s of [...straps.values()])removeStrap(s.id);
   for(const n of [...nodes.values()])removeNode(n.id,false);
-  nodes.clear();straps.clear();selected=null;connectStart=null;helperRoot.clear();hideSelection();
+  nodes.clear();straps.clear();panels.clear();selected=null;connectStart=null;panelBuildNodes=[];panelPointPlacementId=null;
+  helperRoot.clear();clearPanelGuide();hideSelection();
 }
 
 
@@ -1588,6 +1821,11 @@ function refreshMaterials(){
     const on=selected?.kind==='strap'&&(s.id===selected.id||s.id===selectedStrapPair?.id);
     s.mesh.material=on?STRAP_SEL:STRAP_MAT;
   }
+  const selectedPanelPair=selected?.kind==='panel'?pairOfPanel(selected):null;
+  for(const p of panels.values()){
+    const on=selected?.kind==='panel'&&(p.id===selected.id||p.id===selectedPanelPair?.id);
+    p.mesh.material=on?PANEL_SEL:PANEL_MAT;
+  }
 
   refreshConnectHints();
 }
@@ -1597,7 +1835,8 @@ function showSelection(){
   selectionPanel.classList.remove('hidden');modelPanel.classList.add('hidden');
   nodeControls.classList.toggle('hidden',selected.kind!=='node');
   strapControls.classList.toggle('hidden',selected.kind!=='strap');
-  selectionLabel.textContent=selected.kind==='node'?(selected.ringVisible?'RING':'PUNKT'):'RIEMEN';
+  panelControls.classList.toggle('hidden',selected.kind!=='panel');
+  selectionLabel.textContent=selected.kind==='node'?(selected.ringVisible?'RING':'PUNKT'):selected.kind==='strap'?'RIEMEN':'FLÄCHE';
   selectionTitle.textContent=selected.id;
   lockSelectedBtn.classList.toggle('active',!!selected.locked);
   updateLinkButton();
@@ -1613,7 +1852,7 @@ function showSelection(){
     pointSizeSlider.value=selected.sizeMM;ringDiameterSlider.value=selected.diameterMM;ringThicknessSlider.value=selected.thicknessMM;
     if(movableAnchor){anchorPositionSlider.value=Math.round(selected.t*100);syncParamUI('anchorPosition',Math.round(selected.t*100))}
     syncParamUI('pointSize',selected.sizeMM);syncParamUI('ringDiameter',selected.diameterMM);syncParamUI('ringThickness',selected.thicknessMM);
-  }else{
+  }else if(selected.kind==='strap'){
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
     const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
@@ -1623,45 +1862,205 @@ function showSelection(){
       const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
     }else curvePointCount.textContent='Standard';
+  }else if(selected.kind==='panel'){
+    const pc=selected.controls.length;
+    panelPointCount.textContent=`${pc} ${pc===1?'Punkt':'Punkte'}`;
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
 
+
+function historyClone(value){
+  if(typeof structuredClone==='function'){
+    try{return structuredClone(value)}catch{}
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 function commitHistory(){
   if(restoring)return;
-  const snap=serialize();
+  const snap=historyClone(serialize());
   const sig=JSON.stringify(snap);
   if(undoStack.length&&undoStack[undoStack.length-1].sig===sig)return;
-  undoStack.push({sig,snap});if(undoStack.length>50)undoStack.shift();
-  redoStack=[];updateHistoryButtons();
+  undoStack.push({sig,snap});
+  if(undoStack.length>50)undoStack.shift();
+  redoStack=[];
+  updateHistoryButtons();
   try{localStorage.setItem('harnessDesignerV1',sig)}catch{}
 }
+
 function serialize(){
   return {
-    nextNodeId,nextStrapId,surfaceOffsetMM,
+    nextNodeId,
+    nextStrapId,
+    nextPanelId,
+    surfaceOffsetMM,
+    selection:selected?{kind:selected.kind,id:selected.id}:null,
     nodes:[...nodes.values()].map(n=>({
-      id:n.id,position:n.position,normal:n.normal,ringVisible:n.ringVisible,diameterMM:n.diameterMM,thicknessMM:n.thicknessMM,sizeMM:n.sizeMM,
-      locked:n.locked,mirrorId:n.mirrorId,source:n.source,parentStrapId:n.parentStrapId,t:n.t,crossing:n.crossing,autoCrossing:n.autoCrossing,splitMeta:n.splitMeta,mergedState:n.mergedState||null
+      id:n.id,
+      position:[...n.position],
+      normal:[...n.normal],
+      ringVisible:n.ringVisible,
+      diameterMM:n.diameterMM,
+      thicknessMM:n.thicknessMM,
+      sizeMM:n.sizeMM,
+      locked:n.locked,
+      mirrorId:n.mirrorId||null,
+      source:n.source,
+      parentStrapId:n.parentStrapId||null,
+      t:n.t,
+      crossing:n.crossing?historyClone(n.crossing):null,
+      autoCrossing:!!n.autoCrossing,
+      splitMeta:n.splitMeta?historyClone(n.splitMeta):null,
+      mergedState:n.mergedState?historyClone(n.mergedState):null,
+      dynEditStamp:n.dynEditStamp||0,
+      previousPartnerId:n.previousPartnerId||null,
+      manualUnlinked:!!n.manualUnlinked
     })),
-    straps:[...straps.values()].map(s=>({id:s.id,a:s.a,b:s.b,widthMM:s.widthMM,slack:s.slack,locked:s.locked,mirrorId:s.mirrorId,controls:s.controls,surfaceLevel:s.surfaceLevel||0}))
+    straps:[...straps.values()].map(s=>({
+      id:s.id,
+      a:s.a,
+      b:s.b,
+      widthMM:s.widthMM,
+      slack:s.slack,
+      locked:s.locked,
+      mirrorId:s.mirrorId||null,
+      controls:historyClone(s.controls||[]),
+      surfaceLevel:s.surfaceLevel||0,
+      dynEditStamp:s.dynEditStamp||0,
+      previousPartnerId:s.previousPartnerId||null,
+      manualUnlinked:!!s.manualUnlinked
+    })),
+    panels:[...panels.values()].map(p=>({
+      id:p.id,
+      nodeIds:[...p.nodeIds],
+      controls:historyClone(p.controls||[]),
+      mirrorId:p.mirrorId||null,
+      locked:!!p.locked,
+      previousPartnerId:p.previousPartnerId||null,
+      manualUnlinked:!!p.manualUnlinked
+    }))
   };
 }
+
 function restore(snap){
+  if(!snap)return;
   restoring=true;
-  clearHarness();nextNodeId=snap.nextNodeId||1;nextStrapId=snap.nextStrapId||1;surfaceOffsetMM=snap.surfaceOffsetMM??2;surfaceOffsetSlider.value=surfaceOffsetMM;syncParamUI('surfaceOffset',surfaceOffsetMM);
-  for(const d of snap.nodes||[])makeNode(d);
-  for(const d of snap.straps||[])if(nodes.has(d.a)&&nodes.has(d.b))makeStrap(d);
-  rebuildAllWraps();dynReconcileSymmetry({syncProps:false});restoring=false;updateHistoryButtons();
+
+  try{
+    waypointPlacementStrapId=null;
+    clearWaypointGuide();
+    connectStart=null;
+    single=null;
+    gesture=null;
+    pendingDrag=null;
+    pointers.clear();
+
+    clearHarness();
+
+    nextNodeId=snap.nextNodeId||1;
+    nextStrapId=snap.nextStrapId||1;
+    nextPanelId=snap.nextPanelId||1;
+    surfaceOffsetMM=snap.surfaceOffsetMM??2;
+    surfaceOffsetSlider.value=surfaceOffsetMM;
+    syncParamUI('surfaceOffset',surfaceOffsetMM);
+
+    for(const d0 of snap.nodes||[]){
+      makeNode(historyClone(d0));
+    }
+
+    for(const d0 of snap.straps||[]){
+      const d=historyClone(d0);
+      if(!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)continue;
+      makeStrap(d);
+    }
+    for(const d0 of snap.panels||[]){
+      const d=historyClone(d0);
+      if((d.nodeIds||[]).length<3||d.nodeIds.some(id=>!nodes.has(id)))continue;
+      makePanel(d);
+    }
+
+    for(const d of snap.nodes||[]){
+      const n=nodes.get(d.id);
+      if(!n)continue;
+      n.mirrorId=d.mirrorId&&nodes.has(d.mirrorId)?d.mirrorId:null;
+      n.previousPartnerId=d.previousPartnerId||null;
+      n.manualUnlinked=!!d.manualUnlinked;
+      n.dynEditStamp=d.dynEditStamp||0;
+    }
+
+    for(const d of snap.straps||[]){
+      const s=straps.get(d.id);
+      if(!s)continue;
+      s.mirrorId=d.mirrorId&&straps.has(d.mirrorId)?d.mirrorId:null;
+      s.previousPartnerId=d.previousPartnerId||null;
+      s.manualUnlinked=!!d.manualUnlinked;
+      s.dynEditStamp=d.dynEditStamp||0;
+    }
+
+    for(const d of snap.panels||[]){
+      const p=panels.get(d.id);if(!p)continue;
+      p.mirrorId=d.mirrorId&&panels.has(d.mirrorId)?d.mirrorId:null;
+      p.previousPartnerId=d.previousPartnerId||null;
+      p.manualUnlinked=!!d.manualUnlinked;
+    }
+
+    // Exact restore only: do not run topology discovery/merge logic here.
+    enforcePairMasterVisuals();
+    updateAllPanels();
+
+    for(const s of straps.values()){
+      if(!pairOfStrap(s))updateStrapGeometry(s,{skipPairMirror:true});
+    }
+
+    for(const n of nodes.values()){
+      rebuildNodeVisual(n);
+      syncNodeTransform(n);
+    }
+
+    rebuildAllWraps();
+
+    selected=null;
+    const sel=snap.selection;
+    if(sel?.kind==='node'&&nodes.has(sel.id))selected=nodes.get(sel.id);
+    else if(sel?.kind==='strap'&&straps.has(sel.id))selected=straps.get(sel.id);
+    else if(sel?.kind==='panel'&&panels.has(sel.id))selected=panels.get(sel.id);
+
+    refreshMaterials();
+    if(selected)showSelection();
+    else hideSelection();
+
+  }catch(err){
+    console.error('History restore failed',err);
+    selected=null;
+    hideSelection();
+    showToast('Undo konnte nicht vollständig wiederhergestellt werden');
+  }finally{
+    restoring=false;
+    updateHistoryButtons();
+  }
 }
+
 function undo(){
   if(undoStack.length<2)return;
-  redoStack.push(undoStack.pop());restore(undoStack[undoStack.length-1].snap);
+  const current=undoStack.pop();
+  redoStack.push({sig:current.sig,snap:historyClone(current.snap)});
+  const previous=undoStack[undoStack.length-1];
+  restore(historyClone(previous.snap));
 }
+
 function redo(){
   if(!redoStack.length)return;
-  const x=redoStack.pop();undoStack.push(x);restore(x.snap);
+  const x=redoStack.pop();
+  const cloned={sig:x.sig,snap:historyClone(x.snap)};
+  undoStack.push(cloned);
+  restore(historyClone(cloned.snap));
 }
-function updateHistoryButtons(){undoBtn.disabled=undoStack.length<2;redoBtn.disabled=!redoStack.length}
+
+function updateHistoryButtons(){
+  undoBtn.disabled=undoStack.length<2;
+  redoBtn.disabled=!redoStack.length;
+}
 
 const PRESETS={
   pointSize:{defaults:[4,6,8,10],min:0,max:30,step:1},
@@ -1726,7 +2125,7 @@ strapSlackSlider.addEventListener('change',refreshAutomaticCrossings);
 setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathUtils.degToRad(v)});
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
-setupParam('surfaceOffset',surfaceOffsetSlider,$('surfaceOffsetTools'),v=>{surfaceOffsetMM=v;for(const n of nodes.values())syncNodeTransform(n);for(const s of straps.values())updateStrapGeometry(s)});
+setupParam('surfaceOffset',surfaceOffsetSlider,$('surfaceOffsetTools'),v=>{surfaceOffsetMM=v;for(const n of nodes.values())syncNodeTransform(n);for(const s of straps.values())updateStrapGeometry(s);updateAllPanels()});
 globalAnchorSizeSlider.value=globalAnchorSizeMM;
 
 selectionColorPicker.value=selectionColorHex;
@@ -1746,17 +2145,37 @@ setupParam('globalAnchorSize',globalAnchorSizeSlider,$('globalAnchorSizeTools'),
 
 function setTool(t){
   if(t==='connect'){
-    if(tool==='connect'){tool='ring';connectStart=null}
-    else{tool='connect';connectStart=null}
+    tool=tool==='connect'?'ring':'connect';
+    connectStart=null;
+    panelBuildNodes=[];
+  }else if(t==='panel'){
+    tool=tool==='panel'?'ring':'panel';
+    connectStart=null;
+    panelBuildNodes=[];
   }else{
-    tool='ring';connectStart=null;
+    tool='ring';connectStart=null;panelBuildNodes=[];
   }
   connectToggle.classList.toggle('active',tool==='connect');
   connectToggle.setAttribute('aria-pressed',String(tool==='connect'));
+  panelToggle.classList.toggle('active',tool==='panel');
+  panelToggle.setAttribute('aria-pressed',String(tool==='panel'));
+  panelConfirmBtn.classList.toggle('hidden',tool!=='panel'||panelBuildNodes.length<3);
   refreshMaterials();refreshConnectHints();
 }
 buildTools.addEventListener('click',e=>{
-  const b=e.target.closest('.tool');if(b?.dataset.tool==='connect')setTool('connect');
+  const b=e.target.closest('.tool');
+  if(b?.dataset.tool==='connect')setTool('connect');
+  else if(b?.dataset.tool==='panel')setTool('panel');
+});
+panelConfirmBtn.addEventListener('click',()=>{
+  if(tool!=='panel'||panelBuildNodes.length<3)return;
+  const ids=[...panelBuildNodes];
+  const panel=makePanel({nodeIds:ids});
+  if(mirrorMode)mirrorPanelFrom(panel);
+  panelBuildNodes=[];tool='ring';
+  panelToggle.classList.remove('active');panelToggle.setAttribute('aria-pressed','false');
+  panelConfirmBtn.classList.add('hidden');
+  selectObject(panel);commitHistory();showToast('Fläche erstellt');
 });
 
 nodeRingToggle.addEventListener('click',()=>{
@@ -1786,7 +2205,7 @@ nodeRingToggle.addEventListener('click',()=>{
 });
 linkSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
-  const linked=selected.kind==='node'?!!pairOfNode(selected):!!pairOfStrap(selected);
+  const linked=selected.kind==='node'?!!pairOfNode(selected):selected.kind==='strap'?!!pairOfStrap(selected):!!pairOfPanel(selected);
 
   if(linked){
     if(manuallyUnlinkSelected()){
@@ -1822,10 +2241,14 @@ deleteSelectedBtn.addEventListener('click',()=>{
     const partner=pairOfNode(was);
     if(nodes.has(was.id))removeNode(was.id);
     if(partner&&nodes.has(partner.id))removeNode(partner.id);
-  }else{
+  }else if(was.kind==='strap'){
     const partner=pairOfStrap(was);
     if(straps.has(was.id))removeStrap(was.id);
     if(partner&&straps.has(partner.id))removeStrap(partner.id);
+  }else if(was.kind==='panel'){
+    const partner=pairOfPanel(was);
+    if(panels.has(was.id))removePanel(was.id);
+    if(partner&&panels.has(partner.id))removePanel(partner.id);
   }
 
   selected=null;
@@ -1834,6 +2257,25 @@ deleteSelectedBtn.addEventListener('click',()=>{
   refreshAutomaticCrossings();
   commitHistory();
 });
+
+panelPointPlusBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='panel')return;
+  if(panelPointPlacementId===selected.id){panelPointPlacementId=null;clearPanelGuide();return}
+  beginPanelPointPlacement(selected);
+});
+panelPointMinusBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='panel'||!selected.controls.length)return;
+  selected.controls.pop();updatePanelGeometry(selected);
+  const pp=pairOfPanel(selected);if(pp?.controls.length){pp.controls.pop();updatePanelGeometry(pp)}
+  showSelection();commitHistory();
+});
+panelPointAutoBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='panel')return;
+  selected.controls=[];updatePanelGeometry(selected);
+  const pp=pairOfPanel(selected);if(pp){pp.controls=[];updatePanelGeometry(pp)}
+  showSelection();commitHistory();
+});
+
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
 
@@ -2248,7 +2690,7 @@ function clearCurrentPair(a,b){
 }
 function manuallyUnlinkSelected(){
   if(!selected)return false;
-  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
+  const partner=selected.kind==='node'?pairOfNode(selected):selected.kind==='strap'?pairOfStrap(selected):pairOfPanel(selected);
   if(!partner)return false;
 
   rememberFormerPartners(selected,partner);
@@ -2317,14 +2759,14 @@ function reconnectSelected(){
   return reconnectStrapToFormerPartner(selected);
 }
 function updateLinkButton(){
-  if(!selected){
+  if(!selected||selected.kind==='panel'){
     linkSelectedBtn.disabled=true;
     linkSelectedBtn.classList.remove('active','unlinked');
     linkSelectedBtn.setAttribute('aria-pressed','false');
     return;
   }
 
-  const partner=selected.kind==='node'?pairOfNode(selected):pairOfStrap(selected);
+  const partner=selected.kind==='node'?pairOfNode(selected):selected.kind==='strap'?pairOfStrap(selected):pairOfPanel(selected);
   const formerId=selected.previousPartnerId;
   const formerExists=selected.kind==='node'?nodes.has(formerId):straps.has(formerId);
   const linked=!!partner;
@@ -2601,7 +3043,7 @@ mirrorSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
   if(selected.kind==='node'){
     const m=mirrorNode(selected);syncNodeTransform(m);commitHistory();showToast('Gespiegelt');
-  }else{
+  }else if(selected.kind==='strap'){
     const a=mirrorNode(nodes.get(selected.a)),b=mirrorNode(nodes.get(selected.b));
     let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
     if(!existing){
@@ -2614,6 +3056,11 @@ mirrorSelectedBtn.addEventListener('click',()=>{
       selected.mirrorId=m.id;m.mirrorId=selected.id;rememberFormerPartners(selected,m);
     }
     rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
+  }
+  }else if(selected.kind==='panel'){
+    const m=mirrorPanelFrom(selected);
+    if(m){selectObject(selected);commitHistory();showToast('Fläche gespiegelt')}
+    else showToast('Fläche kann nicht gespiegelt werden');
   }
 });
 
@@ -2811,6 +3258,9 @@ function interactiveHit(x,y){
     if(sh.distance<=bodyDistance+.055)return {kind:'strap',id:sh.object.userData.id};
   }
 
+  const ph=panelHit(x,y);
+  if(ph)return ph;
+
   return null;
 }
 function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
@@ -2905,6 +3355,8 @@ function requestNodeDrag(n,x,y){
     // Preserve the user's manual route while the endpoint moves.
     // This is only weighted translation + the existing cheap geometry update.
     if(single?.waypointDragState)updateEndpointWaypointDragState(single.waypointDragState);
+    updatePanelsForNode(q.n.id);
+    const qp=pairOfNode(q.n);if(qp)updatePanelsForNode(qp.id);
   });
 }
 function screenPlanePoint(x,y,point){
@@ -2925,6 +3377,10 @@ canvas.addEventListener('pointerdown',e=>{
   // One-shot waypoint placement: the mannequin owns this tap.
   if(waypointPlacementStrapId){
     single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,waypointPlacement:true};
+    return;
+  }
+  if(panelPointPlacementId){
+    single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,panelPointPlacement:true};
     return;
   }
 
@@ -2955,6 +3411,15 @@ canvas.addEventListener('pointermove',e=>{
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
   if(single.waypointPlacement){
     // Point mode does not freeze navigation: drag rotates, tap places.
+    if(single.moved){
+      camAz-=(e.clientX-single.lx)*.007;
+      camEl=THREE.MathUtils.clamp(camEl+(e.clientY-single.ly)*.006,-1.2,1.2);
+      updateCamera();
+    }
+    single.lx=e.clientX;single.ly=e.clientY;
+    return;
+  }
+  if(single.panelPointPlacement){
     if(single.moved){
       camAz-=(e.clientX-single.lx)*.007;
       camEl=THREE.MathUtils.clamp(camEl+(e.clientY-single.ly)*.006,-1.2,1.2);
@@ -3003,6 +3468,19 @@ canvas.addEventListener('pointerup',e=>{
     return;
   }
 
+  if(was.panelPointPlacement){
+    if(was.moved)return;
+    const panel=panelPointPlacementId?panels.get(panelPointPlacementId):null;
+    const gh=panelGuideHit(e.clientX,e.clientY);
+    if(!gh){showToast('Bitte auf einen cyanfarbenen Rasterpunkt tippen');return}
+    if(panel&&addPanelSurfaceControl(panel,gh)){
+      panelPointPlacementId=null;clearPanelGuide();
+      selectObject(panel);showSelection();commitHistory();showToast('Flächenpunkt gesetzt');
+    }
+    return;
+  }
+
+
   if(was.moved){
     const movedNode=was.activeNodeId?nodes.get(was.activeNodeId):null;
     if(movedNode){
@@ -3018,7 +3496,18 @@ canvas.addEventListener('pointerup',e=>{
   }
   const hit=was.hit||interactiveHit(e.clientX,e.clientY);
   if(hit?.kind==='node'){
-    const n=nodes.get(hit.id);selectObject(n);
+    const n=nodes.get(hit.id);
+
+    if(tool==='panel'){
+      if(!panelBuildNodes.includes(n.id))panelBuildNodes.push(n.id);
+      else panelBuildNodes=panelBuildNodes.filter(id=>id!==n.id);
+      panelConfirmBtn.classList.toggle('hidden',panelBuildNodes.length<3);
+      selected=n;refreshMaterials();
+      showToast(`${panelBuildNodes.length} Punkte gewählt`);
+      return;
+    }
+
+    selectObject(n);
     if(tool==='connect'){
       if(!connectStart){connectStart=n.id;refreshMaterials();refreshConnectHints();showToast(`${n.id} gewählt`)}
       else if(connectStart!==n.id){
@@ -3035,7 +3524,8 @@ canvas.addEventListener('pointerup',e=>{
     return;
   }
   if(hit?.kind==='strap'){selectObject(straps.get(hit.id));return}
-  if(tool!=='connect'&&mode==='build'){
+  if(hit?.kind==='panel'){selectObject(panels.get(hit.id));return}
+  if(tool!=='connect'&&tool!=='panel'&&mode==='build'){
     const bh=bodyHit(e.clientX,e.clientY);if(!bh)return;
     const p=snapAxis(bh.point.clone());
     const normal=Math.abs(p.x)<AXIS_SNAP_IN?symmetryAxisNormal(worldNormal(bh)):worldNormal(bh);

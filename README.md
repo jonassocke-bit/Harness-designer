@@ -1,30 +1,37 @@
-# Harness Designer V1.6d
+# Harness Designer V1.7 — Panels / Flächen
 
-Built on V1.6c.
+Built on V1.6e.
 
-## Lockerheit on waypoint straps
-Manual waypoint straps now respond clearly to Lockerheit again:
-- Lockerheit 0 follows the selected surface route closely
-- increasing Lockerheit lifts the center of the waypoint route progressively
-- endpoint-near controls lift less so ring connections remain stable
+## New object: Panel
+A panel is defined by 3+ existing nodes (rings, anchors or points).
 
-## Strap merge on the symmetry axis
-If a mirrored strap pair ends up connected to the exact same two merged center
-rings, the pair collapses into one physical strap. This is the strap equivalent
-of merging a mirrored ring pair on X=0.
+Workflow:
+1. Tap `▰ Fläche` next to `↔ Verbinden`
+2. Tap boundary nodes in order
+3. From 3 nodes onward `Fläche erstellen` becomes available
+4. Confirm once; tool returns to normal build mode
 
-## Anchor -> Ring preserves the route
-Converting an anchor/crossing point into a ring no longer creates two fresh
-straight child straps.
+Panels:
+- are independent geometry objects
+- follow their boundary nodes dynamically
+- use a subdivided triangulated surface mesh
+- project their mesh vertices onto the mannequin surface
+- have a dark neutral placeholder material
+- are selectable and deletable
+- are included in robust Undo/Redo snapshots
 
-Before the parent is split:
-- the visible parent curve is sampled
-- each child receives three hidden inherited route controls from its corresponding
-  section of that exact parent curve
-- width and Lockerheit are retained
-- the inherited controls are not shown/count as user-added Auflagepunkte
+## Surface raster
+Select a panel and tap `+ Punkt`.
+A cyan projected raster appears inside the panel boundary.
+Tap one raster point to add a local surface control point.
+Camera drag remains available while waiting for a tap.
 
-The result is that adding an anchor and converting it to a ring should visually
-leave the strap route in place, instead of making both children clip through the body.
+`- Punkt` removes the last surface control.
+`Auto` clears manual panel controls.
 
-Undo / Ring -> Point still restores the original parent snapshot.
+## Symmetry
+If all boundary nodes have mirrored counterparts, a panel can create a mirrored
+partner. The partner uses mirrored boundary IDs and mirrored surface-control data.
+
+Material types, leather/mesh, edge/border rendering and photo-mode baking are
+intentionally deferred to the later Material/Bake pipeline.
