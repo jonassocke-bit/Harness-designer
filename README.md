@@ -1,11 +1,15 @@
-# Harness Designer V1.8d
+# Harness Designer V1.8e
 
-Stable V1.8c base plus:
-- repaired manual cyan projection guide: denser continuous chord-to-body projection
-- Auto is now a real per-strap toggle
-- Auto uses a cheap projected-chord route, not the discarded recursive collision solver
-- Auto recomputes only after releasing a moved ring; dragging keeps the cheap existing geometry
-- projected Auto route is simplified to a small number of meaningful surface points
-- existing V1.7c panel/body-fit system is intentionally left intact in this build
+Based on the stable V1.8d/V1.8c line.
 
-This keeps the stable panel baseline while testing the new surface-extraction-style strap idea independently.
+Changes:
+- Manual cyan guide is now generated from the perfectly straight Ring-A-centre -> Ring-B-centre chord.
+- Projection samples are spaced by strap length: approximately one sample every 5 cm (3–24 segments).
+- Each chord sample is ray-cast toward the mannequin along the interpolated endpoint surface normal.
+- Rare missed samples are interpolated, so the cyan line has no holes.
+- Auto uses exactly the same projected chord data as manual mode.
+- Auto route reduction is capped at 8 points.
+- Auto button now has an explicit visible active/pressed style.
+- While +Punkt mode is waiting for input, two-finger pinch/pan works normally.
+- One-finger drag still rotates the camera while staying in point-placement mode.
+- Panel code is unchanged.

@@ -216,3 +216,11 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
 
 /* V1.7c auto-fit panels */
 #panelControls .parameter{padding-top:4px}
+
+/* V1.8e */
+.soft-btn.active,
+.soft-btn[aria-pressed="true"]{
+  background:#fff;
+  color:#17171a;
+  border-color:#fff;
+}

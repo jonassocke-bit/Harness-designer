@@ -2411,67 +2411,91 @@ function clearWaypointGuide(){
 // Start from the straight endpoint chord, project samples to the mannequin,
 // reject implausible jumps, then fill tiny misses by interpolation.
 // This is intentionally NOT the old recursive collision solver.
-function projectedChordSamples(s,{count=32,lift=0}={}){
+function projectedChordSamples(s,{count=null,lift=0}={}){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return [];
+
   const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
   const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
-  const raw=new Array(count+1);
-  let previous=null;
+  const length=A.distanceTo(B);
 
-  for(let i=0;i<=count;i++){
-    const t=i/count;
+  // Approx. one projection sample every 5 cm.
+  // Existing scene scale: 1 mm ≈ 0.0037 scene units => 50 mm ≈ 0.185.
+  const segments=count??THREE.MathUtils.clamp(Math.ceil(length/.185),3,24);
+  const raw=[];
+
+  for(let i=0;i<=segments;i++){
+    const t=i/segments;
     const candidate=A.clone().lerp(B,t);
+
     let preferred=nA.clone().lerp(nB,t);
     if(preferred.lengthSq()<1e-8)preferred=strapFrame(s).normal.clone();
     preferred.normalize();
 
-    const options=[];
-    const h1=nearestBodySurfacePreferred(candidate,preferred);
-    if(h1)options.push(h1);
-    const h2=nearestBodySurface(candidate);
-    if(h2)options.push(h2);
-    if(!options.length){raw[i]=null;continue}
-
-    // Continuity wins over a slightly nearer hit. This prevents a sample
-    // suddenly jumping from torso to breast/arm and creating the visible kink.
     let best=null,bestScore=Infinity;
-    for(const h of options){
-      const jump=previous?h.point.distanceTo(previous.point):0;
-      const normalPenalty=previous?(1-Math.max(-1,Math.min(1,h.normal.dot(previous.normal))))*.10:0;
-      const chordPenalty=h.point.distanceTo(candidate)*.16;
-      const score=jump*.35+normalPenalty+chordPenalty;
-      if(score<bestScore){bestScore=score;best=h}
+
+    // Cast from outside toward the mannequin along the interpolated endpoint normal.
+    // This keeps every sample tied to the SAME straight A→B chord instead of
+    // following an already-curved strap or hopping to a nearby body region.
+    for(const sign of [1,-1]){
+      const origin=candidate.clone().addScaledVector(preferred,sign*1.35);
+      const dir=preferred.clone().multiplyScalar(-sign);
+      raycaster.set(origin,dir);
+
+      const hits=raycaster.intersectObjects(bodyMeshes,true);
+      for(const h of hits.slice(0,5)){
+        const normal=worldNormal(h);
+        const alignment=normal.dot(preferred);
+        const distance=h.point.distanceTo(candidate);
+
+        // Prefer the intended body side and the hit closest to the chord point.
+        const sidePenalty=alignment<-.15?.8:(1-Math.max(0,alignment))*.08;
+        const score=distance+sidePenalty;
+        if(score<bestScore){
+          bestScore=score;
+          best={point:h.point.clone(),normal};
+        }
+      }
     }
-    if(previous&&best.point.distanceTo(previous.point)>A.distanceTo(B)/Math.max(5,count*.32)){
-      raw[i]=null;
-    }else{
-      raw[i]={t,point:best.point.clone(),normal:best.normal.clone().normalize()};
-      previous=raw[i];
+
+    // Endpoints themselves remain exact ring centres for a stable parameter line.
+    if(i===0)best={point:A.clone(),normal:nA.clone().normalize()};
+    if(i===segments)best={point:B.clone(),normal:nB.clone().normalize()};
+
+    if(best){
+      raw.push({
+        t,
+        point:best.point,
+        normal:best.normal.clone().normalize()
+      });
     }
   }
 
-  // Endpoints are known anchors; missing local projections are interpolated
-  // rather than leaving a gap in the cyan line.
-  raw[0]={t:0,point:A.clone(),normal:nA.clone().normalize()};
-  raw[count]={t:1,point:B.clone(),normal:nB.clone().normalize()};
-  for(let i=1;i<count;i++){
-    if(raw[i])continue;
-    let l=i-1,r=i+1;
-    while(l>=0&&!raw[l])l--;
-    while(r<=count&&!raw[r])r++;
-    if(l>=0&&r<=count){
-      const u=(i-l)/(r-l);
-      let n=raw[l].normal.clone().lerp(raw[r].normal,u);
-      if(n.lengthSq()<1e-8)n=preferred.clone();
-      raw[i]={t:i/count,point:raw[l].point.clone().lerp(raw[r].point,u),normal:n.normalize()};
+  // Fill the rare missed raycast between neighbouring valid samples.
+  // No visual gap is allowed in the manual cyan guide.
+  const out=[];
+  for(let i=0;i<=segments;i++){
+    const t=i/segments;
+    let g=raw.find(x=>Math.abs(x.t-t)<1e-8);
+    if(!g){
+      let left=null,right=null;
+      for(const x of raw){
+        if(x.t<t)left=x;
+        if(x.t>t){right=x;break}
+      }
+      if(left&&right){
+        const u=(t-left.t)/(right.t-left.t);
+        let n=left.normal.clone().lerp(right.normal,u);
+        if(n.lengthSq()<1e-8)n=left.normal.clone();
+        g={t,point:left.point.clone().lerp(right.point,u),normal:n.normalize()};
+      }
     }
+    if(g)out.push({
+      ...g,
+      displayPoint:g.point.clone().addScaledVector(g.normal,lift)
+    });
   }
-
-  return raw.filter(Boolean).map(g=>({
-    ...g,
-    displayPoint:g.point.clone().addScaledVector(g.normal,lift)
-  }));
+  return out;
 }
 
 function simplifyProjectedRoute(samples,maxPoints=9){
@@ -2501,9 +2525,9 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
-  const samples=projectedChordSamples(s,{count:28,lift:surfaceClearanceForStrap(s)});
+  const samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
   if(samples.length<3)return;
-  const reduced=simplifyProjectedRoute(samples,10);
+  const reduced=simplifyProjectedRoute(samples,8);
   s.surfaceLevel=0;
   s.controls=[];
   for(const g of reduced.slice(1,-1)){
@@ -2517,7 +2541,7 @@ function rebuildAutoProjection(s){
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-  const samples=projectedChordSamples(s,{count:40,lift:.009});
+  const samples=projectedChordSamples(s,{lift:.009});
   if(samples.length<2)return false;
   waypointGuideSamples=samples;
 
@@ -2592,6 +2616,7 @@ function beginWaypointPlacement(s){
   if(!s)return;
   s.autoProject=false;
   const aps=pairOfStrap(s);if(aps)aps.autoProject=false;
+  showSelection();
   waypointPlacementStrapId=s.id;
   curvePlusBtn.classList.add('active');
   canvas.classList.add('placing-waypoint');
@@ -3618,14 +3643,23 @@ function updateManualControlFromWorld(s,index,world){
 canvas.addEventListener('pointerdown',e=>{
   canvas.setPointerCapture?.(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
 
-  // One-shot waypoint placement: the mannequin owns this tap.
-  if(waypointPlacementStrapId){
-    single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,waypointPlacement:true};
+  // Two-finger camera gesture always wins — including while waiting for
+  // a manual waypoint tap.
+  if(pointers.size===2){
+    const a=[...pointers.values()];
+    gesture={
+      dist:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),
+      mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,
+      camDist,target:target.clone(),camAz,camEl
+    };
+    single=null;
     return;
   }
 
-  if(pointers.size===2){
-    const a=[...pointers.values()];gesture={dist:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,camDist,target:target.clone(),camAz,camEl};single=null;return;
+  // One-finger tap/drag remains in waypoint-placement mode.
+  if(waypointPlacementStrapId){
+    single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,waypointPlacement:true};
+    return;
   }
   const hit=interactiveHit(e.clientX,e.clientY);
   single={
