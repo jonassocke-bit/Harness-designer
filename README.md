@@ -1,38 +1,20 @@
-# Harness Designer V1.5c — lightweight strap surface waypoints
+# Harness Designer V1.5d
 
-Built on V1.5b.
+## Manual surface waypoint placement
+Select a strap -> `+ Punkt` -> tap the desired location directly on the mannequin.
 
-## New +Point behavior
-The recursive SurfaceLevel subdivision is no longer used by the UI.
+The tapped 3D body surface position becomes the waypoint. The app only derives
+the waypoint order (`t`) from the current strap curve. The user therefore tells
+the strap where it should pass, rather than merely which part of the strap is bad.
 
-`+ Punkt` now adds one real surface waypoint:
-A -> P1 -> P2 -> B
+Waypoint mode is one-shot and returns to normal interaction after one valid tap.
+A paired strap receives the mirrored body-space waypoint and projects it onto its
+own side of the mannequin.
 
-Waypoints:
-- are hidden / not directly draggable
-- store a relative position in the current strap frame
-- follow endpoint movement with vector math only
-- do NOT raycast against the mannequin during drag
-- reproject once onto the body when the endpoint drag ends
-- are added at the midpoint of the currently largest uncovered strap section
+## Immediate symmetry reconciliation
+New mirrored rings and newly created mirrored straps now run dynamic symmetry
+reconciliation in the same creation transaction, rather than waiting for a later
+move/add action.
 
-`- Punkt` removes the last added waypoint.
-`Auto` returns to the ordinary zero-waypoint fast strap.
-
-## Paired straps
-Paired straps share waypoint count + t positions only.
-Each strap projects those points independently onto its own body path, so paired
-straps may have different length/shape.
-
-## Performance
-Ordinary zero-waypoint straps are completely unchanged.
-Waypoint straps stay on the existing cheap standard geometry path and use
-Catmull-Rom through explicit waypoint positions.
-Recursive body-surface subdivision remains only for backwards compatibility
-with old saved projects.
-
-## Body changes
-On committed body morph/height changes, waypoints are reprojected once.
-
-No picking, center-axis orientation, body morph, split, crossing, coupling or
-normal zero-waypoint strap logic was otherwise rewritten.
+Built on V1.5c; V1.5a picking fix, V1.5b center-axis orientation and V1.5 body
+system are retained.

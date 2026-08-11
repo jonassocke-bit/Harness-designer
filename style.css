@@ -186,3 +186,10 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
 #selectionPanel .selection-head{
   grid-template-columns:minmax(0,1fr) 36px 36px 36px;
 }
+
+/* V1.5d one-shot surface waypoint placement */
+#viewport canvas.placing-waypoint{cursor:crosshair}
+#curvePlusBtn.active{
+  outline:2px solid var(--accent);
+  outline-offset:1px;
+}

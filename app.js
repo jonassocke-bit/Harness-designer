@@ -80,6 +80,7 @@ let selectionColorHex=localStorage.getItem('hd:selectionColor')||'#00d8ff';
 let ringDefaults=(()=>{try{return {...{diameterMM:40,thicknessMM:6},...JSON.parse(localStorage.getItem('hd:ringDefaults')||'{}')}}catch{return {diameterMM:40,thicknessMM:6}}})();
 let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localStorage.getItem('hd:strapDefaults')||'{}')}}catch{return {widthMM:30,slack:8}}})();
 let selected=null,connectStart=null;
+let waypointPlacementStrapId=null;
 let nextNodeId=1,nextStrapId=1;
 let nodes=new Map(),straps=new Map();
 let undoStack=[],redoStack=[],restoring=false;
@@ -1235,6 +1236,7 @@ function refreshConnectHints(){
 }
 
 function selectObject(o){
+  if(waypointPlacementStrapId&&o?.id!==waypointPlacementStrapId)cancelWaypointPlacement({quiet:true});
   selected=o;
   refreshMaterials();
   showSelection();
@@ -1503,6 +1505,59 @@ deleteSelectedBtn.addEventListener('click',()=>{
 });
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
+
+function cancelWaypointPlacement({quiet=false}={}){
+  const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
+  waypointPlacementStrapId=null;
+  curvePlusBtn.classList.remove('active');
+  canvas.classList.remove('placing-waypoint');
+  if(s)refreshMaterials();
+  if(!quiet)showToast('Auflagepunkt abgebrochen');
+}
+function beginWaypointPlacement(s){
+  if(!s)return;
+  waypointPlacementStrapId=s.id;
+  curvePlusBtn.classList.add('active');
+  canvas.classList.add('placing-waypoint');
+  selectObject(s);
+  refreshMaterials();
+  showToast('Auf die gewünschte Stelle am Körper tippen');
+}
+function addWaypointFromBodyHit(s,hit){
+  if(!s||!hit)return false;
+  const p=hit.point.clone(),normal=worldNormal(hit);
+
+  // t is used only to order the user-selected surface points along the strap.
+  const curve=effectiveStrapCurve(s);
+  let bestT=.5,bestD=Infinity;
+  for(let i=0;i<=100;i++){
+    const t=i/100,d=curve.getPoint(t).distanceToSquared(p);
+    if(d<bestD){bestD=d;bestT=t}
+  }
+  bestT=THREE.MathUtils.clamp(bestT,.025,.975);
+
+  s.surfaceLevel=0;
+  const c={t:bestT,waypoint:true};
+  bindWaypointToFrame(s,c,p,normal);
+  s.controls.push(c);
+  s.controls.sort((a,b)=>a.t-b.t);
+  updateStrapGeometry(s);
+
+  const ps=pairOfStrap(s);
+  if(ps){
+    ps.surfaceLevel=0;
+    const mirrored=p.clone();mirrored.x*=-1;
+    const mirroredNormal=normal.clone();mirroredNormal.x*=-1;
+    const ph=nearestBodySurfacePreferred(mirrored,mirroredNormal)||nearestBodySurface(mirrored);
+    const pc={t:bestT,waypoint:true};
+    bindWaypointToFrame(ps,pc,ph?.point||mirrored,ph?.normal||mirroredNormal);
+    ps.controls.push(pc);
+    ps.controls.sort((a,b)=>a.t-b.t);
+    updateStrapGeometry(ps);
+  }
+  return true;
+}
+
 curveAutoBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   selected.surfaceLevel=0;
@@ -1518,24 +1573,10 @@ curveAutoBtn.addEventListener('click',()=>{
 curvePlusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
-
-  // Cap keeps the UI/design tool predictable; ordinary straps stay at zero.
   const wpCount=s.controls.filter(c=>c.waypoint).length;
   if(wpCount>=6){showToast('Maximal 6 Auflagepunkte');return}
-
-  const t=nextWaypointT(s);
-  addSurfaceWaypoint(s,t);
-
-  // Paired straps share the waypoint pattern (same t), but each waypoint is
-  // projected independently onto its own body path. Different strap lengths
-  // therefore remain completely valid.
-  const ps=pairOfStrap(s);
-  if(ps){
-    ps.surfaceLevel=0;
-    addSurfaceWaypoint(ps,t);
-  }
-
-  showSelection();refreshAutomaticCrossings();commitHistory();
+  if(waypointPlacementStrapId===s.id){cancelWaypointPlacement();return}
+  beginWaypointPlacement(s);
 });
 
 curveMinusBtn.addEventListener('click',()=>{
@@ -2335,6 +2376,13 @@ function updateManualControlFromWorld(s,index,world){
 
 canvas.addEventListener('pointerdown',e=>{
   canvas.setPointerCapture?.(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+
+  // One-shot waypoint placement: the mannequin owns this tap.
+  if(waypointPlacementStrapId){
+    single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,waypointPlacement:true};
+    return;
+  }
+
   if(pointers.size===2){
     const a=[...pointers.values()];gesture={dist:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,camDist,target:target.clone(),camAz,camEl};single=null;return;
   }
@@ -2356,6 +2404,7 @@ canvas.addEventListener('pointermove',e=>{
   }
   if(!single)return;
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
+  if(single.waypointPlacement)return;
   if(single.hit?.kind==='node'){
     const activeId=single.activeNodeId||single.hit.id;
     const n=nodes.get(activeId);
@@ -2372,6 +2421,26 @@ canvas.addEventListener('pointerup',e=>{
   if(pointers.size<2)gesture=null;
   if(!single){return}
   const was=single;single=null;
+
+  if(was.waypointPlacement){
+    const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
+    if(was.moved){showToast('Bitte die gewünschte Körperstelle antippen');return}
+    const bh=bodyHit(e.clientX,e.clientY);
+    if(!bh){showToast('Bitte direkt auf das Mannequin tippen');return}
+
+    if(s&&addWaypointFromBodyHit(s,bh)){
+      waypointPlacementStrapId=null;
+      curvePlusBtn.classList.remove('active');
+      canvas.classList.remove('placing-waypoint');
+      selectObject(s);
+      showSelection();refreshAutomaticCrossings();
+      dynReconcileSymmetry({syncProps:true});
+      refreshMaterials();commitHistory();
+      showToast('Auflagepunkt gesetzt');
+    }else cancelWaypointPlacement({quiet:true});
+    return;
+  }
+
   if(was.moved){
     const movedNode=was.activeNodeId?nodes.get(was.activeNodeId):null;
     if(movedNode){
@@ -2398,7 +2467,9 @@ canvas.addEventListener('pointerup',e=>{
           const ma=mirrorNode(a),mb=mirrorNode(n);
           if(ma.id!==a.id||mb.id!==n.id){const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack});s.mirrorId=ms.id;ms.mirrorId=s.id;rememberFormerPartners(s,ms)}
         }
-        connectStart=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
+        connectStart=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');
+        dynReconcileSymmetry({syncProps:true});
+        selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
       }
     }
     return;
@@ -2410,6 +2481,7 @@ canvas.addEventListener('pointerup',e=>{
     const normal=Math.abs(p.x)<AXIS_SNAP_IN?symmetryAxisNormal(worldNormal(bh)):worldNormal(bh);
     const n=makeNode({position:p.toArray(),normal:normal.toArray()});
     if(mirrorMode&&Math.abs(p.x)>.02){const m=mirrorNode(n);syncNodeTransform(m)}
+    dynReconcileSymmetry({syncProps:true});
     selectObject(n);commitHistory();
   }
 });
