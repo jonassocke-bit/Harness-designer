@@ -500,86 +500,68 @@ function buildSurfaceGuideChain(s,level,applyClearance=true){
 }
 
 
-function autoContactProbe(point,preferredNormal,clearance){
-  const hit=nearestBodySurfacePreferred(point,preferredNormal);
-  if(!hit)return {blocked:false,hit:null,signed:Infinity};
-
-  // Positive = candidate lies outside the body along the outward surface normal.
-  // Negative = candidate lies inside the body.
-  const signed=point.clone().sub(hit.point).dot(hit.normal);
-  return {
-    blocked:signed<clearance,
-    hit,
-    signed
-  };
-}
-function segmentNeedsBodyContact(a,b,na,nb,clearance){
+function coarseSegmentCollision(a,b,na,nb,clearance){
+  // Deliberately coarse first pass: 5 samples only.
+  const fs=[.18,.36,.54,.72,.90];
   let worst=null;
 
-  // More than midpoint-only: this catches a breast/shoulder bulge that sits
-  // between otherwise harmless endpoints.
-  for(const f of [.2,.4,.5,.6,.8]){
+  for(const f of fs){
     const p=a.clone().lerp(b,f);
     let n=na.clone().lerp(nb,f);
     if(n.lengthSq()<1e-8)n=na.clone();
     n.normalize();
 
-    const probe=autoContactProbe(p,n,clearance);
-    if(probe.blocked&&(!worst||probe.signed<worst.signed)){
-      worst={...probe,f,preferred:n};
+    const hit=nearestBodySurfacePreferred(p,n);
+    if(!hit)continue;
+
+    const signed=p.clone().sub(hit.point).dot(hit.normal);
+    const penetration=clearance-signed;
+
+    if(penetration>0&&(!worst||penetration>worst.penetration)){
+      worst={f,hit,penetration,preferred:n};
     }
   }
+
+  if(!worst)return null;
+
+  // Only refine around the worst coarse sample, with 3 extra probes.
+  const span=.18;
+  const lo=Math.max(.05,worst.f-span);
+  const hi=Math.min(.95,worst.f+span);
+  for(const f of [
+    THREE.MathUtils.lerp(lo,hi,.25),
+    THREE.MathUtils.lerp(lo,hi,.50),
+    THREE.MathUtils.lerp(lo,hi,.75)
+  ]){
+    const p=a.clone().lerp(b,f);
+    let n=na.clone().lerp(nb,f);
+    if(n.lengthSq()<1e-8)n=na.clone();
+    n.normalize();
+
+    const hit=nearestBodySurfacePreferred(p,n);
+    if(!hit)continue;
+
+    const signed=p.clone().sub(hit.point).dot(hit.normal);
+    const penetration=clearance-signed;
+    if(penetration>worst.penetration){
+      worst={f,hit,penetration,preferred:n};
+    }
+  }
+
   return worst;
 }
-function adaptiveAutoGuideChain(s){
-  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
-  if(!aNode||!bNode)return null;
 
-  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
-  const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
-
-  const maxDepth=6;
-  const minSegment=.065;
-  // Include half the visible strap thickness / surface safety. The strap may
-  // float freely farther away; it is NOT pulled onto recessed body areas.
-  const contactClearance=Math.max(.008,surfaceOffsetScene()+.010);
-
-  function solve(a,b,na,nb,depth){
-    const blocking=segmentNeedsBodyContact(a,b,na,nb,contactClearance);
-    if(!blocking||depth>=maxDepth||a.distanceTo(b)<minSegment){
-      return [
-        {point:a.clone(),normal:na.clone().normalize(),contact:false},
-        {point:b.clone(),normal:nb.clone().normalize(),contact:false}
-      ];
-    }
-
-    const mid={
-      point:blocking.hit.point.clone(),
-      normal:blocking.hit.normal.clone().normalize(),
-      contact:true
-    };
-
-    const left=solve(a,mid.point,na,mid.normal,depth+1);
-    const right=solve(mid.point,b,mid.normal,nb,depth+1);
-    const out=left.slice(0,-1).concat([mid],right.slice(1));
-
-    return out;
-  }
-
-  let guides=solve(A,B,nA,nB,0);
-
-  // Remove any contact point that is no longer needed once its neighbours are
-  // connected directly. This is the "minimal contact" pass: the strap leaves
-  // the body tangentially as soon as the body is no longer in the way.
+function simplifyAutoGuides(guides,clearance){
+  if(!guides||guides.length<=2)return guides;
   let changed=true,guard=0;
-  while(changed&&guard++<8&&guides.length>2){
+
+  while(changed&&guard++<6){
     changed=false;
+
     for(let i=1;i<guides.length-1;i++){
       const prev=guides[i-1],next=guides[i+1];
-      const blocked=segmentNeedsBodyContact(
-        prev.point,next.point,prev.normal,next.normal,contactClearance
-      );
-      if(!blocked){
+
+      if(!coarseSegmentCollision(prev.point,next.point,prev.normal,next.normal,clearance)){
         guides.splice(i,1);
         changed=true;
         break;
@@ -589,11 +571,81 @@ function adaptiveAutoGuideChain(s){
 
   return guides;
 }
+
+function incrementalAutoGuideChain(s){
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return null;
+
+  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
+  const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
+  const clearance=Math.max(.008,surfaceOffsetScene()+.010);
+
+  // Reuse previous solution first. This is usually the cheapest path after a
+  // small ring drag: only bad segments are repaired.
+  let guides=null;
+
+  if(s.autoGuides?.length>=2){
+    guides=s.autoGuides.map(g=>({
+      point:new THREE.Vector3().fromArray(g.point),
+      normal:new THREE.Vector3().fromArray(g.normal).normalize()
+    }));
+
+    guides[0]={point:A.clone(),normal:nA.clone().normalize()};
+    guides[guides.length-1]={point:B.clone(),normal:nB.clone().normalize()};
+  }else{
+    guides=[
+      {point:A.clone(),normal:nA.clone().normalize()},
+      {point:B.clone(),normal:nB.clone().normalize()}
+    ];
+  }
+
+  const MAX_POINTS=10;
+  const MAX_REPAIRS=8;
+  let repairs=0;
+
+  while(repairs<MAX_REPAIRS&&guides.length<MAX_POINTS){
+    let worstSeg=null;
+
+    for(let i=0;i<guides.length-1;i++){
+      const a=guides[i],b=guides[i+1];
+      const col=coarseSegmentCollision(a.point,b.point,a.normal,b.normal,clearance);
+
+      if(col&&(!worstSeg||col.penetration>worstSeg.col.penetration)){
+        worstSeg={i,col,a,b};
+      }
+    }
+
+    if(!worstSeg)break;
+
+    const {i,col,a,b}=worstSeg;
+    const contact={
+      point:col.hit.point.clone(),
+      normal:col.hit.normal.clone().normalize()
+    };
+
+    guides.splice(i+1,0,contact);
+    repairs++;
+  }
+
+  return simplifyAutoGuides(guides,clearance);
+}
+
+function adaptiveAutoGuideChain(s){
+  return incrementalAutoGuideChain(s);
+}
 function computeAutoStrapFit(s){
   if(!s?.autoFit)return false;
-  const guides=adaptiveAutoGuideChain(s);
-  if(!guides||guides.length<2){s.autoGuides=null;return false}
-  s.autoGuides=guides.map(g=>({point:g.point.toArray(),normal:g.normal.toArray()}));
+
+  const guides=incrementalAutoGuideChain(s);
+  if(!guides||guides.length<2){
+    s.autoGuides=null;
+    return false;
+  }
+
+  s.autoGuides=guides.map(g=>({
+    point:g.point.toArray(),
+    normal:g.normal.toArray()
+  }));
   return true;
 }
 function autoSurfaceCurveData(s){
@@ -1328,160 +1380,19 @@ function panelCutRings(panel){
     .filter(n=>n?.ringVisible)
     .map(n=>({p:nodeWorldPosition(n),r:Math.max(.001,ringMajor(n)-ringTube(n)*1.12)}));
 }
-
-function normalizeAnglePositive(a){
-  while(a<0)a+=Math.PI*2;
-  while(a>=Math.PI*2)a-=Math.PI*2;
-  return a;
-}
-function shortestAngleDelta(a,b){
-  let d=normalizeAnglePositive(b)-normalizeAnglePositive(a);
-  if(d>Math.PI)d-=Math.PI*2;
-  if(d<-Math.PI)d+=Math.PI*2;
-  return d;
-}
-function panelEdgeInsideSamples2(panel,basis,ids,edgeIndex,rawPoly){
-  const aId=ids[edgeIndex],bId=ids[(edgeIndex+1)%ids.length];
-  const s=boundaryStrapForEdge(aId,bId);
-  const ccw=polygonSignedArea2(rawPoly)>0;
-  const samples=[];
-
-  if(s){
-    const curve=effectiveStrapCurve(s);
-    const count=10;
-    const worldPoints=[];
-    for(let i=0;i<=count;i++){
-      let t=i/count;
-      // Make curve direction correspond to aId -> bId.
-      if(s.a!==aId)t=1-t;
-      worldPoints.push(curve.getPoint(t));
-    }
-
-    const pts2=worldPoints.map(p=>panel2D(panel,p,basis));
-    const halfWidth=Math.max(.004,s.widthMM*.0037*.5-.0015);
-
-    for(let i=0;i<pts2.length;i++){
-      const prev=pts2[Math.max(0,i-1)];
-      const next=pts2[Math.min(pts2.length-1,i+1)];
-      let dir=next.clone().sub(prev);
-      if(dir.lengthSq()<1e-10)dir=new THREE.Vector2(1,0);
-      dir.normalize();
-
-      const inward=ccw
-        ? new THREE.Vector2(-dir.y,dir.x)
-        : new THREE.Vector2(dir.y,-dir.x);
-
-      samples.push(pts2[i].clone().addScaledVector(inward,halfWidth));
-    }
-    return samples;
-  }
-
-  // No boundary strap: straight edge stays on the logical point-to-point contour.
-  const a=rawPoly[edgeIndex],b=rawPoly[(edgeIndex+1)%rawPoly.length];
-  for(let i=0;i<=4;i++)samples.push(a.clone().lerp(b,i/4));
-  return samples;
-}
-function panelRingArc2(center,r,start,end,interiorReference){
-  if(r<=.001)return [start.clone(),end.clone()];
-
-  let a0=Math.atan2(start.y-center.y,start.x-center.x);
-  let a1=Math.atan2(end.y-center.y,end.x-center.x);
-  let d=shortestAngleDelta(a0,a1);
-
-  // Of the two arcs, choose the one whose midpoint lies closer to the panel
-  // interior. This keeps the panel on the inner side of the hardware.
-  const test=(delta)=>{
-    const am=a0+delta*.5;
-    const p=new THREE.Vector2(center.x+Math.cos(am)*r,center.y+Math.sin(am)*r);
-    return p.distanceToSquared(interiorReference);
-  };
-  const alt=d>0?d-Math.PI*2:d+Math.PI*2;
-  if(test(alt)<test(d))d=alt;
-
-  const steps=Math.max(3,Math.ceil(Math.abs(d)/(Math.PI/10)));
-  const out=[];
-  for(let i=0;i<=steps;i++){
-    const a=a0+d*(i/steps);
-    out.push(new THREE.Vector2(
-      center.x+Math.cos(a)*r,
-      center.y+Math.sin(a)*r
-    ));
-  }
-  return out;
-}
-function panelHardwareContour2(panel,basis,boundary){
-  const ids=panelCurrentIds(panel,{unique:true});
-  const raw=boundary.map(p=>panel2D(panel,p,basis));
-  if(ids.length<3)return raw;
-
-  const edgeSamples=ids.map((_,i)=>panelEdgeInsideSamples2(panel,basis,ids,i,raw));
-  const centroid=raw.reduce((a,p)=>a.add(p),new THREE.Vector2()).multiplyScalar(1/raw.length);
-  const contour=[];
-
-  for(let i=0;i<ids.length;i++){
-    const edge=edgeSamples[i];
-
-    // Add edge excluding its final endpoint; corner connector comes next.
-    for(let j=0;j<edge.length-1;j++){
-      if(!contour.length||contour[contour.length-1].distanceToSquared(edge[j])>1e-10)
-        contour.push(edge[j].clone());
-    }
-
-    const nextEdge=edgeSamples[(i+1)%ids.length];
-    const cornerId=ids[(i+1)%ids.length];
-    const node=nodes.get(cornerId);
-    const from=edge[edge.length-1];
-    const to=nextEdge[0];
-
-    if(node?.ringVisible){
-      const center=panel2D(panel,nodeWorldPosition(node),basis);
-      const radius=Math.max(.002,ringMajor(node)-ringTube(node)*1.02);
-
-      // Project edge endpoints exactly onto the ring inner radius.
-      let vf=from.clone().sub(center),vt=to.clone().sub(center);
-      if(vf.lengthSq()<1e-10)vf=new THREE.Vector2(1,0);
-      if(vt.lengthSq()<1e-10)vt=new THREE.Vector2(1,0);
-      vf.setLength(radius);vt.setLength(radius);
-      const pf=center.clone().add(vf),pt=center.clone().add(vt);
-
-      const arc=panelRingArc2(center,radius,pf,pt,centroid);
-      for(const p of arc){
-        if(!contour.length||contour[contour.length-1].distanceToSquared(p)>1e-10)
-          contour.push(p.clone());
-      }
-    }else{
-      if(!contour.length||contour[contour.length-1].distanceToSquared(from)>1e-10)
-        contour.push(from.clone());
-      if(contour[contour.length-1].distanceToSquared(to)>1e-10)
-        contour.push(to.clone());
-    }
-  }
-
-  // Remove accidental adjacent duplicates.
-  return contour.filter((p,i,a)=>i===0||p.distanceToSquared(a[i-1])>1e-10);
-}
-function pointSegmentDistance2(p,a,b){
-  const ab=b.clone().sub(a),len2=ab.lengthSq();
-  if(len2<1e-12)return p.distanceTo(a);
-  const t=THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/len2,0,1);
-  return p.distanceTo(a.clone().addScaledVector(ab,t));
-}
-function distanceToContour2(p,contour){
-  let best=Infinity;
-  for(let i=0;i<contour.length;i++){
-    best=Math.min(best,pointSegmentDistance2(p,contour[i],contour[(i+1)%contour.length]));
-  }
-  return best;
-}
-
 function buildPanelPreviewGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
 
   const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
-  const contour=panelHardwareContour2(panel,basis,boundary);
-  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
-  const baseWorld=contour.map(q=>panel2ToWorld(q,basis));
+  const rawContour=boundary.map(p=>panel2D(panel,p,basis));
+  const contour=panelInsetContour2(panel,basis,boundary,rawContour);
+  const holes=panelRingHoles2(panel,basis);
+  const tris=THREE.ShapeUtils.triangulateShape(contour,holes);
+
+  const flat2=[...contour];
+  for(const h of holes)flat2.push(...h);
+  const baseWorld=flat2.map(q=>panel2ToWorld(q,basis));
 
   const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
@@ -1640,13 +1551,24 @@ function buildPanelGeometry(panel){
 
   const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
-  const contour=panelHardwareContour2(panel,basis,boundary);
-  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const rawContour=boundary.map(p=>panel2D(panel,p,basis));
+
+  // The outer contour itself is moved to the INNER edge of any strap that
+  // bounds this panel. This produces a smooth edge instead of deleting triangles.
+  const contour=panelInsetContour2(panel,basis,boundary,rawContour);
+  const holeContours=panelRingHoles2(panel,basis);
+
+  const tris=THREE.ShapeUtils.triangulateShape(contour,holeContours);
   if(!tris.length)return new THREE.BufferGeometry();
 
-  const baseWorld=contour.map(q=>panel2ToWorld(q,basis));
+  // triangulateShape indexes into [contour, ...holes] flattened in that order.
+  const flat2=[...contour];
+  for(const h of holeContours)flat2.push(...h);
+  const baseWorld=flat2.map(q=>panel2ToWorld(q,basis));
+
   let triWorld=tris.map(t=>t.map(i=>baseWorld[i].clone()));
 
+  // Dynamic density remains size dependent.
   const subdivisionLevel=panelSubdivisionLevel(panel,boundary);
   for(let pass=0;pass<subdivisionLevel;pass++){
     const next=[];
@@ -1663,34 +1585,17 @@ function buildPanelGeometry(panel){
   const lift=panelOffsetScene(panel);
   const surfaceCache=new Map();
 
-  // Boundary stays EXACTLY on the hardware contour. Across a narrow transition
-  // band, vertices progressively switch to the mannequin-fitted surface.
-  const rawSpan=Math.max(...boundary.map((a,i)=>Math.max(...boundary.slice(i+1).map(b=>a.distanceTo(b))),0));
-  const transition=Math.max(.035,Math.min(.09,rawSpan*.10));
-
   const solveRaw=raw=>{
     const key=`${Math.round(raw.x*10000)},${Math.round(raw.y*10000)},${Math.round(raw.z*10000)}`;
     let solved=surfaceCache.get(key);
-    if(solved)return solved;
-
-    const q2=panel2D(panel,raw,basis);
-    const distToEdge=distanceToContour2(q2,contour);
-
-    const fixed=raw.clone().addScaledVector(basis.normal,lift);
-    const surf=panelSurfacePoint(raw,basis.normal);
-    const fitted=surf.point.clone().addScaledVector(surf.normal,lift);
-
-    // smoothstep from fixed edge to full body fit.
-    let t=THREE.MathUtils.clamp(distToEdge/transition,0,1);
-    t=t*t*(3-2*t);
-
-    const q=fixed.clone().lerp(fitted,t);
-    let n=basis.normal.clone().lerp(surf.normal,t);
-    if(n.lengthSq()<1e-8)n=basis.normal.clone();
-    n.normalize();
-
-    solved={q,n};
-    surfaceCache.set(key,solved);
+    if(!solved){
+      const surf=panelSurfacePoint(raw,basis.normal);
+      solved={
+        q:surf.point.clone().addScaledVector(surf.normal,lift),
+        n:surf.normal.clone()
+      };
+      surfaceCache.set(key,solved);
+    }
     return solved;
   };
 

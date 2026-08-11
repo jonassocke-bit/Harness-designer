@@ -1,37 +1,31 @@
-# Harness Designer V1.7g — minimal-contact straps + fixed panel borders
+# Harness Designer V1.7h — coarse incremental auto straps
 
-Built on V1.7f.
+Built on V1.7f deliberately, so the panel system is back on the last stable panel geometry.
 
-## Minimal-contact automatic straps
-Auto straps no longer interpret "far from body surface" as a reason to hug the body.
+## Auto strap strategy
+The automatic strap solver is intentionally less detailed than V1.7g.
 
-For each candidate strap segment:
-- sample 20/40/50/60/80%
-- find the nearby body surface and its outward normal
-- compute signed clearance `(candidate - surface) dot normal`
-- only if the segment enters the body / safety clearance is a contact guide inserted
-- recursive refinement occurs only around blocked sections
+After an endpoint move:
+1. Reuse the previous auto guide chain if available.
+2. Update only the two endpoints.
+3. Check every current segment with 5 coarse collision samples.
+4. If a segment collides, refine only around its worst sample with 3 extra probes.
+5. Insert ONE contact point at the deepest collision.
+6. Repeat until no collision remains, or a small point/repair budget is reached.
+7. Simplify by deleting any guide whose neighbours can connect collision-free.
 
-After refinement a simplification pass removes each internal contact guide whose two
-neighbours can be connected collision-free.
+Limits:
+- maximum 10 total guide points
+- maximum 8 repair iterations
+- 5 coarse + up to 3 local probes per tested segment
 
-Result:
-- free span stays free / taut
-- strap contacts a breast, shoulder or hip only while that body volume blocks it
-- as soon as the body falls away, the strap leaves the body tangentially
-- a lower ring can force a second contact region if necessary
+This means simple straps usually need one very cheap pass; complex straps cost more only where needed.
 
-## Hardware-locked panel boundary
-Panel outer boundaries now follow actual hardware rather than a planar approximation.
+## Performance policy
+- during drag: existing cheap strap preview only
+- on release: only straps attached to the moved node are refitted
+- existing auto guides are reused rather than solving from zero
 
-For each boundary edge:
-- if a strap exists, its actual current 3D curve is sampled
-- samples are offset to the strap's inner edge
-- at ring corners neighbouring edges are connected by an arc on the ring's inner edge
-
-The committed panel fit keeps this hardware contour fixed in 3D.
-Only interior vertices are projected to the mannequin. A transition band smoothly blends
-from the fixed boundary to the fully body-fitted interior.
-
-This prevents large curved panels from pulling their outer edge away from straps/rings.
-The same hardware contour is used during the fast drag preview.
+## Panels
+Panel code is intentionally back to V1.7f's stable implementation.
+No V1.7g hardware-contour reconstruction is included.
