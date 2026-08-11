@@ -203,3 +203,13 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
 .panel-confirm{padding-inline:12px}
 .panel-selected-node .node-visual{filter:none}
 #panelControls .curve-box{margin-top:2px}
+
+/* V1.7b panel UX */
+.panel-confirm-floating{
+  position:absolute;top:calc(env(safe-area-inset-top) + 66px);left:50%;
+  transform:translateX(-50%);z-index:42;height:38px;padding:0 18px;
+  border:1px solid rgba(255,255,255,.2);border-radius:19px;
+  background:#fff;color:#111;font-size:13px;font-weight:800;
+  box-shadow:0 8px 24px rgba(0,0,0,.28);white-space:nowrap
+}
+.panel-confirm-floating.hidden{display:none}

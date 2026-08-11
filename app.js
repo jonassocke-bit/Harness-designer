@@ -64,8 +64,9 @@ const STRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,met
 const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,metalness:0,side:THREE.DoubleSide,emissive:0x302916,emissiveIntensity:.55});
 const WRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
 const CONTROL_MAT=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.78});
-const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92});
-const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x302d24,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x55461f,emissiveIntensity:.55,transparent:true,opacity:.96});
+const PANEL_PICK_MAT=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.2,metalness:.55,emissive:0x007c96,emissiveIntensity:.55});
+const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
+const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
 const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
 let bodyMeshes=[];
@@ -95,6 +96,7 @@ let panels=new Map();
 let panelBuildNodes=[];
 let panelGuideSamples=null;
 let panelPointPlacementId=null;
+let panelDirty=new Set(),panelRebuildRaf=0;
 let nodes=new Map(),straps=new Map();
 let undoStack=[],redoStack=[],restoring=false;
 let toastTimer=null;
@@ -1145,13 +1147,20 @@ function buildPanelGeometry(panel){
   }
 
   const positions=[], normals=[];
+  const cutRings=panel.nodeIds.map(id=>nodes.get(id)).filter(n=>n?.ringVisible).map(n=>({
+    p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.7
+  }));
   for(const tri of triWorld){
-    for(const raw of tri){
+    const solved=tri.map(raw=>{
       const surf=panelSurfacePoint(raw,basis.normal);
       const adjusted=panelApplyControls(panel,surf.point,surf.normal);
-      const q=adjusted.point.clone().addScaledVector(adjusted.normal,surfaceOffsetScene()+.004);
-      positions.push(q.x,q.y,q.z);
-      normals.push(adjusted.normal.x,adjusted.normal.y,adjusted.normal.z);
+      return {q:adjusted.point.clone().addScaledVector(adjusted.normal,Math.max(.001,surfaceOffsetScene()*.35)),n:adjusted.normal};
+    });
+    const centroid=solved.reduce((a,x)=>a.add(x.q),new THREE.Vector3()).multiplyScalar(1/3);
+    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+    for(const x of solved){
+      positions.push(x.q.x,x.q.y,x.q.z);
+      normals.push(x.n.x,x.n.y,x.n.z);
     }
   }
   const g=new THREE.BufferGeometry();
@@ -1175,17 +1184,48 @@ function makePanel(data={}){
   };
   panel.mesh=new THREE.Mesh(buildPanelGeometry(panel),selected?.id===id?PANEL_SEL:PANEL_MAT);
   panel.mesh.userData={kind:'panelMesh',id};
-  panel.group.add(panel.mesh);panelRoot.add(panel.group);panels.set(id,panel);
+  panel.mesh.renderOrder=1;panel.group.add(panel.mesh);panelRoot.add(panel.group);panels.set(id,panel);
   return panel;
 }
-function updatePanelGeometry(panel){
+function buildPanelPreviewGeometry(panel){
+  const boundary=panelBoundaryWorld(panel);
+  if(boundary.length<3)return new THREE.BufferGeometry();
+  const basis=panelBasis(panel);
+  const contour=boundary.map(p=>panel2D(panel,p,basis));
+  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const positions=[],normals=[];
+  const cutRings=panel.nodeIds.map(id=>nodes.get(id)).filter(n=>n?.ringVisible).map(n=>({p:nodeWorldPosition(n),r:ringMajor(n)+ringTube(n)*1.7}));
+  for(const tri of tris){
+    const pts=tri.map(idx=>boundary[idx].clone().addScaledVector(basis.normal,Math.max(.001,surfaceOffsetScene()*.35)));
+    const centroid=pts.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/3);
+    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+    for(const p of pts){positions.push(p.x,p.y,p.z);normals.push(basis.normal.x,basis.normal.y,basis.normal.z)}
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  g.computeBoundingSphere();return g;
+}
+function updatePanelGeometry(panel,{preview=false}={}){
   if(!panel)return;
   const old=panel.mesh.geometry;
-  panel.mesh.geometry=buildPanelGeometry(panel);
+  panel.mesh.geometry=preview?buildPanelPreviewGeometry(panel):buildPanelGeometry(panel);
   old?.dispose?.();
 }
-function updatePanelsForNode(nodeId){
-  for(const p of panels.values())if(p.nodeIds.includes(nodeId))updatePanelGeometry(p);
+function updatePanelsForNode(nodeId,{preview=true}={}){
+  for(const p of panels.values()){
+    if(!p.nodeIds.includes(nodeId))continue;
+    if(preview){
+      panelDirty.add(p.id);
+      updatePanelGeometry(p,{preview:true});
+    }else updatePanelGeometry(p);
+  }
+}
+function finalizeDirtyPanels(){
+  if(!panelDirty.size)return;
+  const ids=[...panelDirty];panelDirty.clear();
+  // Defer expensive body projection until interaction is over.
+  requestAnimationFrame(()=>{for(const id of ids){const p=panels.get(id);if(p)updatePanelGeometry(p)}});
 }
 function removePanel(id){
   const p=panels.get(id);if(!p)return;
@@ -1235,14 +1275,24 @@ function buildPanelGuide(panel){
   let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
   for(const p of poly){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y)}
   const samples=[];
-  const NX=6,NY=6;
+  const NX=8,NY=8;
   for(let iy=1;iy<NY;iy++)for(let ix=1;ix<NX;ix++){
     const q2=new THREE.Vector2(THREE.MathUtils.lerp(minX,maxX,ix/NX),THREE.MathUtils.lerp(minY,maxY,iy/NY));
     if(!pointInPoly2(q2,poly))continue;
     const candidate=basis.origin.clone().addScaledVector(basis.u,q2.x).addScaledVector(basis.v,q2.y);
-    const surf=panelSurfacePoint(candidate,basis.normal);
+
+    // A useful control exists only where the camera ray through this panel
+    // position actually meets the mannequin close to the panel depth.
+    const projected=candidate.clone().project(camera);
+    if(projected.z<-1||projected.z>1)continue;
+    raycaster.setFromCamera(new THREE.Vector2(projected.x,projected.y),camera);
+    const bodyHitHere=raycaster.intersectObjects(bodyMeshes,true)[0];
+    if(!bodyHitHere)continue;
+    const panelDepth=camera.position.distanceTo(candidate);
+    if(Math.abs(bodyHitHere.distance-panelDepth)>.32)continue;
+
+    const surf={point:bodyHitHere.point.clone(),normal:worldNormal(bodyHitHere)};
     const display=surf.point.clone().addScaledVector(surf.normal,.012);
-    if(bodyOccludesWorldPoint(display,.025))continue;
     samples.push({point:surf.point,normal:surf.normal,displayPoint:display});
   }
   if(!samples.length)return false;
@@ -1315,7 +1365,7 @@ function makeStrap(data={}){
     controlGroup:new THREE.Group()
   };
   s.mesh=new THREE.Mesh(s.geometry,selected?.id===id?STRAP_SEL:STRAP_MAT);
-  s.mesh.userData={kind:'strapMesh',id};s.group.add(s.mesh,s.controlGroup);
+  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=5;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
   return s;
@@ -1814,7 +1864,9 @@ function refreshMaterials(){
   for(const n of nodes.values()){
     if(!n.visual)continue;
     const on=selected?.kind==='node'&&(n.id===selected.id||n.id===selectedNodePair?.id);
-    n.visual.material=on?(n.ringVisible?METAL_SEL:POINT_SEL):(n.ringVisible?METAL_MAT:POINT_MAT);
+    const panelPick=tool==='panel'&&panelBuildNodes.includes(n.id);
+    n.visual.material=(on||panelPick)?(n.ringVisible?METAL_SEL:POINT_SEL):(n.ringVisible?METAL_MAT:POINT_MAT);
+    if(panelPick)n.visual.material=PANEL_PICK_MAT;
   }
 
   for(const s of straps.values()){
@@ -3525,6 +3577,7 @@ canvas.addEventListener('pointerup',e=>{
       // Now project that moved route once back to the mannequin.
       finalizeEndpointWaypointDragState(was.waypointDragState);
     }
+    finalizeDirtyPanels();
     rebuildAllWraps();refreshAutomaticCrossings();
     dynReconcileSymmetry({syncProps:true});
     refreshMaterials();commitHistory();return
@@ -3538,6 +3591,7 @@ canvas.addEventListener('pointerup',e=>{
       else panelBuildNodes=panelBuildNodes.filter(id=>id!==n.id);
       panelConfirmBtn.classList.toggle('hidden',panelBuildNodes.length<3);
       selected=n;refreshMaterials();
+      panelConfirmBtn.classList.toggle('hidden',panelBuildNodes.length<3);
       showToast(`${panelBuildNodes.length} Punkte gewählt`);
       return;
     }
