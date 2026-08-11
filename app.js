@@ -503,30 +503,88 @@ function buildSurfaceGuideChain(s,level,applyClearance=true){
 function adaptiveAutoGuideChain(s){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return null;
+
   const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
   const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
-  const maxDepth=5,minSegment=.10,posTol=.014,normTol=.19;
+
+  const maxDepth=6;
+  const minSegment=.075;
+  const posTol=.009;
+  const normTol=.12;
 
   function solve(a,b,na,nb,depth){
     const candidate=a.clone().lerp(b,.5);
     let preferred=na.clone().add(nb);
     if(preferred.lengthSq()<1e-8)preferred=na.clone();
     preferred.normalize();
+
     const hit=nearestBodySurfacePreferred(candidate,preferred);
-    if(!hit)return [{point:a.clone(),normal:na.clone().normalize()},{point:b.clone(),normal:nb.clone().normalize()}];
+    if(!hit){
+      return [
+        {point:a.clone(),normal:na.clone().normalize()},
+        {point:b.clone(),normal:nb.clone().normalize()}
+      ];
+    }
 
     const deviation=hit.point.distanceTo(candidate);
     const normalChange=1-Math.abs(hit.normal.dot(preferred));
-    const needsPoint=deviation>posTol||normalChange>normTol;
-    if(!needsPoint||depth>=maxDepth||a.distanceTo(b)<minSegment)
-      return [{point:a.clone(),normal:na.clone().normalize()},{point:b.clone(),normal:nb.clone().normalize()}];
+    const length=a.distanceTo(b);
+
+    // Strict rule: add a guide whenever the straight section either misses
+    // the body by ~9 mm or the local surface bends noticeably.
+    const needsPoint=
+      deviation>posTol ||
+      normalChange>normTol;
+
+    if(!needsPoint||depth>=maxDepth||length<minSegment){
+      return [
+        {point:a.clone(),normal:na.clone().normalize()},
+        {point:b.clone(),normal:nb.clone().normalize()}
+      ];
+    }
 
     const mid={point:hit.point.clone(),normal:hit.normal.clone().normalize()};
     const left=solve(a,mid.point,na,mid.normal,depth+1);
     const right=solve(mid.point,b,mid.normal,nb,depth+1);
     return left.slice(0,-1).concat(right);
   }
-  return solve(A,B,nA,nB,0);
+
+  let guides=solve(A,B,nA,nB,0);
+
+  // One inexpensive verification pass: accepted long segments are sampled
+  // at 1/3 and 2/3. If either still departs from the body, insert that point.
+  // This catches the occasional miss where the midpoint itself looked fine.
+  const verified=[guides[0]];
+  for(let i=0;i<guides.length-1;i++){
+    const a=guides[i],b=guides[i+1];
+    const additions=[];
+    if(a.point.distanceTo(b.point)>.12){
+      for(const f of [1/3,2/3]){
+        const candidate=a.point.clone().lerp(b.point,f);
+        let preferred=a.normal.clone().lerp(b.normal,f);
+        if(preferred.lengthSq()<1e-8)preferred=a.normal.clone();
+        preferred.normalize();
+
+        const hit=nearestBodySurfacePreferred(candidate,preferred);
+        if(hit){
+          const deviation=hit.point.distanceTo(candidate);
+          const normalChange=1-Math.abs(hit.normal.dot(preferred));
+          if(deviation>posTol*.85||normalChange>normTol*.85){
+            additions.push({
+              f,
+              point:hit.point.clone(),
+              normal:hit.normal.clone().normalize()
+            });
+          }
+        }
+      }
+    }
+    additions.sort((x,y)=>x.f-y.f);
+    for(const x of additions)verified.push({point:x.point,normal:x.normal});
+    verified.push(b);
+  }
+
+  return verified;
 }
 function computeAutoStrapFit(s){
   if(!s?.autoFit)return false;
@@ -1269,19 +1327,29 @@ function panelCutRings(panel){
 }
 function buildPanelPreviewGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
+
   const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
-  const contour=boundary.map(p=>panel2D(panel,p,basis));
-  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const rawContour=boundary.map(p=>panel2D(panel,p,basis));
+  const contour=panelInsetContour2(panel,basis,boundary,rawContour);
+  const holes=panelRingHoles2(panel,basis);
+  const tris=THREE.ShapeUtils.triangulateShape(contour,holes);
+
+  const flat2=[...contour];
+  for(const h of holes)flat2.push(...h);
+  const baseWorld=flat2.map(q=>panel2ToWorld(q,basis));
+
   const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
+
   for(const tri of tris){
     for(const idx of tri){
-      const p=boundary[idx].clone().addScaledVector(basis.normal,lift);
+      const p=baseWorld[idx].clone().addScaledVector(basis.normal,lift);
       positions.push(p.x,p.y,p.z);
       normals.push(basis.normal.x,basis.normal.y,basis.normal.z);
     }
   }
+
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
@@ -1320,41 +1388,157 @@ function panelTriangleHiddenByBoundaryStrap(centroid,boundaryStraps){
   }
   return false;
 }
+
+function polygonSignedArea2(poly){
+  let a=0;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    a+=poly[j].x*poly[i].y-poly[i].x*poly[j].y;
+  }
+  return a*.5;
+}
+function boundaryStrapForEdge(aId,bId){
+  return [...straps.values()].find(s=>
+    (s.a===aId&&s.b===bId)||(s.a===bId&&s.b===aId)
+  )||null;
+}
+function lineIntersection2(p1,d1,p2,d2){
+  const cross=d1.x*d2.y-d1.y*d2.x;
+  if(Math.abs(cross)<1e-8)return null;
+  const dx=p2.x-p1.x,dy=p2.y-p1.y;
+  const t=(dx*d2.y-dy*d2.x)/cross;
+  return new THREE.Vector2(p1.x+d1.x*t,p1.y+d1.y*t);
+}
+function panelInsetContour2(panel,basis,boundary,poly){
+  const ids=panelCurrentIds(panel,{unique:true});
+  if(poly.length<3)return poly.map(p=>p.clone());
+
+  const ccw=polygonSignedArea2(poly)>0;
+  const edges=[];
+
+  for(let i=0;i<poly.length;i++){
+    const a=poly[i],b=poly[(i+1)%poly.length];
+    const dir=b.clone().sub(a);
+    const len=dir.length();
+    if(len<1e-8){
+      edges.push({a:a.clone(),dir:new THREE.Vector2(1,0),inset:0});
+      continue;
+    }
+    dir.multiplyScalar(1/len);
+    // For CCW contour, interior lies to the left of each directed edge.
+    const inward=ccw
+      ? new THREE.Vector2(-dir.y,dir.x)
+      : new THREE.Vector2(dir.y,-dir.x);
+
+    const s=boundaryStrapForEdge(ids[i],ids[(i+1)%ids.length]);
+    const inset=s
+      ? Math.max(.004,s.widthMM*.0037*.5-.002)
+      : 0;
+
+    edges.push({
+      a:a.clone().addScaledVector(inward,inset),
+      dir,
+      inward,
+      inset
+    });
+  }
+
+  const out=[];
+  for(let i=0;i<poly.length;i++){
+    const prev=edges[(i-1+edges.length)%edges.length];
+    const next=edges[i];
+    let q=lineIntersection2(prev.a,prev.dir,next.a,next.dir);
+
+    if(!q){
+      // Parallel/near-collinear fallback.
+      const n=prev.inward.clone().multiplyScalar(prev.inset)
+        .add(next.inward.clone().multiplyScalar(next.inset));
+      q=poly[i].clone().add(n.multiplyScalar(.5));
+    }
+
+    // Clamp pathological miters at very acute corners.
+    const maxMove=Math.max(.02,(prev.inset+next.inset)*2.4);
+    const delta=q.clone().sub(poly[i]);
+    if(delta.length()>maxMove)q=poly[i].clone().add(delta.setLength(maxMove));
+    out.push(q);
+  }
+  return out;
+}
+function panelRingHoles2(panel,basis){
+  const holes=[];
+  for(const id of panelCurrentIds(panel,{unique:true})){
+    const n=nodes.get(id);
+    if(!n?.ringVisible)continue;
+
+    const center=panel2D(panel,nodeWorldPosition(n),basis);
+    // Hole reaches almost exactly to the ring's inner visible edge.
+    const radius=Math.max(.002,ringMajor(n)-ringTube(n)*1.05);
+    const pts=[];
+    const segments=24;
+    for(let i=0;i<segments;i++){
+      const a=(i/segments)*Math.PI*2;
+      pts.push(new THREE.Vector2(
+        center.x+Math.cos(a)*radius,
+        center.y+Math.sin(a)*radius
+      ));
+    }
+    holes.push(pts);
+  }
+  return holes;
+}
+function panel2ToWorld(q,basis){
+  return basis.origin.clone()
+    .addScaledVector(basis.u,q.x)
+    .addScaledVector(basis.v,q.y);
+}
+
 function buildPanelGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
 
   const boundary=panelBoundaryWorld(panel);
   const basis=panelBasis(panel);
-  const contour=boundary.map(p=>panel2D(panel,p,basis));
-  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const rawContour=boundary.map(p=>panel2D(panel,p,basis));
+
+  // The outer contour itself is moved to the INNER edge of any strap that
+  // bounds this panel. This produces a smooth edge instead of deleting triangles.
+  const contour=panelInsetContour2(panel,basis,boundary,rawContour);
+  const holeContours=panelRingHoles2(panel,basis);
+
+  const tris=THREE.ShapeUtils.triangulateShape(contour,holeContours);
   if(!tris.length)return new THREE.BufferGeometry();
 
-  // Dense only in the committed state. During ring drag a flat preview is used.
-  let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
+  // triangulateShape indexes into [contour, ...holes] flattened in that order.
+  const flat2=[...contour];
+  for(const h of holeContours)flat2.push(...h);
+  const baseWorld=flat2.map(q=>panel2ToWorld(q,basis));
+
+  let triWorld=tris.map(t=>t.map(i=>baseWorld[i].clone()));
+
+  // Dynamic density remains size dependent.
   const subdivisionLevel=panelSubdivisionLevel(panel,boundary);
   for(let pass=0;pass<subdivisionLevel;pass++){
     const next=[];
     for(const [a,b,c] of triWorld){
-      const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
+      const ab=a.clone().lerp(b,.5);
+      const bc=b.clone().lerp(c,.5);
+      const ca=c.clone().lerp(a,.5);
       next.push([a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]);
     }
     triWorld=next;
   }
 
   const positions=[],normals=[];
-  const cutRings=panelCutRings(panel);
-  const boundaryStraps=panelBoundaryStraps(panel);
   const lift=panelOffsetScene(panel);
-
-  // Shared subdivision vertices occur in many triangles. Project each unique
-  // location only once; this removes most of the expensive body raycasts.
   const surfaceCache=new Map();
+
   const solveRaw=raw=>{
     const key=`${Math.round(raw.x*10000)},${Math.round(raw.y*10000)},${Math.round(raw.z*10000)}`;
     let solved=surfaceCache.get(key);
     if(!solved){
       const surf=panelSurfacePoint(raw,basis.normal);
-      solved={q:surf.point.clone().addScaledVector(surf.normal,lift),n:surf.normal.clone()};
+      solved={
+        q:surf.point.clone().addScaledVector(surf.normal,lift),
+        n:surf.normal.clone()
+      };
       surfaceCache.set(key,solved);
     }
     return solved;
@@ -1362,13 +1546,6 @@ function buildPanelGeometry(panel){
 
   for(const tri of triWorld){
     const solved=tri.map(solveRaw);
-
-    // Fine subdivision makes these ring openings local instead of deleting
-    // giant triangles through the middle of the panel.
-    const centroid=solved.reduce((a,x)=>a.add(x.q),new THREE.Vector3()).multiplyScalar(1/3);
-    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-    if(panelTriangleHiddenByBoundaryStrap(centroid,boundaryStraps))continue;
-
     for(const x of solved){
       positions.push(x.q.x,x.q.y,x.q.z);
       normals.push(x.n.x,x.n.y,x.n.z);
@@ -1552,7 +1729,7 @@ function makeStrap(data={}){
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:historyClone(data.controls||[]),
     surfaceLevel:data.surfaceLevel??0,
-    autoFit:!!data.autoFit,
+    autoFit:data.autoFit!==false,
     autoGuides:historyClone(data.autoGuides||null),
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
@@ -1564,6 +1741,10 @@ function makeStrap(data={}){
   s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=20;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
+  if(s.autoFit&&bodyMeshes.length){
+    computeAutoStrapFit(s);
+    updateStrapGeometry(s,{skipPairMirror:true});
+  }
   return s;
 }
 function updateStrapGeometry(s,{skipPairMirror=false,previewAuto=false}={}){
