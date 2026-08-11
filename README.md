@@ -1,26 +1,18 @@
-# Harness Designer V1.6a — Master/Mirror core
+# Harness Designer V1.6b — moving waypoint fix
 
-Built on V1.5f.
+Built on V1.6a.
 
-## Linked symmetry
-Linked pairs now use a canonical left-side master for spatial calculations.
-The opposite side remains materialized internally so undo, deletion and unlinking
-remain compatible, but while linked it behaves as a visual mirror:
+Manual surface waypoints no longer behave like fixed nails after an endpoint ring moves.
 
-- paired ring position/normal is forced to exact X reflection of the master
-- dragging the right-side visual partner mirrors the input into left/master space
-- paired strap mesh geometry is calculated on the master and copied with X reflection
-- paired waypoint surface positions/normals are mirrored from the master
-- symmetry reconciliation re-enforces the exact mirrored state
+During drag:
+- waypoints follow with cheap vector math
+- old local offsets are softened
 
-Unlinking keeps the currently materialized mirrored state, so there should be no
-visual jump when a pair becomes independent.
+On pointer-up:
+- each waypoint keeps only its relative t position along the strap
+- its old spatial offset is discarded for this reprojection
+- a new candidate is built from the new strap endpoints
+- that candidate is projected once onto the mannequin
+- paired straps receive the mirrored result
 
-## Waypoint interaction
-- `+ Punkt` guide uses 14 projection intervals instead of 28 to reduce entry delay
-- while waiting for a waypoint, one-finger drag rotates the camera normally
-- only a tap attempts to place a point; camera navigation keeps point mode active
-- V1.5f automatic Lockerheit=0 remains active
-
-The existing save/history representation is retained intentionally to minimize
-migration risk.
+The user's manually chosen route is still preserved during normal editing and body changes.

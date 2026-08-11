@@ -759,10 +759,13 @@ function autoControlWorld(s){
 function waypointFramePosition(s,c){
   const f=strapFrame(s);
   const base=f.A.clone().lerp(f.B,THREE.MathUtils.clamp(c.t??.5,0,1));
+
+  // Soft local offsets: preserve route intent without pinning the strap.
+  const follow=.42;
   return base
-    .addScaledVector(f.tangent,c.offsetTangent||0)
-    .addScaledVector(f.side,c.offsetSide||0)
-    .addScaledVector(f.normal,c.offsetNormal||0);
+    .addScaledVector(f.tangent,(c.offsetTangent||0)*follow)
+    .addScaledVector(f.side,(c.offsetSide||0)*follow)
+    .addScaledVector(f.normal,(c.offsetNormal||0)*follow);
 }
 function bindWaypointToFrame(s,c,worldPos,worldNormal){
   const f=strapFrame(s);
@@ -813,12 +816,22 @@ function addSurfaceWaypoint(s,t=nextWaypointT(s)){
   updateStrapGeometry(s);
   return c;
 }
-function reprojectWaypoint(s,c){
+function reprojectWaypoint(s,c,{followEndpoints=false}={}){
   if(!c?.waypoint)return;
-  const candidate=waypointFramePosition(s,c);
+
+  const f=strapFrame(s);
+  let candidate;
+
+  if(followEndpoints){
+    // Waypoint is route guidance, not a fixed world-space nail.
+    candidate=f.A.clone().lerp(f.B,THREE.MathUtils.clamp(c.t??.5,0,1));
+  }else{
+    candidate=waypointFramePosition(s,c);
+  }
+
   const preferred=c.surfaceNormal
     ?new THREE.Vector3().fromArray(c.surfaceNormal).normalize()
-    :strapFrame(s).normal.clone();
+    :f.normal.clone();
 
   const hit=nearestBodySurfacePreferred(candidate,preferred)||
             nearestBodySurface(candidate);
@@ -826,9 +839,9 @@ function reprojectWaypoint(s,c){
 
   bindWaypointToFrame(s,c,hit.point,hit.normal);
 }
-function reprojectStrapWaypoints(s){
+function reprojectStrapWaypoints(s,{followEndpoints=false}={}){
   if(!s?.controls?.some(c=>c.waypoint))return;
-  for(const c of s.controls)if(c.waypoint)reprojectWaypoint(s,c);
+  for(const c of s.controls)if(c.waypoint)reprojectWaypoint(s,c,{followEndpoints});
   updateStrapGeometry(s);
 }
 function mirrorWaypointsToPartner(src,dst){
@@ -855,7 +868,7 @@ function reprojectAttachedWaypoints(nodeId){
       const master=ps && s.id>ps.id ? ps : s;
       const mate=ps ? (master===s?ps:s) : null;
       if(!touched.has(master.id)){
-        reprojectStrapWaypoints(master);
+        reprojectStrapWaypoints(master,{followEndpoints:true});
         if(mate)mirrorWaypointsToPartner(master,mate);
         touched.add(master.id);
         if(mate)touched.add(mate.id);
@@ -2796,8 +2809,9 @@ canvas.addEventListener('pointerup',e=>{
     if(movedNode){
       dynTouchEntity(movedNode);
 
-      // During drag waypoints followed with vector math only.
-      // Now, once, snap affected waypoints back onto the body surface.
+      // During drag waypoints follow cheaply and softly.
+      // On release rebuild them from the NEW endpoints and project once,
+      // so previous body positions cannot pin the strap in place.
       reprojectAttachedWaypoints(movedNode.id);
       const partner=pairOfNode(movedNode);
       if(partner)reprojectAttachedWaypoints(partner.id);
