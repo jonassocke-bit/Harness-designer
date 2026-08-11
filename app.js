@@ -233,6 +233,8 @@ function reprojectHarnessToBody(){
     syncNodeTransform(n);
   }
 
+  // Body shape changed: surface waypoints get one fresh projection too.
+  reprojectAllWaypoints();
   for(const s of straps.values())updateStrapGeometry(s);
   rebuildAllWraps();
   refreshAutomaticCrossings();
@@ -549,6 +551,23 @@ function rebuildNodeVisual(n){
   visual.userData={kind:'nodeVisual',id:n.id};hit.userData={kind:'nodeHit',id:n.id};
   n.visual=visual;n.hit=hit;n.group.add(visual,hit);
 }
+
+function symmetryAxisNormal(normal){
+  // A node snapped to x=0 must have an orientation that is itself mirror-symmetric.
+  // Remove only the lateral X component. Y/Z still define front/back tilt along
+  // the mannequin, so rings can follow chest/abdomen curvature without twisting
+  // left/right due to tiny mesh asymmetries.
+  const n=normal.clone();
+  n.x=0;
+  if(n.lengthSq()<1e-8)n.set(0,0,1);
+  return n.normalize();
+}
+function nodeNormalForDisplay(n){
+  const normal=nodeWorldNormal(n);
+  const p=nodeWorldPosition(n);
+  return Math.abs(p.x)<AXIS_SNAP_IN ? symmetryAxisNormal(normal) : normal;
+}
+
 function syncNodeTransform(n){
   if(n.source==='strap'&&n.parentStrapId){
     const s=straps.get(n.parentStrapId);
@@ -565,7 +584,13 @@ function syncNodeTransform(n){
       if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();n.normal=normal.toArray();
     }
   }
-  const p=nodeWorldPosition(n),normal=nodeWorldNormal(n);
+  const p=nodeWorldPosition(n),normal=nodeNormalForDisplay(n);
+
+  // Persist the symmetry-safe normal while snapped to the center axis.
+  // This also prevents pairing checks / connected strap frames from seeing a
+  // slightly asymmetric normal caused by the underlying body mesh.
+  if(Math.abs(p.x)<AXIS_SNAP_IN)n.normal=normal.toArray();
+
   const offset=n.ringVisible?ringTube(n):0;
   n.group.position.copy(p).addScaledVector(normal,surfaceOffsetScene()+offset);
   n.group.quaternion.setFromUnitVectors(UNIT_Z,normal);
@@ -596,6 +621,114 @@ function autoControlWorld(s){
     .lerp(f.B,.5)
     .addScaledVector(f.normal,baseClearance + slack*relativeBulge);
 }
+
+function waypointFramePosition(s,c){
+  const f=strapFrame(s);
+  const base=f.A.clone().lerp(f.B,THREE.MathUtils.clamp(c.t??.5,0,1));
+  return base
+    .addScaledVector(f.tangent,c.offsetTangent||0)
+    .addScaledVector(f.side,c.offsetSide||0)
+    .addScaledVector(f.normal,c.offsetNormal||0);
+}
+function bindWaypointToFrame(s,c,worldPos,worldNormal){
+  const f=strapFrame(s);
+  const base=f.A.clone().lerp(f.B,THREE.MathUtils.clamp(c.t??.5,0,1));
+  const d=worldPos.clone().sub(base);
+  c.waypoint=true;
+  c.surfacePos=worldPos.toArray();
+  c.surfaceNormal=worldNormal.clone().normalize().toArray();
+  c.offsetTangent=d.dot(f.tangent);
+  c.offsetSide=d.dot(f.side);
+  c.offsetNormal=d.dot(f.normal);
+}
+function waypointControlAt(s,t){
+  t=THREE.MathUtils.clamp(t,.03,.97);
+
+  // Use the current visible curve as the candidate. This means every new
+  // waypoint refines the path that already exists instead of restarting from
+  // the straight A->B chord.
+  const candidate=effectiveStrapCurve(s).getPoint(t);
+  let preferred=strapNormalAt(s,t);
+  if(preferred.lengthSq()<1e-8)preferred=strapFrame(s).normal.clone();
+
+  const hit=nearestBodySurfacePreferred(candidate,preferred)||
+            nearestBodySurface(candidate);
+
+  const point=hit?.point?.clone?.()||candidate.clone();
+  const normal=hit?.normal?.clone?.()||preferred.clone().normalize();
+
+  const c={t,waypoint:true};
+  bindWaypointToFrame(s,c,point,normal);
+  return c;
+}
+function nextWaypointT(s){
+  const ts=[0,...s.controls.filter(c=>c.waypoint).map(c=>THREE.MathUtils.clamp(c.t,0,1)),1].sort((a,b)=>a-b);
+  let bestT=.5,bestGap=-1;
+  for(let i=0;i<ts.length-1;i++){
+    const gap=ts[i+1]-ts[i];
+    if(gap>bestGap){bestGap=gap;bestT=(ts[i]+ts[i+1])*.5}
+  }
+  return bestT;
+}
+function addSurfaceWaypoint(s,t=nextWaypointT(s)){
+  if(!s)return null;
+  // New UI uses waypoints, never recursive SurfaceLevel subdivision.
+  s.surfaceLevel=0;
+  const c=waypointControlAt(s,t);
+  s.controls.push(c);
+  updateStrapGeometry(s);
+  return c;
+}
+function reprojectWaypoint(s,c){
+  if(!c?.waypoint)return;
+  const candidate=waypointFramePosition(s,c);
+  const preferred=c.surfaceNormal
+    ?new THREE.Vector3().fromArray(c.surfaceNormal).normalize()
+    :strapFrame(s).normal.clone();
+
+  const hit=nearestBodySurfacePreferred(candidate,preferred)||
+            nearestBodySurface(candidate);
+  if(!hit)return;
+
+  bindWaypointToFrame(s,c,hit.point,hit.normal);
+}
+function reprojectStrapWaypoints(s){
+  if(!s?.controls?.some(c=>c.waypoint))return;
+  for(const c of s.controls)if(c.waypoint)reprojectWaypoint(s,c);
+  updateStrapGeometry(s);
+}
+function reprojectAttachedWaypoints(nodeId){
+  const touched=new Set();
+  for(const s of straps.values()){
+    if((s.a===nodeId||s.b===nodeId)&&s.controls.some(c=>c.waypoint)){
+      reprojectStrapWaypoints(s);
+      touched.add(s.id);
+    }
+  }
+  return touched;
+}
+function reprojectAllWaypoints(){
+  for(const s of straps.values())if(s.controls.some(c=>c.waypoint))reprojectStrapWaypoints(s);
+}
+function waypointPatternMatches(a,b){
+  const ac=a.controls.filter(c=>c.waypoint),bc=b.controls.filter(c=>c.waypoint);
+  if(ac.length!==bc.length)return false;
+  for(let i=0;i<ac.length;i++){
+    if(Math.abs((ac[i].t??0)-(bc[i].t??0))>.002)return false;
+  }
+  return true;
+}
+function syncWaypointPattern(src,dst){
+  const srcWp=src.controls.filter(c=>c.waypoint).slice().sort((a,b)=>a.t-b.t);
+  if(!srcWp.length)return false;
+  if(waypointPatternMatches(src,dst))return true;
+
+  dst.surfaceLevel=0;
+  dst.controls=[];
+  for(const c of srcWp)dst.controls.push(waypointControlAt(dst,c.t));
+  return true;
+}
+
 function manualControlWorld(s,c){
   const f=strapFrame(s);
   const slack=THREE.MathUtils.clamp(s.slack/100,0,1);
@@ -603,12 +736,20 @@ function manualControlWorld(s,c){
   const baseClearance=THREE.MathUtils.clamp(f.length*.018,.006,.022);
   const clearance=baseClearance+slack*relativeBulge;
 
-  // V1.4g: explicit curve points are surface guides, not free points in space.
+  // V1.5c: real surface waypoint.
+  // During endpoint drag this is pure vector math: no raycast, no recursive
+  // subdivision, no body-surface search. The expensive projection happens once
+  // on pointer-up.
+  if(c.waypoint){
+    const p=waypointFramePosition(s,c);
+    const n=c.surfaceNormal?new THREE.Vector3().fromArray(c.surfaceNormal).normalize():f.normal;
+    return p.addScaledVector(n,clearance);
+  }
+
+  // Legacy explicit surface controls from old saved projects.
   if(c.surfacePos){
     const p=new THREE.Vector3().fromArray(c.surfacePos);
     const n=c.surfaceNormal?new THREE.Vector3().fromArray(c.surfaceNormal).normalize():f.normal;
-    // At "straff" the curve follows the surface closely.
-    // Lockerheit lifts the guide away proportionally.
     return p.addScaledVector(n,clearance);
   }
 
@@ -712,7 +853,9 @@ function updateStrapGeometry(s){
       const ctrl=autoControlWorld(s);
       renderCurve=new THREE.QuadraticBezierCurve3(a,ctrl,b);
     }else{
-      // Legacy project compatibility only. V1.4i UI no longer creates these controls.
+      // V1.5c waypoint path: A -> P1 -> P2 -> B.
+      // This remains the cheap standard geometry path; controls are evaluated
+      // with vector math only while dragging.
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
       renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
     }
@@ -1140,10 +1283,13 @@ function showSelection(){
   }else{
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
+    const wp=selected.controls.filter(c=>c.waypoint).length;
     const lvl=selected.surfaceLevel||0;
-    const internal=lvl?Math.pow(2,lvl)-1:0;
-    const sections=lvl?Math.pow(2,lvl):1;
-    curvePointCount.textContent=lvl?`${internal} Punkte · ${sections} Teile`:'Standard';
+    if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
+    else if(lvl){
+      const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
+      curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
+    }else curvePointCount.textContent='Standard';
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
@@ -1372,26 +1518,47 @@ curveAutoBtn.addEventListener('click',()=>{
 curvePlusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
-  s.surfaceLevel=Math.min(4,(s.surfaceLevel||0)+1);
-  s.controls=[];
 
+  // Cap keeps the UI/design tool predictable; ordinary straps stay at zero.
+  const wpCount=s.controls.filter(c=>c.waypoint).length;
+  if(wpCount>=6){showToast('Maximal 6 Auflagepunkte');return}
+
+  const t=nextWaypointT(s);
+  addSurfaceWaypoint(s,t);
+
+  // Paired straps share the waypoint pattern (same t), but each waypoint is
+  // projected independently onto its own body path. Different strap lengths
+  // therefore remain completely valid.
   const ps=pairOfStrap(s);
-  if(ps){ps.surfaceLevel=s.surfaceLevel;ps.controls=[];updateStrapGeometry(ps)}
+  if(ps){
+    ps.surfaceLevel=0;
+    addSurfaceWaypoint(ps,t);
+  }
 
-  updateStrapGeometry(s);
   showSelection();refreshAutomaticCrossings();commitHistory();
 });
 
 curveMinusBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
   const s=selected;
-  s.surfaceLevel=Math.max(0,(s.surfaceLevel||0)-1);
-  s.controls=[];
+
+  const i=[...s.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint).at(-1)?.i;
+  if(i===undefined){
+    // One click also converts an old recursive surface strap back to Standard.
+    if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
+  }else{
+    s.controls.splice(i,1);
+    updateStrapGeometry(s);
+  }
 
   const ps=pairOfStrap(s);
-  if(ps){ps.surfaceLevel=s.surfaceLevel;ps.controls=[];updateStrapGeometry(ps)}
+  if(ps){
+    const pi=[...ps.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint).at(-1)?.i;
+    if(pi!==undefined)ps.controls.splice(pi,1);
+    else ps.surfaceLevel=0;
+    updateStrapGeometry(ps);
+  }
 
-  updateStrapGeometry(s);
   showSelection();refreshAutomaticCrossings();commitHistory();
 });
 
@@ -1764,10 +1931,17 @@ function copyStrapProps(src,dst){
   if(!src||!dst)return;
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
-  dst.surfaceLevel=src.surfaceLevel||0;
 
-  // Legacy manual controls remain mirrored only for old projects.
-  dst.controls=src.controls.map(c=>({...c,sideFactor:-(c.sideFactor??0)}));
+  // V1.5c: paired straps share waypoint COUNT/POSITION ALONG STRAP (t), not
+  // world-space coordinates. Each strap owns its own projected body positions.
+  if(src.controls.some(c=>c.waypoint)){
+    syncWaypointPattern(src,dst);
+    dst.surfaceLevel=0;
+  }else{
+    dst.surfaceLevel=src.surfaceLevel||0;
+    // Legacy manual controls remain mirrored only for old projects.
+    dst.controls=src.controls.map(c=>({...c,sideFactor:-(c.sideFactor??0)}));
+  }
   updateStrapGeometry(dst);
 }
 
@@ -1868,7 +2042,12 @@ mirrorSelectedBtn.addEventListener('click',()=>{
     const a=mirrorNode(nodes.get(selected.a)),b=mirrorNode(nodes.get(selected.b));
     let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
     if(!existing){
-      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:selected.surfaceLevel||0});
+      const hasWp=selected.controls.some(c=>c.waypoint);
+      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:hasWp?0:(selected.surfaceLevel||0)});
+      if(hasWp){
+        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t))m.controls.push(waypointControlAt(m,c.t));
+        updateStrapGeometry(m);
+      }
       selected.mirrorId=m.id;m.mirrorId=selected.id;rememberFormerPartners(selected,m);
     }
     rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
@@ -2110,10 +2289,7 @@ function requestNodeDrag(n,x,y){
         const p=hit.point.clone();
         p.x=0;
 
-        const normal=worldNormal(hit);
-        normal.x=0;
-        if(normal.lengthSq()<1e-8)normal.set(0,0,1);
-        normal.normalize();
+        const normal=symmetryAxisNormal(worldNormal(hit));
 
         setNodeWorldPosition(q.n,p);
         q.n.normal=normal.toArray();
@@ -2124,7 +2300,8 @@ function requestNodeDrag(n,x,y){
     }
 
     const hit=bodyHit(q.x,q.y);if(!hit)return;
-    const p=snapAxis(hit.point.clone()),normal=worldNormal(hit);
+    const p=snapAxis(hit.point.clone());
+    const normal=Math.abs(p.x)<AXIS_SNAP_IN?symmetryAxisNormal(worldNormal(hit)):worldNormal(hit);
     setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
     updateAttachedStraps(q.n.id);
 
@@ -2197,7 +2374,15 @@ canvas.addEventListener('pointerup',e=>{
   const was=single;single=null;
   if(was.moved){
     const movedNode=was.activeNodeId?nodes.get(was.activeNodeId):null;
-    if(movedNode)dynTouchEntity(movedNode);
+    if(movedNode){
+      dynTouchEntity(movedNode);
+
+      // During drag waypoints followed with vector math only.
+      // Now, once, snap affected waypoints back onto the body surface.
+      reprojectAttachedWaypoints(movedNode.id);
+      const partner=pairOfNode(movedNode);
+      if(partner)reprojectAttachedWaypoints(partner.id);
+    }
     rebuildAllWraps();refreshAutomaticCrossings();
     dynReconcileSymmetry({syncProps:true});
     refreshMaterials();commitHistory();return
@@ -2221,7 +2406,8 @@ canvas.addEventListener('pointerup',e=>{
   if(hit?.kind==='strap'){selectObject(straps.get(hit.id));return}
   if(tool!=='connect'&&mode==='build'){
     const bh=bodyHit(e.clientX,e.clientY);if(!bh)return;
-    const p=snapAxis(bh.point.clone()),normal=worldNormal(bh);
+    const p=snapAxis(bh.point.clone());
+    const normal=Math.abs(p.x)<AXIS_SNAP_IN?symmetryAxisNormal(worldNormal(bh)):worldNormal(bh);
     const n=makeNode({position:p.toArray(),normal:normal.toArray()});
     if(mirrorMode&&Math.abs(p.x)>.02){const m=mirrorNode(n);syncNodeTransform(m)}
     selectObject(n);commitHistory();
