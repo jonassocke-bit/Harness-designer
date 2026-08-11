@@ -1,15 +1,18 @@
-# Harness Designer V1.8e
+# Harness Designer V1.8g
 
-Based on the stable V1.8d/V1.8c line.
+V1.8f plus local convex-surface refinement.
 
-Changes:
-- Manual cyan guide is now generated from the perfectly straight Ring-A-centre -> Ring-B-centre chord.
-- Projection samples are spaced by strap length: approximately one sample every 5 cm (3–24 segments).
-- Each chord sample is ray-cast toward the mannequin along the interpolated endpoint surface normal.
-- Rare missed samples are interpolated, so the cyan line has no holes.
-- Auto uses exactly the same projected chord data as manual mode.
-- Auto route reduction is capped at 8 points.
-- Auto button now has an explicit visible active/pressed style.
-- While +Punkt mode is waiting for input, two-finger pinch/pan works normally.
-- One-finger drag still rotates the camera while staying in point-placement mode.
-- Panel code is unchanged.
+Base projection density remains ~1 sample every 1.7 cm.
+
+New:
+- each straight cyan segment between neighbouring projected samples is checked
+- if that segment disappears into the mannequin, only that segment is subdivided
+- the midpoint is projected back onto the mannequin
+- local refinement repeats up to depth 2
+- flat/simple regions receive no extra work
+- shoulder/breast/high-curvature regions become locally denser
+- Auto uses the same refined route before its normal simplification
+
+This is intended to fix the case where valid projected endpoints were connected by
+a straight line that cut through a convex shoulder/chest surface.
+Panel logic is unchanged.

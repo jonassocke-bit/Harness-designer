@@ -2419,9 +2419,9 @@ function projectedChordSamples(s,{count=null,lift=0}={}){
   const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
   const length=A.distanceTo(B);
 
-  // Approx. one projection sample every 5 cm.
-  // Existing scene scale: 1 mm ≈ 0.0037 scene units => 50 mm ≈ 0.185.
-  const segments=count??THREE.MathUtils.clamp(Math.ceil(length/.185),3,24);
+  // Approx. one projection sample every 1.7 cm.
+  // Existing scene scale: 1 mm ≈ 0.0037 scene units => ~17 mm ≈ 0.062.
+  const segments=count??THREE.MathUtils.clamp(Math.ceil(length/.062),5,64);
   const raw=[];
 
   for(let i=0;i<=segments;i++){
@@ -2525,8 +2525,9 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
-  const samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
+  let samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
   if(samples.length<3)return;
+  samples=refineProjectedGuide(s,samples,surfaceClearanceForStrap(s),2);
   const reduced=simplifyProjectedRoute(samples,8);
   s.surfaceLevel=0;
   s.controls=[];
@@ -2538,11 +2539,89 @@ function rebuildAutoProjection(s){
   s.controls.sort((a,b)=>a.t-b.t);
   updateStrapGeometry(s);
 }
+
+function projectChordPointToBody(s,t,lift=0){
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return null;
+
+  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
+  const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
+  const candidate=A.clone().lerp(B,t);
+
+  let preferred=nA.clone().lerp(nB,t);
+  if(preferred.lengthSq()<1e-8)preferred=strapFrame(s).normal.clone();
+  preferred.normalize();
+
+  let best=null,bestScore=Infinity;
+  for(const sign of [1,-1]){
+    const origin=candidate.clone().addScaledVector(preferred,sign*1.35);
+    const dir=preferred.clone().multiplyScalar(-sign);
+    raycaster.set(origin,dir);
+
+    const hits=raycaster.intersectObjects(bodyMeshes,true);
+    for(const h of hits.slice(0,5)){
+      const normal=worldNormal(h);
+      const alignment=normal.dot(preferred);
+      const distance=h.point.distanceTo(candidate);
+      const sidePenalty=alignment<-.15?.8:(1-Math.max(0,alignment))*.08;
+      const score=distance+sidePenalty;
+
+      if(score<bestScore){
+        bestScore=score;
+        best={
+          t,
+          point:h.point.clone(),
+          normal:normal.clone().normalize()
+        };
+      }
+    }
+  }
+
+  if(!best)return null;
+  best.displayPoint=best.point.clone().addScaledVector(best.normal,lift);
+  return best;
+}
+
+function guideSegmentNeedsRefine(a,b){
+  // Test the visible straight segment itself. On a convex shoulder/chest the
+  // endpoints can both be correct while the chord between them dives through
+  // the mannequin.
+  const mid=a.displayPoint.clone().lerp(b.displayPoint,.5);
+  return bodyOccludesWorldPoint(mid,.012);
+}
+
+function refineProjectedGuide(s,samples,lift,maxDepth=2){
+  if(samples.length<2)return samples;
+
+  function refinePair(a,b,depth){
+    if(depth>=maxDepth||!guideSegmentNeedsRefine(a,b))return [a,b];
+
+    const t=(a.t+b.t)*.5;
+    const mid=projectChordPointToBody(s,t,lift);
+    if(!mid)return [a,b];
+
+    const left=refinePair(a,mid,depth+1);
+    const right=refinePair(mid,b,depth+1);
+    return left.slice(0,-1).concat(right);
+  }
+
+  const out=[];
+  for(let i=0;i<samples.length-1;i++){
+    const part=refinePair(samples[i],samples[i+1],0);
+    if(i)part.shift();
+    out.push(...part);
+  }
+  return out;
+}
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-  const samples=projectedChordSamples(s,{lift:.009});
+  let samples=projectedChordSamples(s,{lift:.011});
   if(samples.length<2)return false;
+
+  // Keep the normal ~1.7 cm density, but locally add only the samples needed
+  // to keep the cyan guide outside strongly convex body regions.
+  samples=refineProjectedGuide(s,samples,.011,2);
   waypointGuideSamples=samples;
 
   const positions=[];
