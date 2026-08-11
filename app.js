@@ -1427,6 +1427,7 @@ function makeStrap(data={}){
     dynEditStamp:data.dynEditStamp||0,
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
+    autoProject:!!data.autoProject,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -1974,12 +1975,14 @@ function showSelection(){
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
     const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
+    curveAutoBtn.classList.toggle('active',!!selected.autoProject);
+    curveAutoBtn.setAttribute('aria-pressed',String(!!selected.autoProject));
     const lvl=selected.surfaceLevel||0;
     if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
     else if(lvl){
       const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
-    }else curvePointCount.textContent='Standard';
+    }else curvePointCount.textContent=selected.autoProject?'Auto':'Standard';
   }else if(selected.kind==='panel'){
     panelOffsetSlider.value=selected.offsetMM??panelDefaults.offsetMM;
     syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
@@ -2047,7 +2050,8 @@ function serialize(){
       surfaceLevel:s.surfaceLevel||0,
       dynEditStamp:s.dynEditStamp||0,
       previousPartnerId:s.previousPartnerId||null,
-      manualUnlinked:!!s.manualUnlinked
+      manualUnlinked:!!s.manualUnlinked,
+      autoProject:!!s.autoProject
     })),
     panels:[...panels.values()].map(p=>({
       id:p.id,
@@ -2402,55 +2406,136 @@ function clearWaypointGuide(){
     o.material?.dispose?.();
   }
 }
+
+// V1.8d: one shared projection path for the manual cyan guide and Auto.
+// Start from the straight endpoint chord, project samples to the mannequin,
+// reject implausible jumps, then fill tiny misses by interpolation.
+// This is intentionally NOT the old recursive collision solver.
+function projectedChordSamples(s,{count=32,lift=0}={}){
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return [];
+  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
+  const nA=nodeWorldNormal(aNode),nB=nodeWorldNormal(bNode);
+  const raw=new Array(count+1);
+  let previous=null;
+
+  for(let i=0;i<=count;i++){
+    const t=i/count;
+    const candidate=A.clone().lerp(B,t);
+    let preferred=nA.clone().lerp(nB,t);
+    if(preferred.lengthSq()<1e-8)preferred=strapFrame(s).normal.clone();
+    preferred.normalize();
+
+    const options=[];
+    const h1=nearestBodySurfacePreferred(candidate,preferred);
+    if(h1)options.push(h1);
+    const h2=nearestBodySurface(candidate);
+    if(h2)options.push(h2);
+    if(!options.length){raw[i]=null;continue}
+
+    // Continuity wins over a slightly nearer hit. This prevents a sample
+    // suddenly jumping from torso to breast/arm and creating the visible kink.
+    let best=null,bestScore=Infinity;
+    for(const h of options){
+      const jump=previous?h.point.distanceTo(previous.point):0;
+      const normalPenalty=previous?(1-Math.max(-1,Math.min(1,h.normal.dot(previous.normal))))*.10:0;
+      const chordPenalty=h.point.distanceTo(candidate)*.16;
+      const score=jump*.35+normalPenalty+chordPenalty;
+      if(score<bestScore){bestScore=score;best=h}
+    }
+    if(previous&&best.point.distanceTo(previous.point)>A.distanceTo(B)/Math.max(5,count*.32)){
+      raw[i]=null;
+    }else{
+      raw[i]={t,point:best.point.clone(),normal:best.normal.clone().normalize()};
+      previous=raw[i];
+    }
+  }
+
+  // Endpoints are known anchors; missing local projections are interpolated
+  // rather than leaving a gap in the cyan line.
+  raw[0]={t:0,point:A.clone(),normal:nA.clone().normalize()};
+  raw[count]={t:1,point:B.clone(),normal:nB.clone().normalize()};
+  for(let i=1;i<count;i++){
+    if(raw[i])continue;
+    let l=i-1,r=i+1;
+    while(l>=0&&!raw[l])l--;
+    while(r<=count&&!raw[r])r++;
+    if(l>=0&&r<=count){
+      const u=(i-l)/(r-l);
+      let n=raw[l].normal.clone().lerp(raw[r].normal,u);
+      if(n.lengthSq()<1e-8)n=preferred.clone();
+      raw[i]={t:i/count,point:raw[l].point.clone().lerp(raw[r].point,u),normal:n.normalize()};
+    }
+  }
+
+  return raw.filter(Boolean).map(g=>({
+    ...g,
+    displayPoint:g.point.clone().addScaledVector(g.normal,lift)
+  }));
+}
+
+function simplifyProjectedRoute(samples,maxPoints=9){
+  if(samples.length<=2)return samples;
+  // Keep points only where the surface route visibly bends away from the
+  // straight segment. Large smooth areas therefore cost almost nothing.
+  const keep=[samples[0]];
+  let anchor=0;
+  while(anchor<samples.length-1&&keep.length<maxPoints-1){
+    const end=Math.min(samples.length-1,anchor+6);
+    let bestI=-1,bestD=.010;
+    const a=samples[anchor].point,b=samples[end].point;
+    const ab=b.clone().sub(a),den=Math.max(ab.lengthSq(),1e-9);
+    for(let i=anchor+1;i<end;i++){
+      const p=samples[i].point;
+      const u=THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/den,0,1);
+      const q=a.clone().addScaledVector(ab,u);
+      const d=p.distanceTo(q);
+      if(d>bestD){bestD=d;bestI=i}
+    }
+    if(bestI>anchor){keep.push(samples[bestI]);anchor=bestI}
+    else anchor=end;
+  }
+  if(keep[keep.length-1]!==samples[samples.length-1])keep.push(samples[samples.length-1]);
+  return keep;
+}
+
+function rebuildAutoProjection(s){
+  if(!s?.autoProject)return;
+  const samples=projectedChordSamples(s,{count:28,lift:surfaceClearanceForStrap(s)});
+  if(samples.length<3)return;
+  const reduced=simplifyProjectedRoute(samples,10);
+  s.surfaceLevel=0;
+  s.controls=[];
+  for(const g of reduced.slice(1,-1)){
+    const c={t:g.t,waypoint:true,autoProjected:true};
+    bindWaypointToFrame(s,c,g.point,g.normal);
+    s.controls.push(c);
+  }
+  s.controls.sort((a,b)=>a.t-b.t);
+  updateStrapGeometry(s);
+}
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-
-  const curve=effectiveStrapCurve(s);
-  const samples=[];
-  const N=14;
-
-  for(let i=0;i<=N;i++){
-    const t=i/N;
-    const candidate=curve.getPoint(t);
-    let preferred;
-    try{preferred=strapNormalAt(s,t)}catch{preferred=strapFrame(s).normal.clone()}
-    if(preferred.lengthSq()<1e-8)preferred=strapFrame(s).normal.clone();
-
-    const hit=nearestBodySurfacePreferred(candidate,preferred)||
-              nearestBodySurface(candidate);
-    if(!hit)continue;
-
-    // Lift by a few mm purely for z-fighting-safe visualization.
-    const surfacePoint=hit.point.clone();
-    const normal=hit.normal.clone().normalize();
-    const displayPoint=surfacePoint.clone().addScaledVector(normal,.009);
-    samples.push({t,point:surfacePoint,normal,displayPoint});
-  }
-
+  const samples=projectedChordSamples(s,{count:40,lift:.009});
   if(samples.length<2)return false;
   waypointGuideSamples=samples;
 
   const positions=[];
   for(const g of samples)positions.push(g.displayPoint.x,g.displayPoint.y,g.displayPoint.z);
-
   const geom=new THREE.BufferGeometry();
   geom.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   const mat=new THREE.LineBasicMaterial({
     color:0x00d8ff,transparent:true,opacity:.96,depthTest:true,depthWrite:false
   });
-  const line=new THREE.Line(geom,mat);
-  line.renderOrder=20;
-  waypointGuideRoot.add(line);
+  const line=new THREE.Line(geom,mat);line.renderOrder=20;waypointGuideRoot.add(line);
 
   const pgeom=geom.clone();
   const pmat=new THREE.PointsMaterial({
-    color:0x00d8ff,size:4.5,sizeAttenuation:false,
+    color:0x00d8ff,size:4.2,sizeAttenuation:false,
     transparent:true,opacity:.8,depthTest:true,depthWrite:false
   });
-  const points=new THREE.Points(pgeom,pmat);
-  points.renderOrder=21;
-  waypointGuideRoot.add(points);
+  const points=new THREE.Points(pgeom,pmat);points.renderOrder=21;waypointGuideRoot.add(points);
   return true;
 }
 function waypointGuideHit(x,y){
@@ -2505,6 +2590,8 @@ function cancelWaypointPlacement({quiet=false}={}){
 }
 function beginWaypointPlacement(s){
   if(!s)return;
+  s.autoProject=false;
+  const aps=pairOfStrap(s);if(aps)aps.autoProject=false;
   waypointPlacementStrapId=s.id;
   curvePlusBtn.classList.add('active');
   canvas.classList.add('placing-waypoint');
@@ -2559,13 +2646,17 @@ function addWaypointFromGuideHit(s,guideHit){
 
 curveAutoBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
-  selected.surfaceLevel=0;
-  selected.controls=[];
-
+  const turnOn=!selected.autoProject;
+  const apply=s=>{
+    s.autoProject=turnOn;
+    s.surfaceLevel=0;
+    s.controls=(s.controls||[]).filter(c=>!c.autoProjected);
+    if(turnOn)rebuildAutoProjection(s);
+    else updateStrapGeometry(s);
+  };
+  apply(selected);
   const ps=pairOfStrap(selected);
-  if(ps){ps.surfaceLevel=0;ps.controls=[];updateStrapGeometry(ps)}
-
-  updateStrapGeometry(selected);
+  if(ps)apply(ps);
   showSelection();refreshAutomaticCrossings();commitHistory();
 });
 
@@ -3618,6 +3709,19 @@ canvas.addEventListener('pointerup',e=>{
       // The route already followed the endpoint during the drag.
       // Now project that moved route once back to the mannequin.
       finalizeEndpointWaypointDragState(was.waypointDragState);
+      // Auto is deliberately deferred until pointer-up: drag stays cheap.
+      const touched=new Set();
+      for(const s of straps.values()){
+        if(!s.autoProject)continue;
+        if(s.a===movedNode.id||s.b===movedNode.id){
+          const master=pairOfStrap(s)?pairMasterStrap(s):s;
+          if(touched.has(master.id))continue;
+          touched.add(master.id);
+          rebuildAutoProjection(master);
+          const ps=pairOfStrap(master);
+          if(ps){ps.autoProject=true;mirrorStrapMeshFromMaster(master,ps)}
+        }
+      }
     }
     finalizeDirtyPanels();
     rebuildAllWraps();refreshAutomaticCrossings();
