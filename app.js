@@ -3041,26 +3041,61 @@ function mirrorNode(n){
 mirrorToggle.addEventListener('click',()=>{mirrorMode=!mirrorMode;mirrorToggle.classList.toggle('active',mirrorMode);mirrorToggle.setAttribute('aria-pressed',String(mirrorMode))});
 mirrorSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
+
   if(selected.kind==='node'){
-    const m=mirrorNode(selected);syncNodeTransform(m);commitHistory();showToast('Gespiegelt');
-  }else if(selected.kind==='strap'){
+    const m=mirrorNode(selected);
+    syncNodeTransform(m);
+    dynReconcileSymmetry({syncProps:true});
+    commitHistory();
+    showToast('Gespiegelt');
+    return;
+  }
+
+  if(selected.kind==='strap'){
     const a=mirrorNode(nodes.get(selected.a)),b=mirrorNode(nodes.get(selected.b));
-    let existing=[...straps.values()].find(s=>(s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id));
+    let existing=[...straps.values()].find(s=>
+      (s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id)
+    );
+
     if(!existing){
       const hasWp=selected.controls.some(c=>c.waypoint);
-      const m=makeStrap({a:a.id,b:b.id,widthMM:selected.widthMM,slack:selected.slack,controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),surfaceLevel:hasWp?0:(selected.surfaceLevel||0)});
+      const m=makeStrap({
+        a:a.id,b:b.id,
+        widthMM:selected.widthMM,
+        slack:selected.slack,
+        controls:hasWp?[]:selected.controls.map(c=>({...c,side:-c.side})),
+        surfaceLevel:hasWp?0:(selected.surfaceLevel||0)
+      });
+
       if(hasWp){
-        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t))m.controls.push(waypointControlAt(m,c.t));
+        for(const c of selected.controls.filter(c=>c.waypoint).sort((x,y)=>x.t-y.t)){
+          m.controls.push(waypointControlAt(m,c.t));
+        }
         updateStrapGeometry(m);
       }
-      selected.mirrorId=m.id;m.mirrorId=selected.id;rememberFormerPartners(selected,m);
+
+      selected.mirrorId=m.id;
+      m.mirrorId=selected.id;
+      rememberFormerPartners(selected,m);
+      existing=m;
     }
-    rebuildAllWraps();commitHistory();showToast('Riemen gespiegelt');
+
+    dynReconcileSymmetry({syncProps:true});
+    rebuildAllWraps();
+    commitHistory();
+    showToast('Riemen gespiegelt');
+    return;
   }
-  }else if(selected.kind==='panel'){
+
+  if(selected.kind==='panel'){
     const m=mirrorPanelFrom(selected);
-    if(m){selectObject(selected);commitHistory();showToast('Fläche gespiegelt')}
-    else showToast('Fläche kann nicht gespiegelt werden');
+    if(m){
+      selectObject(selected);
+      commitHistory();
+      showToast('Fläche gespiegelt');
+    }else{
+      showToast('Fläche kann nicht gespiegelt werden');
+    }
   }
 });
 
@@ -3551,8 +3586,13 @@ installSheetResize(selectionPanel);installSheetResize(modelPanel);
 function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)}
 resize();animate();
 
-// Start from safe procedural fallback, then replace asynchronously.
-// A body-GLB failure therefore cannot block the render loop.
-setTimeout(()=>loadIntegratedBody(bodySystem.gender,{reproject:false}),0);
+// First frame is already running before any async model or panel-related work.
+setTimeout(()=>{
+  loadIntegratedBody(bodySystem.gender,{reproject:false});
+},0);
 
-commitHistory();
+try{
+  commitHistory();
+}catch(err){
+  console.error('Initial history snapshot failed',err);
+}
