@@ -2040,18 +2040,29 @@ function interactiveHit(x,y){
   const softStrap=screenSpaceStrapHit(x,y);
   if(softStrap)return softStrap;
 
+  // IMPORTANT:
+  // Visibility helpers intentionally use the global raycaster too.
+  // Therefore every real picking pass MUST restore the touch ray immediately
+  // before intersectObjects(). Otherwise the ray can still point at the last
+  // node checked for occlusion and that node gets selected from anywhere.
   setPointer(x,y);
   const bodyDistance=raycaster.intersectObjects(bodyMeshes,true)[0]?.distance??Infinity;
 
-  // Node ray hits: accept only if the node is not behind the mannequin.
+  // Node ray hits: first collect visible nodes. visibleNodeFromCamera() changes
+  // the raycaster, so restore the actual touch ray afterwards.
   const nodeHits=[];
-  for(const n of nodes.values())if(n.hit&&visibleNodeFromCamera(n))nodeHits.push(n.hit);
+  for(const n of nodes.values()){
+    if(n.hit&&visibleNodeFromCamera(n))nodeHits.push(n.hit);
+  }
+  setPointer(x,y);
   const nhits=raycaster.intersectObjects(nodeHits,false);
   for(const nh of nhits){
     if(nh.distance<=bodyDistance+.075)return {kind:'node',id:nh.object.userData.id};
   }
 
-  // Strap ray hits: compare the actual hit depth to the first mannequin surface.
+  // Strap ray hits use the same restored touch ray. No visibility helper is
+  // called between this point and the strap intersection.
+  setPointer(x,y);
   const meshes=[...straps.values()].map(s=>s.mesh);
   const shits=raycaster.intersectObjects(meshes,false);
   for(const sh of shits){

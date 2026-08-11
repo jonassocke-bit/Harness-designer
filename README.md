@@ -1,36 +1,16 @@
-# Harness Designer V1.5 — Body System
+# Harness Designer V1.5a — Picking fix
 
-Stable base: V1.4l
-Integrated model block: Body Model Lab v0.2
+Built directly on V1.5.
 
-## Body controls
-- Female / Male
-- Körperform: Schlank ↔ Neutral ↔ Curvy
-- Muskulatur
-- Höhe 145–205 cm
-- Arme: Gerade ↔ A-Pose ↔ Unten
-- Beine: Offen ↔ Zusammen
+Fixes a global-Raycaster state bug in `interactiveHit()`:
 
-## Performance
-The body morphs/height update live while sliding.
-The harness itself is reprojected only when the slider is released (`change`).
-No harness reprojection runs every frame.
+- node visibility checks use the same raycaster as touch picking
+- those checks leave the raycaster aimed at the last tested node
+- the old code then raycasted node hit meshes without restoring the touch ray
+- result: a distant/last node could be selected even when tapping empty space
 
-## Reprojection
-On a committed body change:
-- user-placed surface nodes/rings are projected onto the current body mesh
-- strap- and crossing-derived nodes keep their dynamic topology
-- straps are rebuilt from their endpoints
-- crossings and dynamic symmetry are reconciled afterwards
+V1.5a explicitly restores `setPointer(x,y)` immediately before every real
+node/strap `intersectObjects()` picking pass.
 
-## Safety
-- app still starts with the old procedural mannequin immediately
-- Male/Female GLBs are loaded asynchronously afterwards
-- if GLB loading fails, the fallback remains usable
-- custom GLB upload is retained
-- V1.4l strap, surface-follow, split, crossing, symmetry and coupling logic remain in place
-
-## UI
-The object header is repaired to fit:
-name | couple | lock | delete
-in one row.
+No strap geometry, body morph, reprojection, symmetry, split, crossing,
+surface-follow or coupling code was changed.
