@@ -615,6 +615,93 @@ function nodeNormalForDisplay(n){
   return Math.abs(p.x)<AXIS_SNAP_IN ? symmetryAxisNormal(normal) : normal;
 }
 
+
+// V1.6a paired objects use one canonical LEFT-side master.
+// The right-side partner remains a real record for compatibility/undo/unlink,
+// but its spatial state and rendered strap mesh are derived from the master.
+function pairMasterNode(n){
+  const p=pairOfNode(n);if(!p)return n;
+  const nx=nodeWorldPosition(n).x,px=nodeWorldPosition(p).x;
+  if(Math.abs(nx-px)<1e-7)return n.id<p.id?n:p;
+  return nx<px?n:p;
+}
+function pairMasterStrap(s){
+  const p=pairOfStrap(s);if(!p)return s;
+  const avg=q=>{
+    const a=nodes.get(q.a),b=nodes.get(q.b);
+    return a&&b?(nodeWorldPosition(a).x+nodeWorldPosition(b).x)*.5:0;
+  };
+  const sx=avg(s),px=avg(p);
+  if(Math.abs(sx-px)<1e-7)return s.id<p.id?s:p;
+  return sx<px?s:p;
+}
+function forceMirrorNodeFromMaster(master,slave,{visualProps=false}={}){
+  if(!master||!slave||master===slave)return;
+  const p=mirrorWorldPointX(nodeWorldPosition(master));
+  const n=mirrorWorldNormalX(nodeWorldNormal(master));
+  setNodeWorldPosition(slave,p);
+  slave.normal=n.toArray();
+  if(visualProps){
+    slave.ringVisible=master.ringVisible;
+    slave.diameterMM=master.diameterMM;
+    slave.thicknessMM=master.thicknessMM;
+    slave.sizeMM=master.sizeMM;
+    rebuildNodeVisual(slave);
+  }
+  syncNodeTransform(slave);
+}
+function mirrorStrapMeshFromMaster(master,slave){
+  if(!master||!slave||master===slave)return;
+  slave.widthMM=master.widthMM;
+  slave.slack=master.slack;
+  slave.surfaceLevel=master.surfaceLevel||0;
+
+  // Keep materialized waypoint state ready for a future unlink, but do not
+  // independently project it while the pair is linked.
+  slave.controls=master.controls.map(c=>{
+    const d={...c};
+    if(c.surfacePos)d.surfacePos=[-c.surfacePos[0],c.surfacePos[1],c.surfacePos[2]];
+    if(c.surfaceNormal)d.surfaceNormal=[-c.surfaceNormal[0],c.surfaceNormal[1],c.surfaceNormal[2]];
+    d.offsetSide=-(c.offsetSide||0);
+    return d;
+  });
+
+  const src=master.geometry.getAttribute('position');
+  const dst=slave.geometry.getAttribute('position');
+  if(src&&dst&&src.count===dst.count){
+    for(let i=0;i<src.count;i++)dst.setXYZ(i,-src.getX(i),src.getY(i),src.getZ(i));
+    dst.needsUpdate=true;
+    slave.geometry.computeVertexNormals();
+    slave.geometry.computeBoundingSphere();
+  }
+
+  for(const n of nodes.values()){
+    if(n.source==='strap'&&n.parentStrapId===slave.id)syncNodeTransform(n);
+    else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===slave.id||n.crossing.strapBId===slave.id))syncNodeTransform(n);
+  }
+  updateControlHandles(slave);
+}
+function enforcePairMasterVisuals(){
+  const doneN=new Set();
+  for(const n of nodes.values()){
+    const p=pairOfNode(n);
+    if(!p||doneN.has(n.id)||doneN.has(p.id))continue;
+    const m=pairMasterNode(n),slave=m===n?p:n;
+    forceMirrorNodeFromMaster(m,slave,{visualProps:true});
+    doneN.add(m.id);doneN.add(slave.id);
+  }
+  const doneS=new Set();
+  for(const s of straps.values()){
+    const p=pairOfStrap(s);
+    if(!p||doneS.has(s.id)||doneS.has(p.id))continue;
+    const m=pairMasterStrap(s),slave=m===s?p:s;
+    // Calculate only canonical side, mirror the rendered mesh to the other.
+    updateStrapGeometry(m,{skipPairMirror:true});
+    mirrorStrapMeshFromMaster(m,slave);
+    doneS.add(m.id);doneS.add(slave.id);
+  }
+}
+
 function syncNodeTransform(n){
   if(n.source==='strap'&&n.parentStrapId){
     const s=straps.get(n.parentStrapId);
@@ -916,7 +1003,18 @@ function makeStrap(data={}){
   updateStrapGeometry(s);updateControlHandles(s);
   return s;
 }
-function updateStrapGeometry(s){
+function updateStrapGeometry(s,{skipPairMirror=false}={}){
+  if(!skipPairMirror){
+    const ps=pairOfStrap(s);
+    if(ps){
+      const master=pairMasterStrap(s);
+      if(master!==s){
+        // Linked mirror side never solves its own curve.
+        mirrorStrapMeshFromMaster(master,s);
+        return;
+      }
+    }
+  }
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
 
   const surfaceMode=(s.surfaceLevel||0)>0;
@@ -1028,6 +1126,11 @@ function updateStrapGeometry(s){
     else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===s.id||n.crossing.strapBId===s.id))syncNodeTransform(n);
   }
   updateControlHandles(s);
+
+  if(!skipPairMirror){
+    const ps=pairOfStrap(s);
+    if(ps&&pairMasterStrap(s)===s)mirrorStrapMeshFromMaster(s,ps);
+  }
 }
 function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
@@ -1600,7 +1703,7 @@ function buildWaypointGuide(s){
 
   const curve=effectiveStrapCurve(s);
   const samples=[];
-  const N=28;
+  const N=14;
 
   for(let i=0;i<=N;i++){
     const t=i/N;
@@ -1711,10 +1814,23 @@ function beginWaypointPlacement(s){
 }
 function addWaypointFromGuideHit(s,guideHit){
   if(!s||!guideHit)return false;
-  const p=guideHit.point.clone(),normal=guideHit.normal.clone().normalize();
+  let p=guideHit.point.clone(),normal=guideHit.normal.clone().normalize();
   const bestT=THREE.MathUtils.clamp(guideHit.t,.025,.975);
 
+  const selectedSide=s;
+  const ps0=pairOfStrap(s);
+  const master=ps0?pairMasterStrap(s):s;
+  if(master!==s){
+    p=mirrorWorldPointX(p);
+    normal=mirrorWorldNormalX(normal);
+    s=master;
+  }
+
   s.surfaceLevel=0;
+  // V1.5f: a manually defined surface route should start fully taut.
+  // Otherwise the slack offset immediately lifts the fresh waypoint away
+  // from the body and makes the user's chosen route look wrong.
+  s.slack=0;
   const c={t:bestT,waypoint:true};
   bindWaypointToFrame(s,c,p,normal);
   s.controls.push(c);
@@ -1724,6 +1840,7 @@ function addWaypointFromGuideHit(s,guideHit){
   const ps=pairOfStrap(s);
   if(ps){
     ps.surfaceLevel=0;
+    ps.slack=0;
     const mirrored=mirrorWorldPointX(p);
     const mirroredNormal=mirrorWorldNormalX(normal);
     const pc={t:bestT,waypoint:true};
@@ -2077,7 +2194,9 @@ function dynPairNodes(a,b,syncProps=true){
   a.mirrorId=b.id;b.mirrorId=a.id;
   a.manualUnlinked=false;b.manualUnlinked=false;
   rememberFormerPartners(a,b);
-  if(syncProps){const m=dynChooseMaster(a,b),s=m===a?b:a;copyNodeVisualProps(m,s)}
+  const m=pairMasterNode(a),slave=m===a?b:a;
+  if(syncProps)copyNodeVisualProps(m,slave);
+  forceMirrorNodeFromMaster(m,slave,{visualProps:syncProps});
 }
 function dynPairStraps(a,b,syncProps=true){
   if(!a||!b||a.id===b.id)return;
@@ -2086,7 +2205,12 @@ function dynPairStraps(a,b,syncProps=true){
   a.mirrorId=b.id;b.mirrorId=a.id;
   a.manualUnlinked=false;b.manualUnlinked=false;
   rememberFormerPartners(a,b);
-  if(syncProps){const m=dynChooseMaster(a,b),s=m===a?b:a;copyStrapProps(m,s)}
+  const m=pairMasterStrap(a),slave=m===a?b:a;
+  if(syncProps){
+    slave.widthMM=m.widthMM;slave.slack=m.slack;
+    updateStrapGeometry(m,{skipPairMirror:true});
+    mirrorStrapMeshFromMaster(m,slave);
+  }
 }
 function dynReconcileSymmetry({syncProps=true}={}){
   for(const n of nodes.values()){
@@ -2132,6 +2256,7 @@ function dynReconcileSymmetry({syncProps=true}={}){
     }
     if(best){dynPairStraps(a,best,syncProps);usedS.add(a.id);usedS.add(best.id)}
   }
+  enforcePairMasterVisuals();
 }
 
 function pairOfNode(n){return n?.mirrorId&&nodes.has(n.mirrorId)?nodes.get(n.mirrorId):null}
@@ -2150,17 +2275,33 @@ function copyStrapProps(src,dst){
   dst.widthMM=src.widthMM;
   dst.slack=src.slack;
 
-  // V1.5c: paired straps share waypoint COUNT/POSITION ALONG STRAP (t), not
-  // world-space coordinates. Each strap owns its own projected body positions.
-  if(src.controls.some(c=>c.waypoint)){
-    syncWaypointPattern(src,dst);
-    dst.surfaceLevel=0;
-  }else{
-    dst.surfaceLevel=src.surfaceLevel||0;
-    // Legacy manual controls remain mirrored only for old projects.
-    dst.controls=src.controls.map(c=>({...c,sideFactor:-(c.sideFactor??0)}));
+  const master=pairMasterStrap(src);
+  const slave=master===src?dst:src;
+  if(master!==src){
+    master.widthMM=src.widthMM;
+    master.slack=src.slack;
   }
-  updateStrapGeometry(dst);
+
+  // Linked pairs use the canonical master's route. If the edit originated on
+  // the visual side, mirror its materialized waypoint data back to the master.
+  if(src.controls.some(c=>c.waypoint)){
+    if(master!==src){
+      master.controls=src.controls.map(c=>{
+        const d={...c};
+        if(c.surfacePos)d.surfacePos=[-c.surfacePos[0],c.surfacePos[1],c.surfacePos[2]];
+        if(c.surfaceNormal)d.surfaceNormal=[-c.surfaceNormal[0],c.surfaceNormal[1],c.surfaceNormal[2]];
+        d.offsetSide=-(c.offsetSide||0);
+        return d;
+      });
+      master.surfaceLevel=0;
+    }
+  }else{
+    master.surfaceLevel=src.surfaceLevel||0;
+    master.controls=src.controls.map(c=>({...c}));
+  }
+
+  updateStrapGeometry(master,{skipPairMirror:true});
+  mirrorStrapMeshFromMaster(master,slave);
 }
 
 function serializeNodeForMerge(n){
@@ -2518,24 +2659,43 @@ function requestNodeDrag(n,x,y){
     }
 
     const hit=bodyHit(q.x,q.y);if(!hit)return;
-    const p=snapAxis(hit.point.clone());
-    const normal=Math.abs(p.x)<AXIS_SNAP_IN?symmetryAxisNormal(worldNormal(hit)):worldNormal(hit);
-    setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
-    updateAttachedStraps(q.n.id);
+    let p=snapAxis(hit.point.clone());
+    let normal=Math.abs(p.x)<AXIS_SNAP_IN?symmetryAxisNormal(worldNormal(hit)):worldNormal(hit);
 
     const partner=pairOfNode(q.n);
     if(partner){
-      const mp=p.clone();mp.x*=-1;
-      const mn=normal.clone();mn.x*=-1;
-      setNodeWorldPosition(partner,mp);partner.normal=mn.toArray();syncNodeTransform(partner);
-      updateAttachedStraps(partner.id);
+      const master=pairMasterNode(q.n),slave=master===q.n?partner:q.n;
 
-      const active=maybeAxisMergeOrEntmerge(q.n);
-      if(active!==q.n){
+      // Input on the visual/right side is translated into master/left space.
+      if(q.n!==master){
+        p=mirrorWorldPointX(p);
+        normal=mirrorWorldNormalX(normal);
+      }
+
+      setNodeWorldPosition(master,p);master.normal=normal.toArray();syncNodeTransform(master);
+      forceMirrorNodeFromMaster(master,slave);
+      updateAttachedStraps(master.id);
+
+      // Do not independently solve the slave-side attached straps.
+      for(const s of straps.values()){
+        const ps=pairOfStrap(s);
+        if(!ps)continue;
+        const sm=pairMasterStrap(s),ss=sm===s?ps:s;
+        if(s.a===master.id||s.b===master.id||s.a===slave.id||s.b===slave.id){
+          updateStrapGeometry(sm,{skipPairMirror:true});
+          mirrorStrapMeshFromMaster(sm,ss);
+        }
+      }
+
+      const active=maybeAxisMergeOrEntmerge(master);
+      if(active!==master){
         if(single)single.activeNodeId=active.id;
         selected=active;
         showSelection();rebuildAllWraps();
       }
+    }else{
+      setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
+      updateAttachedStraps(q.n.id);
     }
   });
 }
@@ -2581,7 +2741,16 @@ canvas.addEventListener('pointermove',e=>{
   }
   if(!single)return;
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
-  if(single.waypointPlacement)return;
+  if(single.waypointPlacement){
+    // Point mode does not freeze navigation: drag rotates, tap places.
+    if(single.moved){
+      camAz-=(e.clientX-single.lx)*.007;
+      camEl=THREE.MathUtils.clamp(camEl+(e.clientY-single.ly)*.006,-1.2,1.2);
+      updateCamera();
+    }
+    single.lx=e.clientX;single.ly=e.clientY;
+    return;
+  }
   if(single.hit?.kind==='node'){
     const activeId=single.activeNodeId||single.hit.id;
     const n=nodes.get(activeId);
@@ -2601,7 +2770,8 @@ canvas.addEventListener('pointerup',e=>{
 
   if(was.waypointPlacement){
     const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
-    if(was.moved){showToast('Bitte die gewünschte Körperstelle antippen');return}
+    // A drag was camera navigation. Stay in placement mode and wait for a tap.
+    if(was.moved)return;
     const gh=waypointGuideHit(e.clientX,e.clientY);
     if(!gh){showToast('Bitte direkt auf die cyanfarbene Linie tippen');return}
 
@@ -2611,6 +2781,8 @@ canvas.addEventListener('pointerup',e=>{
       curvePlusBtn.classList.remove('active');
       canvas.classList.remove('placing-waypoint');
       selectObject(s);
+      strapSlackSlider.value=0;
+      syncParamUI('strapSlack',0);
       showSelection();refreshAutomaticCrossings();
       dynReconcileSymmetry({syncProps:true});
       refreshMaterials();commitHistory();
