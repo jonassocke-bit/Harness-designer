@@ -1273,57 +1273,78 @@ function panelPolygonMargin2(p,poly){
 function candidateVertexKey(p,eps=.00002){
   return Math.round(p.x/eps)+","+Math.round(p.y/eps)+","+Math.round(p.z/eps);
 }
+
 function selectConnectedPanelComponentLite(candidates,panel){
   if(!candidates.length)return [];
 
   const boundary=panelBoundaryWorld(panel);
-  const target=boundary.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/Math.max(1,boundary.length));
+  const target=boundary.reduce((a,p)=>a.add(p),new THREE.Vector3())
+    .multiplyScalar(1/Math.max(1,boundary.length));
 
-  // Build adjacency ONLY for candidate triangles. This avoids allocating one
-  // Set/array for every triangle of the full mannequin.
   const vertexToCandidates=new Map();
+
   for(let i=0;i<candidates.length;i++){
-    const c=candidates[i];
-    for(const p of c.p){
+    for(const p of candidates[i].p){
       const k=candidateVertexKey(p);
       let arr=vertexToCandidates.get(k);
-      if(!arr){arr=[];vertexToCandidates.set(k,arr)}
+      if(!arr){
+        arr=[];
+        vertexToCandidates.set(k,arr);
+      }
       arr.push(i);
     }
   }
 
-  const neighbors=Array.from({length:candidates.length},()=>new Set());
+  const neighbors=Array.from({length:candidates.length},()=>[]);
+
   for(const arr of vertexToCandidates.values()){
     if(arr.length<2)continue;
-    for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++){
-      neighbors[arr[i]].add(arr[j]);neighbors[arr[j]].add(arr[i]);
+    for(let i=0;i<arr.length;i++){
+      for(let j=i+1;j<arr.length;j++){
+        neighbors[arr[i]].push(arr[j]);
+        neighbors[arr[j]].push(arr[i]);
+      }
     }
   }
 
   const seen=new Uint8Array(candidates.length);
-  let best=[],bestScore=Infinity;
+  let best=[];
+  let bestScore=Infinity;
 
   for(let seed=0;seed<candidates.length;seed++){
     if(seen[seed])continue;
-    const stack=[seed],component=[];seen[seed]=1;
+
+    const stack=[seed];
+    const component=[];
+    seen[seed]=1;
 
     while(stack.length){
-      const i=stack.pop(),c=candidates[i];
-      component.push(c);
+      const i=stack.pop();
+      component.push(candidates[i]);
+
       for(const nb of neighbors[i]){
-        if(!seen[nb]){seen[nb]=1;stack.push(nb)}
+        if(!seen[nb]){
+          seen[nb]=1;
+          stack.push(nb);
+        }
       }
     }
 
     let minDist=Infinity;
-    for(const c of component)minDist=Math.min(minDist,c.centroid.distanceTo(target));
+    for(const c of component){
+      minDist=Math.min(minDist,c.centroid.distanceTo(target));
+    }
 
-    // Center proximity dominates; size breaks close ties.
     const score=minDist-component.length*.00002;
-    if(score<bestScore){bestScore=score;best=component}
+    if(score<bestScore){
+      bestScore=score;
+      best=component;
+    }
   }
+
   return best;
 }
+
 let panelExtractDebug=false;
 const panelExtractDebugRoot=new THREE.Group();
 helperRoot.add(panelExtractDebugRoot);
@@ -1331,24 +1352,40 @@ helperRoot.add(panelExtractDebugRoot);
 function clearPanelExtractDebug(){
   while(panelExtractDebugRoot.children.length){
     const o=panelExtractDebugRoot.children.pop();
-    o.geometry?.dispose?.();o.material?.dispose?.();
+    o.geometry?.dispose?.();
+    o.material?.dispose?.();
   }
 }
+
 function showPanelExtractDebug(triangles){
   clearPanelExtractDebug();
+
   if(!panelExtractDebug||!triangles?.length)return;
 
   const pos=[];
+
   for(const tri of triangles){
     const [a,b,c]=tri.p;
-    for(const [u,v] of [[a,b],[b,c],[c,a]])pos.push(u.x,u.y,u.z,v.x,v.y,v.z);
+    for(const [u,v] of [[a,b],[b,c],[c,a]]){
+      pos.push(u.x,u.y,u.z,v.x,v.y,v.z);
+    }
   }
+
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  const m=new THREE.LineBasicMaterial({color:0xffcc55,transparent:true,opacity:.85,depthTest:false});
-  const lines=new THREE.LineSegments(g,m);lines.renderOrder=100;
+
+  const m=new THREE.LineBasicMaterial({
+    color:0xffcc55,
+    transparent:true,
+    opacity:.85,
+    depthTest:false
+  });
+
+  const lines=new THREE.LineSegments(g,m);
+  lines.renderOrder=100;
   panelExtractDebugRoot.add(lines);
 }
+
 function extractBodyTrianglesForPanel(panel){
   const boundary=panelBoundaryWorld(panel);
   if(boundary.length<3)return [];
@@ -1358,34 +1395,48 @@ function extractBodyTrianglesForPanel(panel){
   const boundaryTris=THREE.ShapeUtils.triangulateShape(poly,[]);
 
   let boundaryDepth=0;
-  for(const p of boundary)boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
+  for(const p of boundary){
+    boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
+  }
+
   const slab=Math.max(.12,boundaryDepth+.32);
 
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   for(const p of poly){
-    minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);
-    maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);
+    minX=Math.min(minX,p.x);
+    minY=Math.min(minY,p.y);
+    maxX=Math.max(maxX,p.x);
+    maxY=Math.max(maxY,p.y);
   }
 
   const candidates=[];
-  const va=new THREE.Vector3(),vb=new THREE.Vector3(),vc=new THREE.Vector3();
-  const na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
+  const va=new THREE.Vector3();
+  const vb=new THREE.Vector3();
+  const vc=new THREE.Vector3();
+  const na=new THREE.Vector3();
+  const nb=new THREE.Vector3();
+  const nc=new THREE.Vector3();
 
   for(const mesh of bodyMeshes){
-    if(!mesh?.geometry?.attributes?.position)continue;
+    if(!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position)continue;
+
     mesh.updateMatrixWorld(true);
 
     const g=mesh.geometry;
-    const idx=g.index?.array||null;
-    const triCount=idx?Math.floor(idx.length/3):Math.floor(g.attributes.position.count/3);
+    const idx=g.index ? g.index.array : null;
+    const triCount=idx ? Math.floor(idx.length/3) : Math.floor(g.attributes.position.count/3);
 
     for(let ti=0;ti<triCount;ti++){
       const ia=idx?idx[ti*3]:ti*3;
       const ib=idx?idx[ti*3+1]:ti*3+1;
       const ic=idx?idx[ti*3+2]:ti*3+2;
 
-      bodyVertexWorld(mesh,ia,va);bodyVertexWorld(mesh,ib,vb);bodyVertexWorld(mesh,ic,vc);
+      bodyVertexWorld(mesh,ia,va);
+      bodyVertexWorld(mesh,ib,vb);
+      bodyVertexWorld(mesh,ic,vc);
+
       const centroid=va.clone().add(vb).add(vc).multiplyScalar(1/3);
+
       if(panelPlaneDistance(centroid,basis)>slab)continue;
 
       const tri2=[
@@ -1394,23 +1445,34 @@ function extractBodyTrianglesForPanel(panel){
         panel2D(panel,vc,basis)
       ];
 
-      let ax=Infinity,ay=Infinity,bx=-Infinity,by=-Infinity;
+      let tMinX=Infinity,tMinY=Infinity,tMaxX=-Infinity,tMaxY=-Infinity;
+
       for(const p of tri2){
-        ax=Math.min(ax,p.x);ay=Math.min(ay,p.y);
-        bx=Math.max(bx,p.x);by=Math.max(by,p.y);
+        tMinX=Math.min(tMinX,p.x);
+        tMinY=Math.min(tMinY,p.y);
+        tMaxX=Math.max(tMaxX,p.x);
+        tMaxY=Math.max(tMaxY,p.y);
       }
-      if(bx<minX||ax>maxX||by<minY||ay>maxY)continue;
+
+      if(tMaxX<minX || tMinX>maxX || tMaxY<minY || tMinY>maxY)continue;
 
       let overlaps=false;
+
       for(const bt of boundaryTris){
         const clipTri=[poly[bt[0]],poly[bt[1]],poly[bt[2]]];
-        if(clipTriangleToTriangle(tri2,clipTri).length>=3){overlaps=true;break}
+
+        if(clipTriangleToTriangle(tri2,clipTri).length>=3){
+          overlaps=true;
+          break;
+        }
       }
+
       if(!overlaps)continue;
 
-      bodyVertexNormalWorld(mesh,ia,na);bodyVertexNormalWorld(mesh,ib,nb);bodyVertexNormalWorld(mesh,ic,nc);
+      bodyVertexNormalWorld(mesh,ia,na);
+      bodyVertexNormalWorld(mesh,ib,nb);
+      bodyVertexNormalWorld(mesh,ic,nc);
 
-      // No average-normal rejection. Connectivity chooses the relevant shell.
       candidates.push({
         p:[va.clone(),vb.clone(),vc.clone()],
         n:[na.clone(),nb.clone(),nc.clone()],
@@ -1602,27 +1664,32 @@ function makePanel(data={}){
 }
 function updatePanelGeometry(panel,{preview=false}={}){
   if(!panel)return;
+
   syncPanelNodeIds(panel);
 
   const t0=performance.now();
   const old=panel.mesh.geometry;
-  panel.mesh.geometry=preview?buildPanelPreviewGeometry(panel):buildPanelGeometry(panel);
+
+  panel.mesh.geometry=preview
+    ?buildPanelPreviewGeometry(panel)
+    :buildPanelGeometry(panel);
+
   old?.dispose?.();
-  panel.mesh.visible=panel.nodeIds.length>=3&&panelHasArea(panel);
+
+  panel.mesh.visible=
+    panel.nodeIds.length>=3&&
+    panelHasArea(panel);
 
   if(!preview&&panelPerfReadout){
     const ms=performance.now()-t0;
-    const r=panelPerfReadout.querySelector('span:last-child');
-    if(r)r.textContent=`${ms.toFixed(ms<10?1:0)} ms`;
+    const right=panelPerfReadout.querySelector('span:last-child');
+
+    if(right){
+      right.textContent=`${ms.toFixed(ms<10?1:0)} ms`;
+    }
   }
-}={}){
-  if(!panel)return;
-  syncPanelNodeIds(panel);
-  const old=panel.mesh.geometry;
-  panel.mesh.geometry=preview?buildPanelPreviewGeometry(panel):buildPanelGeometry(panel);
-  old?.dispose?.();
-  panel.mesh.visible=panel.nodeIds.length>=3&&panelHasArea(panel);
 }
+
 function updatePanelsForNode(nodeId,{preview=true}={}){
   for(const p of panels.values()){
     if(!p.boundarySlots.some(s=>s.currentId===nodeId))continue;
@@ -2644,9 +2711,14 @@ setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathU
 panelExtractDebugBtn.addEventListener('click',()=>{
   panelExtractDebug=!panelExtractDebug;
   panelExtractDebugBtn.classList.toggle('active',panelExtractDebug);
-  if(!panelExtractDebug)clearPanelExtractDebug();
-  else if(selected?.kind==='panel')updatePanelGeometry(selected);
+
+  if(!panelExtractDebug){
+    clearPanelExtractDebug();
+  }else if(selected?.kind==='panel'){
+    updatePanelGeometry(selected);
+  }
 });
+
 setupParam('panelOffset',panelOffsetSlider,panelOffsetTools,v=>{
   if(selected?.kind!=='panel')return;
   selected.offsetMM=v;
