@@ -1240,49 +1240,116 @@ function buildPanelPreviewGeometry(panel){
   g.computeBoundingSphere();
   return g;
 }
+
+function bodyVertexWorld(mesh,index,out=new THREE.Vector3()){
+  // THREE.Mesh.getVertexPosition includes morphTargetInfluences when available.
+  if(typeof mesh.getVertexPosition==='function')mesh.getVertexPosition(index,out);
+  else out.fromBufferAttribute(mesh.geometry.attributes.position,index);
+  return out.applyMatrix4(mesh.matrixWorld);
+}
+function bodyVertexNormalWorld(mesh,index,out=new THREE.Vector3()){
+  const na=mesh.geometry.attributes.normal;
+  if(na)out.fromBufferAttribute(na,index);
+  else out.set(0,0,1);
+  return out.applyMatrix3(new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
+}
+function panelPlaneDistance(p,basis){
+  return Math.abs(p.clone().sub(basis.origin).dot(basis.normal));
+}
+function pointSegmentDistance2(p,a,b){
+  const abx=b.x-a.x,aby=b.y-a.y;
+  const den=abx*abx+aby*aby||1e-12;
+  const t=THREE.MathUtils.clamp(((p.x-a.x)*abx+(p.y-a.y)*aby)/den,0,1);
+  const x=a.x+abx*t,y=a.y+aby*t;
+  return Math.hypot(p.x-x,p.y-y);
+}
+function panelPolygonMargin2(p,poly){
+  let d=Infinity;
+  for(let i=0;i<poly.length;i++)d=Math.min(d,pointSegmentDistance2(p,poly[i],poly[(i+1)%poly.length]));
+  return d;
+}
+function extractBodyTrianglesForPanel(panel){
+  const boundary=panelBoundaryWorld(panel);
+  if(boundary.length<3)return [];
+
+  const basis=panelBasis(panel);
+  const poly=boundary.map(p=>panel2D(panel,p,basis));
+  const cutRings=panelCutRings(panel);
+
+  // The panel surface can be strongly curved (breast, shoulder).
+  // Use the boundary's own depth spread to define a local surface slab,
+  // rather than accepting the opposite side of the torso.
+  let boundaryDepth=0;
+  for(const p of boundary)boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
+  const slab=Math.max(.10,boundaryDepth+.24);
+
+  const result=[];
+  const va=new THREE.Vector3(),vb=new THREE.Vector3(),vc=new THREE.Vector3();
+  const na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
+
+  for(const mesh of bodyMeshes){
+    if(!mesh?.geometry?.attributes?.position)continue;
+    mesh.updateMatrixWorld(true);
+
+    const g=mesh.geometry;
+    const idx=g.index?.array||null;
+    const triCount=idx?Math.floor(idx.length/3):Math.floor(g.attributes.position.count/3);
+
+    for(let ti=0;ti<triCount;ti++){
+      const ia=idx?idx[ti*3]:ti*3;
+      const ib=idx?idx[ti*3+1]:ti*3+1;
+      const ic=idx?idx[ti*3+2]:ti*3+2;
+
+      bodyVertexWorld(mesh,ia,va);
+      bodyVertexWorld(mesh,ib,vb);
+      bodyVertexWorld(mesh,ic,vc);
+
+      const centroid=va.clone().add(vb).add(vc).multiplyScalar(1/3);
+      if(panelPlaneDistance(centroid,basis)>slab)continue;
+
+      const c2=panel2D(panel,centroid,basis);
+      if(!pointInPoly2(c2,poly))continue;
+
+      bodyVertexNormalWorld(mesh,ia,na);
+      bodyVertexNormalWorld(mesh,ib,nb);
+      bodyVertexNormalWorld(mesh,ic,nc);
+
+      let avgN=na.clone().add(nb).add(nc);
+      if(avgN.lengthSq()<1e-8)avgN=basis.normal.clone();
+      avgN.normalize();
+
+      // Reject the back/opposite-facing shell when front/back overlap in the
+      // panel's 2D projection.
+      if(avgN.dot(basis.normal)<-.18)continue;
+
+      // Existing ring holes: reject only locally, using triangle centroid.
+      if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+
+      result.push({
+        p:[va.clone(),vb.clone(),vc.clone()],
+        n:[na.clone(),nb.clone(),nc.clone()],
+        centroid:centroid.clone(),
+        margin:panelPolygonMargin2(c2,poly)
+      });
+    }
+  }
+  return result;
+}
 function buildPanelGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
 
-  const boundary=panelBoundaryWorld(panel);
-  const basis=panelBasis(panel);
-  const contour=boundary.map(p=>panel2D(panel,p,basis));
-  const tris=THREE.ShapeUtils.triangulateShape(contour,[]);
-  if(!tris.length)return new THREE.BufferGeometry();
-
-  // Dense only in the committed state. During ring drag a flat preview is used.
-  let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
-  let perimeter=0;for(let i=0;i<boundary.length;i++)perimeter+=boundary[i].distanceTo(boundary[(i+1)%boundary.length]);
-  const panelPasses=perimeter>.95?4:perimeter>.45?3:2;
-  for(let pass=0;pass<panelPasses;pass++){
-    const next=[];
-    for(const [a,b,c] of triWorld){
-      const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
-      next.push([a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]);
-    }
-    triWorld=next;
-  }
+  const extracted=extractBodyTrianglesForPanel(panel);
+  if(!extracted.length)return buildPanelPreviewGeometry(panel);
 
   const positions=[],normals=[];
-  const cutRings=panelCutRings(panel);
   const lift=panelOffsetScene(panel);
 
-  for(const tri of triWorld){
-    const solved=tri.map(raw=>{
-      const surf=panelSurfacePoint(raw,basis.normal);
-      return {
-        q:surf.point.clone().addScaledVector(surf.normal,lift),
-        n:surf.normal
-      };
-    });
-
-    // Fine subdivision makes these ring openings local instead of deleting
-    // giant triangles through the middle of the panel.
-    const centroid=solved.reduce((a,x)=>a.add(x.q),new THREE.Vector3()).multiplyScalar(1/3);
-    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-
-    for(const x of solved){
-      positions.push(x.q.x,x.q.y,x.q.z);
-      normals.push(x.n.x,x.n.y,x.n.z);
+  for(const tri of extracted){
+    for(let i=0;i<3;i++){
+      const n=tri.n[i].clone().normalize();
+      const q=tri.p[i].clone().addScaledVector(n,lift);
+      positions.push(q.x,q.y,q.z);
+      normals.push(n.x,n.y,n.z);
     }
   }
 
@@ -1290,6 +1357,13 @@ function buildPanelGeometry(panel){
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
   g.computeBoundingSphere();
+
+  // Development metrics used by the panel editor / console.
+  g.userData={
+    extraction:true,
+    sourceTriangles:extracted.length,
+    outputTriangles:extracted.length
+  };
   return g;
 }
 function makePanel(data={}){
