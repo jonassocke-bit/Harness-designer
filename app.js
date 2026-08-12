@@ -1029,6 +1029,30 @@ function manualControlWorld(s,c){
     .addScaledVector(f.side,(c.sideFactor??0)*sideScale)
     .addScaledVector(f.normal,clearance+(c.normalFactor??0)*relativeBulge);
 }
+
+function waypointRouteNormalAt(s,t){
+  const guides=[
+    {t:0,normal:nodeWorldNormal(nodes.get(s.a))},
+    ...s.controls
+      .filter(c=>c.waypoint&&c.surfaceNormal)
+      .map(c=>({t:THREE.MathUtils.clamp(c.t??.5,0,1),normal:new THREE.Vector3().fromArray(c.surfaceNormal).normalize()}))
+      .sort((a,b)=>a.t-b.t),
+    {t:1,normal:nodeWorldNormal(nodes.get(s.b))}
+  ];
+
+  if(guides.length<2)return strapFrame(s).normal.clone();
+
+  let hi=1;
+  while(hi<guides.length&&guides[hi].t<t)hi++;
+  hi=Math.min(hi,guides.length-1);
+  const lo=Math.max(0,hi-1);
+  const a=guides[lo],b=guides[hi];
+  const u=b.t>a.t?THREE.MathUtils.clamp((t-a.t)/(b.t-a.t),0,1):0;
+
+  let n=a.normal.clone().lerp(b.normal,u);
+  if(n.lengthSq()<1e-8)n=a.normal.clone();
+  return n.normalize();
+}
 function strapCurve(s){
   const A=nodeWorldPosition(nodes.get(s.a)),B=nodeWorldPosition(nodes.get(s.b));
   if(!s.controls.length){
@@ -1512,11 +1536,30 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       }
       normal.normalize();
     }else{
-      // Exact old orientation behavior for normal straps.
-      normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
-      normal.addScaledVector(tan,-normal.dot(tan));
-      if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
-      normal.normalize();
+      const hasWaypointNormals=s.controls?.some(c=>c.waypoint&&c.surfaceNormal);
+
+      if(hasWaypointNormals){
+        // Auto/manual surface waypoints carry the mannequin normal. Use it to
+        // orient the visible ribbon, otherwise a correct path can appear 90°
+        // rotated around its tangent.
+        normal=waypointRouteNormalAt(s,t);
+        normal.addScaledVector(tan,-normal.dot(tan));
+
+        if(normal.lengthSq()<1e-8){
+          normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
+          normal.addScaledVector(tan,-normal.dot(tan));
+        }
+        normal.normalize();
+
+        // Parallel transport / hemisphere continuity.
+        if(prevNormal&&normal.dot(prevNormal)<0)normal.negate();
+      }else{
+        // Exact old orientation behavior for ordinary straps.
+        normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
+        normal.addScaledVector(tan,-normal.dot(tan));
+        if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
+        normal.normalize();
+      }
     }
 
     let side=new THREE.Vector3().crossVectors(normal,tan);
@@ -2578,6 +2621,99 @@ function simplifyProjectedRoute(samples,maxPoints=9){
   return keep;
 }
 
+
+function projectEdgeCandidateToBody(candidate,preferredNormal){
+  let pref=preferredNormal.clone().normalize();
+  let best=null,bestScore=Infinity;
+
+  for(const sign of [1,-1]){
+    const origin=candidate.clone().addScaledVector(pref,sign*1.35);
+    const dir=pref.clone().multiplyScalar(-sign);
+    raycaster.set(origin,dir);
+
+    const hits=raycaster.intersectObjects(bodyMeshes,true);
+    for(const h of hits.slice(0,5)){
+      const n=worldNormal(h);
+      const alignment=n.dot(pref);
+      const dist=h.point.distanceTo(candidate);
+      const sidePenalty=alignment<-.15?.8:(1-Math.max(0,alignment))*.08;
+      const score=dist+sidePenalty;
+      if(score<bestScore){
+        bestScore=score;
+        best={point:h.point.clone(),normal:n.clone().normalize()};
+      }
+    }
+  }
+  return best;
+}
+
+function widthConstrainedProjectedRoute(s,samples,lift){
+  if(!samples||samples.length<2)return samples||[];
+
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
+  const out=[];
+  let prevSide=null;
+
+  for(let i=0;i<samples.length;i++){
+    const g=samples[i];
+
+    const pPrev=samples[Math.max(0,i-1)].point;
+    const pNext=samples[Math.min(samples.length-1,i+1)].point;
+    let tangent=pNext.clone().sub(pPrev);
+    if(tangent.lengthSq()<1e-8)tangent=strapFrame(s).tangent.clone();
+    tangent.normalize();
+
+    let normal=g.normal.clone();
+    normal.addScaledVector(tangent,-normal.dot(tangent));
+    if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
+    normal.normalize();
+
+    let side=new THREE.Vector3().crossVectors(normal,tangent);
+    if(side.lengthSq()<1e-8)side=prevSide?prevSide.clone():strapFrame(s).side.clone();
+    side.normalize();
+
+    if(prevSide&&side.dot(prevSide)<0)side.negate();
+    prevSide=side.clone();
+
+    // Three lanes: center, left edge and right edge.
+    const centerShell=g.point.clone().addScaledVector(normal,lift);
+    const leftCandidate=centerShell.clone().addScaledVector(side,-halfW);
+    const rightCandidate=centerShell.clone().addScaledVector(side,halfW);
+
+    const leftHit=projectEdgeCandidateToBody(
+      g.point.clone().addScaledVector(side,-halfW),normal
+    );
+    const rightHit=projectEdgeCandidateToBody(
+      g.point.clone().addScaledVector(side,halfW),normal
+    );
+
+    let requiredLift=0;
+    if(leftHit){
+      const desired=leftHit.point.clone().addScaledVector(leftHit.normal,lift);
+      requiredLift=Math.max(requiredLift,desired.clone().sub(leftCandidate).dot(normal));
+    }
+    if(rightHit){
+      const desired=rightHit.point.clone().addScaledVector(rightHit.normal,lift);
+      requiredLift=Math.max(requiredLift,desired.clone().sub(rightCandidate).dot(normal));
+    }
+
+    // Never push inward. Only lift the center enough for BOTH outer edges.
+    const correction=Math.max(0,requiredLift);
+    const correctedPoint=g.point.clone().addScaledVector(normal,correction);
+
+    out.push({
+      ...g,
+      point:correctedPoint,
+      normal,
+      side,
+      displayPoint:correctedPoint.clone().addScaledVector(normal,lift),
+      leftDisplay:leftCandidate.clone().addScaledVector(normal,correction),
+      rightDisplay:rightCandidate.clone().addScaledVector(normal,correction)
+    });
+  }
+  return out;
+}
+
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
 
@@ -2585,12 +2721,14 @@ function rebuildAutoProjection(s){
   let samples=projectedChordSamples(s,{lift});
   if(samples.length<3)return;
 
-  // First obtain the guaranteed-safe hugging route.
+  // First obtain the centerline surface route.
   samples=refineProjectedGuide(s,samples,lift,2);
 
-  // Then remove every contact point that is not actually required.
-  // Concave regions (under-bust / waist) are bridged automatically, while
-  // convex obstacles remain as contact points.
+  // Width-aware constraint: center + both actual strap edges.
+  // The center is lifted only where either outer edge would intersect the body.
+  samples=widthConstrainedProjectedRoute(s,samples,lift);
+
+  // Then tension/simplify the width-safe route.
   const reduced=tautenProjectedRoute(samples,lift,12);
 
   s.surfaceLevel=0;
@@ -2687,6 +2825,8 @@ function buildWaypointGuide(s){
   // Locally refine only where straight visual segments would cut into a
   // strongly convex part of the mannequin.
   samples=refineProjectedGuide(s,samples,guideLift,2);
+  // For the 3-line experiment, apply the same width constraint to the guide.
+  samples=widthConstrainedProjectedRoute(s,samples,guideLift);
   waypointGuideSamples=samples;
 
   const positions=[];
@@ -2697,6 +2837,23 @@ function buildWaypointGuide(s){
     color:0x00d8ff,transparent:true,opacity:.96,depthTest:true,depthWrite:false
   });
   const line=new THREE.Line(geom,mat);line.renderOrder=20;waypointGuideRoot.add(line);
+
+  // Thin outer-edge guides: same route, actual current strap width.
+  for(const key of ['leftDisplay','rightDisplay']){
+    const edgePos=[];
+    for(const g of samples){
+      const p=g[key]||g.displayPoint;
+      edgePos.push(p.x,p.y,p.z);
+    }
+    const eg=new THREE.BufferGeometry();
+    eg.setAttribute('position',new THREE.Float32BufferAttribute(edgePos,3));
+    const em=new THREE.LineBasicMaterial({
+      color:0x00d8ff,transparent:true,opacity:.48,depthTest:true,depthWrite:false
+    });
+    const el=new THREE.Line(eg,em);
+    el.renderOrder=19;
+    waypointGuideRoot.add(el);
+  }
 
   const pgeom=geom.clone();
   const pmat=new THREE.PointsMaterial({
