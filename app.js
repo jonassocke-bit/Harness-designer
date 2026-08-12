@@ -1281,8 +1281,6 @@ function extractBodyTrianglesForPanel(panel){
   for(const p of boundary)boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
   const slab=Math.max(.10,boundaryDepth+.24);
 
-  // Cheap 2D polygon AABB: rejects the vast majority of body triangles before
-  // doing exact triangle/panel overlap tests.
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   for(const p of poly){
     minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
@@ -1294,12 +1292,12 @@ function extractBodyTrianglesForPanel(panel){
   const na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
 
   for(const mesh of bodyMeshes){
-    if(!mesh?.geometry?.attributes?.position)continue;
+    if(!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position)continue;
     mesh.updateMatrixWorld(true);
 
     const g=mesh.geometry;
-    const idx=g.index?.array||null;
-    const triCount=idx?Math.floor(idx.length/3):Math.floor(g.attributes.position.count/3);
+    const idx=g.index ? g.index.array : null;
+    const triCount=idx ? Math.floor(idx.length/3) : Math.floor(g.attributes.position.count/3);
 
     for(let ti=0;ti<triCount;ti++){
       const ia=idx?idx[ti*3]:ti*3;
@@ -1335,36 +1333,18 @@ function extractBodyTrianglesForPanel(panel){
       }
       if(tMaxX<minX || tMinX>maxX || tMaxY<minY || tMinY>maxY)continue;
 
-      // IMPORTANT: do NOT require the source triangle centroid to be inside.
-      // Keep every mannequin triangle that has any real overlap with the panel.
-      // This is what lets the clipping stage generate/fill the missing edge
-      // triangles instead of leaving the old staircase holes.
+      // Retain every mannequin triangle that has a genuine area overlap with
+      // the requested panel, even if the triangle centroid lies outside it.
       let overlaps=false;
-
-      if(tri2.some(p=>pointInPoly2(p,poly))){
-        overlaps=true;
-      }else if(poly.some(p=>{
-        const clipped=clipTriangleToTriangle(
-          [{x:p.x,y:p.y},{x:p.x+1e-7,y:p.y},{x:p.x,y:p.y+1e-7}],
-          tri2
-        );
-        return clipped.length>=3;
-      })){
-        overlaps=true;
-      }else{
-        for(const bt of boundaryTris){
-          const clipTri=bt.map(i=>poly[i]);
-          if(clipTriangleToTriangle(tri2,clipTri).length>=3){
-            overlaps=true;
-            break;
-          }
+      for(const bt of boundaryTris){
+        const clipTri=[poly[bt[0]],poly[bt[1]],poly[bt[2]]];
+        if(clipTriangleToTriangle(tri2,clipTri).length>=3){
+          overlaps=true;
+          break;
         }
       }
       if(!overlaps)continue;
 
-      // Ring openings stay intentionally cheap here. Only reject a complete
-      // source triangle when its centroid is clearly inside a ring opening;
-      // outer-edge completeness is the focus of this build.
       if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
 
       result.push({
@@ -1374,9 +1354,6 @@ function extractBodyTrianglesForPanel(panel){
         margin:panelPolygonMargin2(panel2D(panel,centroid,basis),poly)
       });
     }
-  }
-  return result;
-}
   }
   return result;
 }
@@ -1503,7 +1480,6 @@ function buildPanelGeometry(panel){
 
   const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
-  const cutRings=panelCutRings(panel);
 
   for(const tri of pieces){
     const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
@@ -1511,6 +1487,7 @@ function buildPanelGeometry(panel){
     // Keep the existing simple ring opening behaviour for this test.
     // Outer panel boundary is now exact; ring-hole clipping can be the next
     // isolated refinement if needed.
+    const cutRings=panelCutRings(panel);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
 
     for(const v of tri){

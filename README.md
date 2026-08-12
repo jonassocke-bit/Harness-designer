@@ -1,23 +1,17 @@
-# Harness Designer V1.9f — PANEL FILLED EDGE
+# V1.9f2 FILLED EDGE
 
-Fixes the remaining staircase/gaps seen in V1.9e.
+Rebuilt cleanly from V1.9e after V1.9f failed to start.
 
-The V1.9e problem was not the clipping itself. The extraction stage discarded
-body triangles whose CENTROID was outside the panel before the clipping stage
-ever saw them. A triangle could therefore cross the requested panel boundary
-but disappear completely.
+The previous package accidentally left duplicate JavaScript statements behind
+the replaced extraction function. This build replaces the whole function
+between explicit function boundaries and passes Node syntax/structure checks.
 
-V1.9f:
-- keeps the fast direct mannequin-mesh extraction
-- keeps morph-aware body vertices and original/interpolated normals
-- keeps the cheap drag preview
-- uses a cheap panel AABB first
-- then retains every source body triangle that actually overlaps the panel
-- clips those crossing triangles to the requested boundary
-- fan-triangulates each resulting convex clipped polygon
-- reconstructs every new edge vertex on its original mannequin triangle with
-  barycentric interpolation
-- performs no dense panel raycast pass
+Edge fix:
+- source body triangles are no longer discarded merely because their centroid
+  lies outside the requested panel;
+- every body triangle with real area overlap is retained;
+- the existing clipping stage cuts it at the requested boundary;
+- the clipped polygon is triangulated;
+- new edge vertices remain reconstructed from the original mannequin triangle.
 
-So the missing pieces along the outer edge are now actually generated rather
-than merely cutting away the old body triangles.
+No dense panel raycast pass was added.
