@@ -1268,6 +1268,40 @@ function panelPolygonMargin2(p,poly){
   for(let i=0;i<poly.length;i++)d=Math.min(d,pointSegmentDistance2(p,poly[i],poly[(i+1)%poly.length]));
   return d;
 }
+
+function weldPanelGeometry(geometry,tolerance=0.0001){
+  if(!geometry?.attributes?.position)return geometry;
+  const src=geometry.index?geometry.toNonIndexed():geometry.clone();
+  const pos=src.attributes.position, cell=Math.max(1e-7,tolerance);
+  const buckets=new Map(), verts=[], indices=[];
+  const key=(x,y,z)=>Math.round(x/cell)+","+Math.round(y/cell)+","+Math.round(z/cell);
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i),k=key(x,y,z);
+    let vi=buckets.get(k);
+    if(vi===undefined){vi=verts.length/3;verts.push(x,y,z);buckets.set(k,vi);}
+    indices.push(vi);
+  }
+  const out=new THREE.BufferGeometry();
+  out.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  out.setIndex(indices);
+  out.computeVertexNormals();
+  out.computeBoundingSphere();
+  out.computeBoundingBox();
+  src.dispose();
+  return out;
+}
+function offsetWeldedPanelGeometry(geometry,distance){
+  if(!geometry?.attributes?.position)return geometry;
+  if(!geometry.attributes.normal)geometry.computeVertexNormals();
+  const p=geometry.attributes.position,n=geometry.attributes.normal;
+  for(let i=0;i<p.count;i++)p.setXYZ(i,p.getX(i)+n.getX(i)*distance,p.getY(i)+n.getY(i)*distance,p.getZ(i)+n.getZ(i)*distance);
+  p.needsUpdate=true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
 function extractBodyTrianglesForPanel(panel){
   const boundary=panelBoundaryWorld(panel);
   if(boundary.length<3)return [];
@@ -1478,34 +1512,31 @@ function buildPanelGeometry(panel){
   const pieces=clippedPanelPieces(panel,extracted);
   if(!pieces.length)return buildPanelPreviewGeometry(panel);
 
-  const positions=[],normals=[];
+  const positions=[];
   const lift=panelOffsetScene(panel);
+  const cutRings=panelCutRings(panel);
 
   for(const tri of pieces){
     const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
-
-    // Keep the existing simple ring opening behaviour for this test.
-    // Outer panel boundary is now exact; ring-hole clipping can be the next
-    // isolated refinement if needed.
-    const cutRings=panelCutRings(panel);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-
-    for(const v of tri){
-      const q=v.q.clone().addScaledVector(v.n,lift);
-      positions.push(q.x,q.y,q.z);
-      normals.push(v.n.x,v.n.y,v.n.z);
-    }
+    for(const v of tri)positions.push(v.q.x,v.q.y,v.q.z);
   }
 
-  const g=new THREE.BufferGeometry();
+  let g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
-  g.computeBoundingSphere();
+
+  // Weld first, while the clipped panel is still exactly on the mannequin.
+  // Then derive shared normals and lift the connected panel as one surface.
+  g=weldPanelGeometry(g,0.00010);
+  g=offsetWeldedPanelGeometry(g,lift);
+
   g.userData={
     extraction:true,
     cleanBoundary:true,
+    welded:true,
+    weldedBeforeOffset:true,
     sourceTriangles:extracted.length,
-    outputTriangles:positions.length/9
+    outputTriangles:g.index?g.index.count/3:g.attributes.position.count/3
   };
   return g;
 }
