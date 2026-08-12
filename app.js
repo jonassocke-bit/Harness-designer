@@ -448,7 +448,7 @@ function surfaceClearanceForStrap(s){
 
   // Same length-relative philosophy as the good standard straps,
   // but surface mode stays much closer to the body.
-  const base=strapSurfaceLiftScene();
+  const base=surfaceOffsetScene()+.007;
   const relative=THREE.MathUtils.clamp(f.length*.12,.008,.10);
   return base+slack*relative;
 }
@@ -564,16 +564,6 @@ function nodeWorldNormal(n){return new THREE.Vector3().fromArray(n.normal).norma
 function nodeWorldPosition(n){return new THREE.Vector3().fromArray(n.position)}
 function setNodeWorldPosition(n,p){n.position=p.toArray()}
 function surfaceOffsetScene(){return Number(surfaceOffsetMM)*.0037}
-function strapHalfThicknessScene(){return .0045}
-function strapSurfaceLiftScene(){return surfaceOffsetScene()+strapHalfThicknessScene()}
-function nodeDesignSurfacePosition(n){
-  return nodeWorldPosition(n).clone().addScaledVector(nodeWorldNormal(n),surfaceOffsetScene());
-}
-function nodeStrapAnchorPosition(n){
-  const normal=nodeWorldNormal(n);
-  const lift=surfaceOffsetScene()+(n.ringVisible?ringTube(n):strapHalfThicknessScene());
-  return nodeWorldPosition(n).clone().addScaledVector(normal,lift);
-}
 function ringMajor(n){return Math.max(.003,(n.diameterMM*.0037)*.5)}
 function ringTube(n){return Math.max(.001,(n.thicknessMM*.0037)*.5)}
 
@@ -750,12 +740,12 @@ function syncNodeTransform(n){
   if(Math.abs(p.x)<AXIS_SNAP_IN)n.normal=normal.toArray();
 
   const offset=n.ringVisible?ringTube(n):0;
-  n.group.position.copy(p).addScaledVector(normal,surfaceOffsetScene()+offset); // bottom surface = global design shell
+  n.group.position.copy(p).addScaledVector(normal,surfaceOffsetScene()+offset);
   n.group.quaternion.setFromUnitVectors(UNIT_Z,normal);
 }
 
 function strapFrame(s){
-  const A=nodeStrapAnchorPosition(nodes.get(s.a)),B=nodeStrapAnchorPosition(nodes.get(s.b));
+  const A=nodeWorldPosition(nodes.get(s.a)),B=nodeWorldPosition(nodes.get(s.b));
   const tangent=B.clone().sub(A).normalize();
   let normal=nodeWorldNormal(nodes.get(s.a)).add(nodeWorldNormal(nodes.get(s.b)));
   if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();
@@ -1023,17 +1013,14 @@ function manualControlWorld(s,c){
     const t=THREE.MathUtils.clamp(c.t??.5,0,1);
     const centerWeight=Math.sin(Math.PI*t);
     const waypointBulge=slack*THREE.MathUtils.clamp(f.length*.34,.025,.32)*centerWeight;
-
-    // One shared virtual shell: global body offset + half the strap thickness.
-    // Slack is the only additional lift.
-    return p.addScaledVector(n,strapSurfaceLiftScene()+waypointBulge);
+    return p.addScaledVector(n,baseClearance+waypointBulge);
   }
 
   // Legacy explicit surface controls from old saved projects.
   if(c.surfacePos){
     const p=new THREE.Vector3().fromArray(c.surfacePos);
     const n=c.surfaceNormal?new THREE.Vector3().fromArray(c.surfaceNormal).normalize():f.normal;
-    return p.addScaledVector(n,strapSurfaceLiftScene()+slack*relativeBulge);
+    return p.addScaledVector(n,clearance);
   }
 
   // Legacy control compatibility for older saved projects.
@@ -1043,7 +1030,7 @@ function manualControlWorld(s,c){
     .addScaledVector(f.normal,clearance+(c.normalFactor??0)*relativeBulge);
 }
 function strapCurve(s){
-  const A=nodeStrapAnchorPosition(nodes.get(s.a)),B=nodeStrapAnchorPosition(nodes.get(s.b));
+  const A=nodeWorldPosition(nodes.get(s.a)),B=nodeWorldPosition(nodes.get(s.b));
   if(!s.controls.length){
     return new THREE.QuadraticBezierCurve3(A,autoControlWorld(s),B);
   }
@@ -1077,9 +1064,13 @@ function strapNormalAt(s,t){
   return n.normalize();
 }
 function visibleEndpoint(node,targetPoint){
-  const center=nodeStrapAnchorPosition(node);
+  const normal=nodeWorldNormal(node);
+  const center=nodeWorldPosition(node).clone().addScaledVector(
+    normal,
+    surfaceOffsetScene()+(node.ringVisible?ringTube(node):0)
+  );
   if(!node.ringVisible)return center;
-  const n=nodeWorldNormal(node);
+  const n=normal;
   let d=targetPoint.clone().sub(center);
   d.addScaledVector(n,-d.dot(n));
   if(d.lengthSq()<1e-8)return center;
@@ -2544,9 +2535,9 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
-  let samples=projectedChordSamples(s,{lift:strapSurfaceLiftScene()});
+  let samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
   if(samples.length<3)return;
-  samples=refineProjectedGuide(s,samples,strapSurfaceLiftScene(),2);
+  samples=refineProjectedGuide(s,samples,surfaceClearanceForStrap(s),2);
   const reduced=simplifyProjectedRoute(samples,8);
   s.surfaceLevel=0;
   s.controls=[];
@@ -2635,12 +2626,13 @@ function refineProjectedGuide(s,samples,lift,maxDepth=2){
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-  let samples=projectedChordSamples(s,{lift:strapSurfaceLiftScene()});
+  const guideLift=surfaceClearanceForStrap(s);
+  let samples=projectedChordSamples(s,{lift:guideLift});
   if(samples.length<2)return false;
 
-  // Keep the normal ~1.7 cm density, but locally add only the samples needed
+  // Keep the normal projection density, but locally add only the samples needed
   // to keep the cyan guide outside strongly convex body regions.
-  samples=refineProjectedGuide(s,samples,strapSurfaceLiftScene(),2);
+  samples=refineProjectedGuide(s,samples,guideLift,2);
   waypointGuideSamples=samples;
 
   const positions=[];
@@ -2687,7 +2679,7 @@ function waypointGuideHit(x,y){
     normal.normalize();
 
     // Do not allow selecting a guide segment hidden behind the mannequin.
-    const visibilityProbe=point.clone().addScaledVector(normal,strapSurfaceLiftScene());
+    const visibilityProbe=point.clone().addScaledVector(normal,.012);
     if(bodyOccludesWorldPoint(visibilityProbe,.025))continue;
 
     bestD=d;
