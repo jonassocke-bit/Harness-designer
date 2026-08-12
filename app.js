@@ -18,6 +18,7 @@ const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationRes
 const bodyFemaleBtn=$('bodyFemaleBtn'),bodyMaleBtn=$('bodyMaleBtn');
 const bodyShapeSlider=$('bodyShapeSlider'),bodyMuscleSlider=$('bodyMuscleSlider'),bodyHeightSlider=$('bodyHeightSlider'),bodyArmsSlider=$('bodyArmsSlider'),bodyLegsSlider=$('bodyLegsSlider');
 const bodyShapeValue=$('bodyShapeValue'),bodyMuscleValue=$('bodyMuscleValue'),bodyHeightValue=$('bodyHeightValue'),bodyArmsValue=$('bodyArmsValue'),bodyLegsValue=$('bodyLegsValue');
+const bodyColorPicker=$('bodyColorPicker');
 const bodySystemPanel=document.querySelector('.body-system');
 
 
@@ -57,7 +58,7 @@ const panelRoot=new THREE.Group();scene.add(panelRoot);
 const panelGuideRoot=new THREE.Group();scene.add(panelGuideRoot);
 const waypointGuideRoot=new THREE.Group();scene.add(waypointGuideRoot);
 
-const BODY_MAT=new THREE.MeshStandardMaterial({color:0xe9e9e9,roughness:.72,metalness:0});
+const BODY_MAT=new THREE.MeshStandardMaterial({color:new THREE.Color(bodyColorHex),roughness:.72,metalness:0});
 const METAL_MAT=new THREE.MeshStandardMaterial({color:0xc7c8cc,roughness:.25,metalness:.85});
 const METAL_SEL=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.18,metalness:.9,emissive:0x6a6038,emissiveIntensity:.25});
 const POINT_MAT=new THREE.MeshBasicMaterial({color:0xffffff});
@@ -75,6 +76,7 @@ let bodyMeshes=[];
 let importedModel=null;
 let integratedBodyRoot=null,integratedBodyMesh=null,integratedBodyDict=null;
 let integratedBodyBaseScale=1,integratedBodyLoading=false,usingIntegratedBody=true;
+let bodyColorHex=localStorage.getItem('hd:bodyColor')||'#e9e9e9';
 let bodySystem={
   gender:localStorage.getItem('hd:bodyGender')||'female',
   shape:Number(localStorage.getItem('hd:bodyShape')||0),
@@ -127,6 +129,24 @@ function updateCamera(){
 }
 addEventListener('resize',resize);
 
+
+function applyBodyColor(){
+  const c=new THREE.Color(bodyColorHex);
+  BODY_MAT.color.copy(c);
+
+  for(const mesh of bodyMeshes){
+    const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+    for(const mat of materials){
+      if(mat?.color){
+        mat.color.copy(c);
+        mat.needsUpdate=true;
+      }
+    }
+  }
+
+  if(bodyColorPicker)bodyColorPicker.value=bodyColorHex;
+}
+
 function addBodyMesh(mesh){
   mesh.material=BODY_MAT.clone();
   mesh.receiveShadow=false;mesh.castShadow=false;
@@ -161,6 +181,7 @@ function buildFallback(){
   modelRoot.rotation.set(0,0,0);
 }
 buildFallback();
+applyBodyColor();
 
 const integratedLoader=new GLTFLoader();
 
@@ -184,7 +205,15 @@ function updateBodyUI(){
   bodyHeightValue.textContent=`${Math.round(bodySystem.height)} cm`;
   bodyArmsValue.textContent=Math.abs(ar)<.03?'A-Pose':ar<0?`Gerade ${Math.round(-ar*100)}%`:`Unten ${Math.round(ar*100)}%`;
   bodyLegsValue.textContent=bodySystem.legs<.03?'Offen':`Zusammen ${Math.round(bodySystem.legs*100)}%`;
+  if(bodyColorPicker)bodyColorPicker.value=bodyColorHex;
 }
+
+bodyColorPicker.addEventListener('input',()=>{
+  bodyColorHex=bodyColorPicker.value;
+  localStorage.setItem('hd:bodyColor',bodyColorHex);
+  applyBodyColor();
+});
+
 function saveBodyUI(){
   localStorage.setItem('hd:bodyGender',bodySystem.gender);
   localStorage.setItem('hd:bodyShape',String(bodySystem.shape));
@@ -208,6 +237,7 @@ function applyIntegratedBodyMorphs(){
   const heightFactor=bodySystem.height/180;
   integratedBodyRoot.scale.setScalar(integratedBodyBaseScale*heightFactor);
   integratedBodyRoot.updateMatrixWorld(true);
+  applyBodyColor();
 }
 function fitIntegratedBodyToHarnessScene(obj){
   // neutral 180 cm model -> existing mannequin working height 3.3 scene units

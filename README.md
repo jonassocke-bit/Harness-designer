@@ -1,15 +1,16 @@
-# V1.9j3 PANEL FLOODFILL CLEAN
+# V1.9k BODY COLOR TEST
 
-Rebuilt directly from the working V1.9f2.
+Diagnostic build based directly on V1.9j3.
 
-The broken V1.9j/V1.9j2 patch left part of the previous
-updatePanelGeometry function behind. This version replaces modified
-functions only between explicit neighboring function markers.
+Only intended feature addition:
+- live Mannequin color picker in the Body panel
+- color applies to all mannequin body meshes
+- chosen color is persisted in localStorage
+- current default remains #e9e9e9
 
-Included:
-- no average-normal rejection
-- candidate-only connected component selection
-- exact V1.9f2 boundary clipping remains
-- yellow source-triangle debug
-- panel build timing
-- ring-hole logic unchanged
+Purpose:
+Use extreme mannequin colors (red, blue, black, green) to determine whether the
+angle-dependent bright lines seen through panels are actually mannequin pixels
+showing through, or are instead panel shading/lighting artifacts.
+
+Panel geometry and extraction logic are otherwise unchanged.

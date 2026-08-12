@@ -230,3 +230,11 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
 .selection-debug-btn{margin:8px 0;width:100%}
 
 #panelExtractDebugBtn{width:100%;margin-bottom:8px}
+
+#bodyColorPicker{
+  width:44px;
+  height:30px;
+  padding:0;
+  border:0;
+  background:transparent;
+}
