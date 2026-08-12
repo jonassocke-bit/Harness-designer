@@ -1059,7 +1059,7 @@ function strapCurve(s){
     return new THREE.QuadraticBezierCurve3(A,autoControlWorld(s),B);
   }
   const pts=[A,...s.controls.slice().sort((a,b)=>a.t-b.t).map(c=>manualControlWorld(s,c)),B];
-  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.32);
 }
 function effectiveStrapCurve(s){
   if((s.surfaceLevel||0)>0){
@@ -1499,7 +1499,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       // This remains the cheap standard geometry path; controls are evaluated
       // with vector math only while dragging.
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
-      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.32);
     }
   }else{
     surfaceData=surfaceCurveData(s);
@@ -2647,13 +2647,36 @@ function projectEdgeCandidateToBody(candidate,preferredNormal){
   return best;
 }
 
+
+function smoothRequiredLift(values,passes=2){
+  if(!values?.length)return [];
+  let out=values.slice();
+
+  for(let pass=0;pass<passes;pass++){
+    const next=out.slice();
+    for(let i=1;i<out.length-1;i++){
+      // Weighted 1D smoothing. We smooth only the correction scalar,
+      // never the underlying surface route.
+      const avg=(out[i-1]+2*out[i]+out[i+1])/4;
+
+      // Safety rule: smoothing may lift more, but never reduce below the
+      // locally required collision-safe lift.
+      next[i]=Math.max(values[i],avg);
+    }
+    out=next;
+  }
+  return out;
+}
+
 function widthConstrainedProjectedRoute(s,samples,lift){
   if(!samples||samples.length<2)return samples||[];
 
   const halfW=Math.max(.0003,s.widthMM*.0037*.5);
-  const out=[];
+  const frames=[];
+  const required=[];
   let prevSide=null;
 
+  // Pass 1: measure the minimum outward correction required by either edge.
   for(let i=0;i<samples.length;i++){
     const g=samples[i];
 
@@ -2675,7 +2698,6 @@ function widthConstrainedProjectedRoute(s,samples,lift){
     if(prevSide&&side.dot(prevSide)<0)side.negate();
     prevSide=side.clone();
 
-    // Three lanes: center, left edge and right edge.
     const centerShell=g.point.clone().addScaledVector(normal,lift);
     const leftCandidate=centerShell.clone().addScaledVector(side,-halfW);
     const rightCandidate=centerShell.clone().addScaledVector(side,halfW);
@@ -2687,31 +2709,117 @@ function widthConstrainedProjectedRoute(s,samples,lift){
       g.point.clone().addScaledVector(side,halfW),normal
     );
 
-    let requiredLift=0;
+    let need=0;
     if(leftHit){
       const desired=leftHit.point.clone().addScaledVector(leftHit.normal,lift);
-      requiredLift=Math.max(requiredLift,desired.clone().sub(leftCandidate).dot(normal));
+      need=Math.max(need,desired.clone().sub(leftCandidate).dot(normal));
     }
     if(rightHit){
       const desired=rightHit.point.clone().addScaledVector(rightHit.normal,lift);
-      requiredLift=Math.max(requiredLift,desired.clone().sub(rightCandidate).dot(normal));
+      need=Math.max(need,desired.clone().sub(rightCandidate).dot(normal));
     }
 
-    // Never push inward. Only lift the center enough for BOTH outer edges.
-    const correction=Math.max(0,requiredLift);
-    const correctedPoint=g.point.clone().addScaledVector(normal,correction);
+    frames.push({tangent,normal,side,centerShell,leftCandidate,rightCandidate});
+    required.push(Math.max(0,need));
+  }
+
+  // Pass 2: smooth ONLY the outward correction scalar.
+  // This removes small saw-tooth bumps while never going below the
+  // collision-safe requirement from pass 1.
+  const corrected=smoothRequiredLift(required,3);
+
+  const out=[];
+  for(let i=0;i<samples.length;i++){
+    const g=samples[i];
+    const f=frames[i];
+    const correction=corrected[i];
+
+    const correctedPoint=g.point.clone().addScaledVector(f.normal,correction);
 
     out.push({
       ...g,
       point:correctedPoint,
-      normal,
-      side,
-      displayPoint:correctedPoint.clone().addScaledVector(normal,lift),
-      leftDisplay:leftCandidate.clone().addScaledVector(normal,correction),
-      rightDisplay:rightCandidate.clone().addScaledVector(normal,correction)
+      normal:f.normal,
+      side:f.side,
+      requiredLift:required[i],
+      smoothedLift:correction,
+      displayPoint:correctedPoint.clone().addScaledVector(f.normal,lift),
+      leftDisplay:f.leftCandidate.clone().addScaledVector(f.normal,correction),
+      rightDisplay:f.rightCandidate.clone().addScaledVector(f.normal,correction)
     });
   }
   return out;
+}
+
+
+function routePointAtSamples(samples,t){
+  if(!samples?.length)return null;
+  if(t<=samples[0].t)return samples[0].displayPoint.clone();
+  if(t>=samples[samples.length-1].t)return samples[samples.length-1].displayPoint.clone();
+
+  let hi=1;
+  while(hi<samples.length&&samples[hi].t<t)hi++;
+  hi=Math.min(hi,samples.length-1);
+  const lo=Math.max(0,hi-1);
+  const a=samples[lo],b=samples[hi];
+  const u=b.t>a.t?(t-a.t)/(b.t-a.t):0;
+  return a.displayPoint.clone().lerp(b.displayPoint,u);
+}
+
+function splineStaysInThreeLineCorridor(curve,samples,tolerance=.018){
+  if(!curve||!samples?.length)return true;
+
+  // Cheap validation against the already-computed corrected 3-line route.
+  // No new body raycasts here.
+  const checks=Math.min(28,Math.max(12,samples.length));
+
+  for(let i=0;i<=checks;i++){
+    const t=i/checks;
+    const p=curve.getPoint(t);
+    const ref=routePointAtSamples(samples,t);
+    if(!ref)continue;
+
+    if(p.distanceTo(ref)>tolerance)return false;
+  }
+  return true;
+}
+
+function chooseAutoControlsFromRoute(s,samples){
+  // Start from an aggressively taut route so concave regions can still be bridged.
+  let reduced=tautenProjectedRoute(samples,waypointBaseLiftForStrap(s),18);
+
+  // Keep at most 18 route points. Then validate the actual CatmullRom spline.
+  // If it swings outside the measured route corridor, add the most relevant
+  // missing sample and retry.
+  const maxRoutePoints=18;
+  let selected=reduced.slice();
+
+  for(let attempt=0;attempt<7;attempt++){
+    const pts=selected.map(g=>g.displayPoint.clone());
+    if(pts.length<2)break;
+
+    const curve=pts.length===2
+      ?new THREE.LineCurve3(pts[0],pts[1])
+      :new THREE.CatmullRomCurve3(pts,false,'centripetal',.35);
+
+    if(splineStaysInThreeLineCorridor(curve,samples,.020))break;
+    if(selected.length>=maxRoutePoints)break;
+
+    // Add the sample that is currently farthest from the candidate spline.
+    let best=null,bestD=-1;
+    for(const g of samples){
+      if(selected.some(x=>Math.abs(x.t-g.t)<1e-6))continue;
+      const q=curve.getPoint(THREE.MathUtils.clamp(g.t,0,1));
+      const d=q.distanceTo(g.displayPoint);
+      if(d>bestD){bestD=d;best=g}
+    }
+    if(!best)break;
+
+    selected.push(best);
+    selected.sort((a,b)=>a.t-b.t);
+  }
+
+  return selected;
 }
 
 function rebuildAutoProjection(s){
@@ -2721,15 +2829,16 @@ function rebuildAutoProjection(s){
   let samples=projectedChordSamples(s,{lift});
   if(samples.length<3)return;
 
-  // First obtain the centerline surface route.
+  // 1) Dense centerline projection (~1 cm)
   samples=refineProjectedGuide(s,samples,lift,2);
 
-  // Width-aware constraint: center + both actual strap edges.
-  // The center is lifted only where either outer edge would intersect the body.
+  // 2) Width-aware center + left + right edge constraint
+  //    with smoothed outward correction.
   samples=widthConstrainedProjectedRoute(s,samples,lift);
 
-  // Then tension/simplify the width-safe route.
-  const reduced=tautenProjectedRoute(samples,lift,12);
+  // 3) Tensioned / overspanning route, but keep enough controls that the
+  //    actual final spline stays inside the measured 3-line corridor.
+  const reduced=chooseAutoControlsFromRoute(s,samples);
 
   s.surfaceLevel=0;
   s.controls=[];

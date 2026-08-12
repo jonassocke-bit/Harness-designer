@@ -1,31 +1,34 @@
-# Harness Designer V1.8n — 3-LINE experiment
+# Harness Designer V1.8o
 
-Based directly on V1.8m.
+Based on the successful V1.8n 3-line branch.
 
-## Width-aware Auto
-The projection now evaluates three lanes at every existing ~1 cm sample:
-1. centerline
-2. left physical strap edge
-3. right physical strap edge
+## What stays unchanged
+- ~1 cm longitudinal projection density
+- center + left + right strap-edge checks
+- actual strap width is used
+- concave regions can still be overspanned
+- Auto remains the default
+- panels unchanged
 
-The two outer lanes use the actual current strap width.
-If either edge would need to sit farther outside the mannequin, the center
-sample is lifted by the minimum amount needed to keep BOTH edges clear.
+## New smoothing
+The body/surface route itself is NOT smoothed.
+Only the outward correction required by the two outer strap edges is smoothed.
 
-No additional longitudinal sample density is added for this feature.
+Safety rule:
+the smoothed correction may be larger than the raw requirement,
+but never smaller.
 
-The existing tension/simplification pass then runs on the corrected center route.
+This removes small saw-tooth / bumpy edge corrections without reintroducing clipping.
 
-## Visible test guide
-During +Punkt the cyan centerline is shown together with two fainter cyan
-outer-edge lines so the three-line constraint can be inspected directly.
+## Better final spline
+The tensioned route now allows up to 18 route points.
+The actual CatmullRom result is checked against the already-computed
+3-line-safe route, without new raycasts.
 
-## 90-degree ribbon fix
-Waypoint/Auto ribbon orientation now interpolates the stored mannequin surface
-normals along the route. This normal is projected perpendicular to the curve
-tangent and parallel-transported for continuity.
+If the final spline swings too far away from that corridor, the most relevant
+missing sample is added and the spline is tried again.
 
-This addresses the case where the path itself was correct but the visible strap
-was rotated ~90 degrees around its centerline.
+This preserves the desired overspanning behavior while making the visible strap
+follow the measured route more faithfully.
 
-Panels are unchanged.
+CatmullRom tension was also reduced from .45 to .32 for a smoother visible strap.
