@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Harness Designer">
-  <title>Harness Designer V1.9b METHOD LAB</title>
+  <title>Harness Designer V1.9c STRIP</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
   <script type="importmap">
@@ -85,13 +85,14 @@
           </div>
         </div>
 
+        <button id="hitboxDebugBtn" class="soft-btn selection-debug-btn">Hitboxen</button>
         <div id="strapControls" class="control-group hidden">
           <div class="parameter">
             <div class="parameter-top"><span>Breite</span><div id="strapWidthTools" class="parameter-tools"></div></div>
             <input id="strapWidthSlider" type="range" min="0" max="100" step="1" value="30">
           </div>
 
-          <div class="parameter">
+          <div id="strapSlackControl" class="parameter hidden">
             <div class="parameter-top">
               <span>Lockerheit</span>
               <div id="strapSlackTools" class="parameter-tools"></div>
@@ -106,9 +107,9 @@
               <strong id="curvePointCount">Auto · 1</strong>
             </div>
             <div class="curve-actions">
-              <button id="curveMinusBtn" class="soft-btn method-btn">Classic</button>
-              <button id="curvePlusBtn" class="soft-btn method-btn">Push</button>
-              <button id="curveAutoBtn" class="soft-btn method-btn">Strip</button>
+              <button id="curveMinusBtn" class="soft-btn">− Punkt</button>
+              <button id="curvePlusBtn" class="soft-btn hidden">Push</button>
+              <button id="curveAutoBtn" class="soft-btn hidden">Strip</button>
               <button id="strapDebugBtn" class="soft-btn">Debug</button>
             </div>
           </div>
@@ -215,7 +216,7 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <div class="version-badge">v1.9b METHOD LAB</div>
+    <div class="version-badge">v1.9c STRIP</div>
   </div>
 </div>
 

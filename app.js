@@ -26,6 +26,7 @@ const pointSizeSlider=$('pointSizeSlider'),ringDiameterSlider=$('ringDiameterSli
 const anchorPositionControl=$('anchorPositionControl'),anchorPositionSlider=$('anchorPositionSlider');
 const strapWidthSlider=$('strapWidthSlider'),strapSlackSlider=$('strapSlackSlider');
 const curvePointCount=$('curvePointCount'),curveMinusBtn=$('curveMinusBtn'),curvePlusBtn=$('curvePlusBtn'),curveAutoBtn=$('curveAutoBtn'),strapDebugBtn=$('strapDebugBtn');
+const hitboxDebugBtn=$('hitboxDebugBtn');
 const addAnchorBtn=$('addAnchorBtn');
 
 const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider'),surfaceOffsetSlider=$('surfaceOffsetSlider');
@@ -599,12 +600,23 @@ function clearNodeVisual(n){
   }
   n.visual=null;n.hit=null;
 }
+let hitboxDebug=false;
+const hitboxDebugRoot=new THREE.Group();helperRoot.add(hitboxDebugRoot);
+function refreshHitboxDebug(){
+  while(hitboxDebugRoot.children.length){const o=hitboxDebugRoot.children.pop();o.geometry?.dispose?.();o.material?.dispose?.()}
+  hitboxDebugBtn.classList.toggle('active',hitboxDebug);if(!hitboxDebug)return;
+  for(const n of nodes.values()){if(!n.ringVisible)continue;
+    const tg=new THREE.TorusGeometry(ringMajor(n),Math.max(ringTube(n)*1.15,.004),8,30),eg=new THREE.EdgesGeometry(tg);tg.dispose();
+    const l=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x00d8ff,depthTest:false}));l.position.copy(n.group.position);l.quaternion.copy(n.group.quaternion);l.renderOrder=99;hitboxDebugRoot.add(l);
+    const s=new THREE.Mesh(new THREE.SphereGeometry(genericRingSnapOut(n),12,8),new THREE.MeshBasicMaterial({color:0xffcc55,wireframe:true,transparent:true,opacity:.2,depthTest:false}));s.position.copy(nodeWorldPosition(n));s.renderOrder=98;hitboxDebugRoot.add(s);
+  }
+}
 function rebuildNodeVisual(n){
   clearNodeVisual(n);
   let visual,hit;
   if(n.ringVisible){
     visual=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),ringTube(n),12,40),selected?.id===n.id?METAL_SEL:METAL_MAT);
-    hit=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),Math.max(ringTube(n)*2.8,.025),8,28),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
+    hit=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),Math.max(ringTube(n)*1.15,.004),10,36),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
   }else{
     const r=Math.max(.008,n.sizeMM*.0037*.5);
     visual=new THREE.Mesh(new THREE.SphereGeometry(r,16,12),selected?.id===n.id?POINT_SEL:POINT_MAT);
@@ -1239,7 +1251,9 @@ function buildPanelGeometry(panel){
 
   // Dense only in the committed state. During ring drag a flat preview is used.
   let triWorld=tris.map(t=>t.map(i=>boundary[i].clone()));
-  for(let pass=0;pass<3;pass++){
+  let perimeter=0;for(let i=0;i<boundary.length;i++)perimeter+=boundary[i].distanceTo(boundary[(i+1)%boundary.length]);
+  const panelPasses=perimeter>.95?4:perimeter>.45?3:2;
+  for(let pass=0;pass<panelPasses;pass++){
     const next=[];
     for(const [a,b,c] of triWorld){
       const ab=a.clone().lerp(b,.5),bc=b.clone().lerp(c,.5),ca=c.clone().lerp(a,.5);
@@ -1453,9 +1467,11 @@ function makeStrap(data={}){
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
     autoProject:true,
-    autoMethod:data.autoMethod||'classic',
+    autoMethod:'strip',
     debugRoute:!!data.debugRoute,
+    deletedStripTs:historyClone(data.deletedStripTs||[]),
     methodRoute:null,
+    previewMode:false,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -1471,6 +1487,21 @@ function makeStrap(data={}){
 
   return s;
 }
+function stripRouteAt(route,t){
+  if(t<=route[0].t)return route[0];if(t>=route[route.length-1].t)return route[route.length-1];
+  let hi=1;while(hi<route.length&&route[hi].t<t)hi++;const a=route[hi-1],b=route[hi],u=(t-a.t)/Math.max(1e-8,b.t-a.t);
+  let n=a.normal.clone().lerp(b.normal,u);if(n.lengthSq()<1e-8)n=a.normal.clone();n.normalize();
+  return {stripLeft:a.stripLeft.clone().lerp(b.stripLeft,u),stripRight:a.stripRight.clone().lerp(b.stripRight,u),normal:n};
+}
+function updateDirectStripGeometry(s){
+  if(!s.methodRoute?.length)return false;const pos=s.geometry.getAttribute('position'),halfT=.0045;let prevN=null;
+  for(let i=0;i<=STRAP_SAMPLES;i++){
+    const g=stripRouteAt(s.methodRoute,i/STRAP_SAMPLES);let n=g.normal.clone();if(prevN&&n.dot(prevN)<0)n.negate();prevN=n.clone();
+    const lb=g.stripLeft,rb=g.stripRight,lt=lb.clone().addScaledVector(n,halfT*2),rt=rb.clone().addScaledVector(n,halfT*2);
+    [lb,rb,lt,rt].forEach((p,k)=>pos.setXYZ(i*4+k,p.x,p.y,p.z));
+  }
+  pos.needsUpdate=true;s.geometry.computeVertexNormals();s.geometry.computeBoundingSphere();return true;
+}
 function updateStrapGeometry(s,{skipPairMirror=false}={}){
   if(!skipPairMirror){
     const ps=pairOfStrap(s);
@@ -1484,6 +1515,10 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
     }
   }
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
+
+  if(!s.previewMode&&s.autoMethod==='strip'&&s.methodRoute?.length){
+    if(updateDirectStripGeometry(s)){updateStrapMethodDebug(s,s.methodRoute);return}
+  }
 
   const surfaceMode=(s.surfaceLevel||0)>0;
   let renderCurve=null;
@@ -1620,7 +1655,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   }
 }
 function updateAttachedStraps(nodeId){
-  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
+  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){s.previewMode=true;updateStrapGeometry(s)}
 }
 function updateControlHandles(s){
   // V1.1: generated curve points are internal only.
@@ -2302,8 +2337,8 @@ setupParam('anchorPosition',anchorPositionSlider,$('anchorPositionTools'),v=>{
     selected.t=THREE.MathUtils.clamp(v/100,0,1);syncNodeTransform(selected);
   }
 });
+hitboxDebugBtn.addEventListener('click',()=>{hitboxDebug=!hitboxDebug;refreshHitboxDebug()});
 strapWidthSlider.addEventListener('change',refreshAutomaticCrossings);
-strapSlackSlider.addEventListener('change',refreshAutomaticCrossings);
 
 setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathUtils.degToRad(v)});
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
@@ -2454,27 +2489,15 @@ deleteSelectedBtn.addEventListener('click',()=>{
 });
 
 
-function setSelectedStrapMethod(method){
-  if(selected?.kind!=='strap')return;
-  clearWaypointGuide();selected.autoMethod=method;rebuildAutoProjection(selected);
-  const ps=pairOfStrap(selected);if(ps){ps.autoMethod=method;rebuildAutoProjection(ps)}
-  showSelection();refreshAutomaticCrossings();commitHistory();
+let stripDeleteMode=false;
+function nearestStripPointScreen(s,x,y){
+  if(!s?.methodRoute?.length)return null;const r=canvas.getBoundingClientRect();let best=null,bd=36*36;
+  for(let i=1;i<s.methodRoute.length-1;i++){const g=s.methodRoute[i],p=g.finalPoint.clone().project(camera),sx=r.left+(p.x+1)*.5*r.width,sy=r.top+(1-p.y)*.5*r.height,d=(sx-x)**2+(sy-y)**2;if(d<bd){bd=d;best=g}}
+  return best;
 }
-curveMinusBtn.addEventListener('click',()=>setSelectedStrapMethod('classic'));
-curvePlusBtn.addEventListener('click',()=>setSelectedStrapMethod('push'));
-curveAutoBtn.addEventListener('click',()=>setSelectedStrapMethod('strip'));
-strapDebugBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='strap')return;selected.debugRoute=!selected.debugRoute;
-  if(selected.autoMethod==='classic'){
-    if(selected.debugRoute)buildWaypointGuide(selected);else clearWaypointGuide();
-  }else updateStrapMethodDebug(selected,selected.methodRoute||[]);
-  const ps=pairOfStrap(selected);if(ps){ps.debugRoute=selected.debugRoute;if(ps.autoMethod!=='classic')updateStrapMethodDebug(ps,ps.methodRoute||[])}
-  showSelection();
-});
-
-
+curveMinusBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;stripDeleteMode=!stripDeleteMode;selected.debugRoute=true;curveMinusBtn.classList.toggle('active',stripDeleteMode);updateStrapMethodDebug(selected,selected.methodRoute||[]);showToast(stripDeleteMode?'Cyanen Zwischenpunkt antippen':'Punkt löschen beendet')});
+strapDebugBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;selected.debugRoute=!selected.debugRoute;updateStrapMethodDebug(selected,selected.methodRoute||[]);strapDebugBtn.classList.toggle('active',selected.debugRoute)});
 strapWidthSlider.addEventListener('change',()=>{if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)rebuildAutoProjection(p)}});
-strapSlackSlider.addEventListener('change',()=>{if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)rebuildAutoProjection(p)}});
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
 
@@ -2806,6 +2829,20 @@ function buildPushMethodRoute(s,samples,lift){
   const pushes=smoothMethodPush(raw,5,3);
   return measured.map((g,i)=>({...g,finalPoint:base.getPoint(g.t).addScaledVector(g.normal,pushes[i]),push:pushes[i]}));
 }
+function projectedChordSamplesStrip(s,{lift=0}={}){
+  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];
+  const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
+  const ha=nearestBodySurface(A),hb=nearestBodySurface(B);
+  const nA=ha?.normal||nodeWorldNormal(a),nB=hb?.normal||nodeWorldNormal(b);
+  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.037),7,96),out=[];
+  for(let i=0;i<=segments;i++){
+    const t=i/segments,c=A.clone().lerp(B,t);
+    let n=nA.clone().lerp(nB,t);if(n.lengthSq()<1e-8)n=strapFrame(s).normal.clone();n.normalize();
+    const h=nearestBodySurfacePreferred(c,n)||nearestBodySurface(c);if(!h)continue;
+    out.push({t,point:h.point.clone(),normal:h.normal.clone().normalize(),displayPoint:h.point.clone().addScaledVector(h.normal,lift)});
+  }
+  return out;
+}
 function buildStripMethodRoute(s,samples,lift){
   const measured=widthConstrainedProjectedRoute(s,samples,lift);
   const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];let prevSide=null;
@@ -2822,6 +2859,15 @@ function buildStripMethodRoute(s,samples,lift){
     const mid=left.clone().lerp(right,.5);
     let nn=(lh?.normal||n).clone().lerp(rh?.normal||n,.5);if(nn.lengthSq()<1e-8)nn=n.clone();nn.normalize();
     out.push({...g,finalPoint:mid,normal:nn,stripLeft:left,stripRight:right});
+  }
+  if(out.length>=2){
+    const fix=(g,next,node)=>{
+      const center=visibleEndpoint(node,next.finalPoint),halfW=Math.max(.0003,s.widthMM*.0037*.5);
+      let side=g.stripRight.clone().sub(g.stripLeft);if(side.lengthSq()<1e-8)side=strapFrame(s).side.clone();side.normalize();
+      g.finalPoint=center;g.stripLeft=center.clone().addScaledVector(side,-halfW);g.stripRight=center.clone().addScaledVector(side,halfW);
+    };
+    fix(out[0],out[1],nodes.get(s.a));
+    fix(out[out.length-1],out[out.length-2],nodes.get(s.b));
   }
   return out;
 }
@@ -2852,24 +2898,15 @@ function updateStrapMethodDebug(s,route){
   const mat=new THREE.PointsMaterial({color:0x00d8ff,size:4,sizeAttenuation:false,depthWrite:false});s.controlGroup.add(new THREE.Points(geo,mat));
 }
 function rebuildAutoProjection(s){
-  if(!s)return;s.autoProject=true;const method=s.autoMethod||'classic';
-  if(method==='classic'){
-    rebuildClassicMethod(s);s.methodRoute=null;
-    if(s.debugRoute){buildWaypointGuide(s)}else clearWaypointGuide();
-    return;
-  }
-  const lift=waypointBaseLiftForStrap(s);let samples=projectedChordSamples(s,{lift});
+  if(!s)return;s.autoProject=true;s.autoMethod='strip';s.previewMode=false;
+  const lift=waypointBaseLiftForStrap(s);let samples=projectedChordSamplesStrip(s,{lift});
   if(samples.length<3){updateStrapGeometry(s);return}
   samples=refineProjectedGuide(s,samples,lift,2);
-  const route=method==='push'?buildPushMethodRoute(s,samples,lift):buildStripMethodRoute(s,samples,lift);
+  let route=buildStripMethodRoute(s,samples,lift);
+  const deleted=s.deletedStripTs||[];
+  if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
   s.methodRoute=route;s.controls=[];s.surfaceLevel=0;
-  const reduced=methodRouteToControls(s,route,method==='strip'?24:20);
-  for(const g of reduced.slice(1,-1)){
-    const p=g.finalPoint||g.displayPoint,n=g.normal.clone().normalize(),c={t:g.t,waypoint:true,autoProjected:true};
-    bindWaypointToFrame(s,c,p.clone().addScaledVector(n,-lift),n);
-    const current=manualControlWorld(s,c);c.offset=(c.offset||0)+p.clone().sub(current).dot(n);s.controls.push(c);
-  }
-  s.controls.sort((a,b)=>a.t-b.t);updateStrapGeometry(s);updateControlHandles(s);updateStrapMethodDebug(s,route);
+  updateStrapGeometry(s);updateStrapMethodDebug(s,route);
 }
 
 
@@ -3264,8 +3301,8 @@ function refreshAutomaticCrossings(){
   }
 }
 
-const AXIS_SNAP_IN=.095;
-const AXIS_SNAP_OUT=.108;
+const AXIS_SNAP_IN=.032;
+const AXIS_SNAP_OUT=.050;
 
 const DYN_SYM_POS_TOL=.035;
 let dynSymEditClock=1;
@@ -3636,15 +3673,16 @@ function entmergeRing(merged,p){
 }
 
 
-const GENERIC_RING_SNAP_IN=.020;
-const GENERIC_RING_SNAP_OUT=.045;
+function genericRingSnapIn(a,b){return Math.max(.006,Math.min(ringMajor(a),ringMajor(b))*.16)}
+function genericRingSnapOut(a){return Math.max(.016,ringMajor(a)*.55)}
 function nearestGenericRingSnapTarget(n){
   if(!n?.ringVisible||n.mergedState||n.snapMergeState)return null;
   const p=nodeWorldPosition(n);let best=null,bd=Infinity;
   for(const o of nodes.values()){
     if(o===n||!o.ringVisible||o.mergedState||o.snapMergeState)continue;
     if(pairOfNode(n)?.id===o.id)continue;
-    const d=p.distanceTo(nodeWorldPosition(o));if(d<GENERIC_RING_SNAP_IN&&d<bd){best=o;bd=d}
+    const d=p.distanceTo(nodeWorldPosition(o));
+    if(d<genericRingSnapIn(n,o)&&d<bd){best=o;bd=d}
   }
   return best;
 }
@@ -3661,8 +3699,8 @@ function genericMergeRingIntoHost(guest,host){
 function genericUnmergeRing(host,worldPoint=null){
   const state=host?.snapMergeState;if(!state)return host;
   const hp=nodeWorldPosition(host),hn=nodeWorldNormal(host);
-  let p=worldPoint?.clone?.()||hp.clone().add(new THREE.Vector3(GENERIC_RING_SNAP_OUT*1.4,0,0));
-  if(p.distanceTo(hp)<GENERIC_RING_SNAP_OUT)p=hp.clone().add(new THREE.Vector3(GENERIC_RING_SNAP_OUT*1.4,0,0));
+  let p=worldPoint?.clone?.()||hp.clone().add(new THREE.Vector3(genericRingSnapOut(host)*1.4,0,0));
+  if(p.distanceTo(hp)<genericRingSnapOut(host))p=hp.clone().add(new THREE.Vector3(genericRingSnapOut(host)*1.4,0,0));
   const guest=makeNode({...state.guest,id:state.guest.id,position:p.toArray(),normal:hn.toArray(),snapMergeState:null});
   for(const s of [...straps.values()])if(s.a===host.id||s.b===host.id)removeStrap(s.id);
   for(const d of state.topology||[]){
@@ -3970,9 +4008,9 @@ function requestNodeDrag(n,x,y){
     dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
 
     // Generic ring-on-ring merge: host stays fixed; drag far enough to restore guest.
-    if(q.n.snapMergeState){
+    if(q.n.snapMergeState&&single?.genericMergeThisGesture===q.n.id){
       const current=nodeWorldPosition(q.n),hit=bodyHit(q.x,q.y);
-      if(hit&&hit.point.distanceTo(current)>GENERIC_RING_SNAP_OUT){
+      if(hit&&hit.point.distanceTo(current)>genericRingSnapOut(q.n)){
         const guest=genericUnmergeRing(q.n,hit.point);if(single)single.activeNodeId=guest.id;
         selected=guest;refreshMaterials();showSelection();setNodeWorldPosition(guest,hit.point);guest.normal=worldNormal(hit).toArray();syncNodeTransform(guest);updateAttachedStraps(guest.id);
       }
@@ -4059,7 +4097,7 @@ function requestNodeDrag(n,x,y){
       updateAttachedStraps(q.n.id);
       if(q.n.ringVisible){
         const target=nearestGenericRingSnapTarget(q.n);
-        if(target){const host=genericMergeRingIntoHost(q.n,target);if(single)single.activeNodeId=host.id;selected=host;refreshMaterials();showSelection();return}
+        if(target){const host=genericMergeRingIntoHost(q.n,target);if(single){single.activeNodeId=host.id;single.genericMergeThisGesture=host.id}selected=host;refreshMaterials();showSelection();return}
       }
     }
 
@@ -4203,6 +4241,10 @@ canvas.addEventListener('pointerup',e=>{
     rebuildAllWraps();refreshAutomaticCrossings();
     dynReconcileSymmetry({syncProps:true});
     refreshMaterials();commitHistory();return
+  }
+  if(stripDeleteMode&&selected?.kind==='strap'){
+    const g=nearestStripPointScreen(selected,e.clientX,e.clientY);
+    if(g){selected.deletedStripTs=selected.deletedStripTs||[];selected.deletedStripTs.push(g.t);rebuildAutoProjection(selected);stripDeleteMode=false;curveMinusBtn.classList.remove('active');commitHistory();return}
   }
   const hit=was.hit||interactiveHit(e.clientX,e.clientY);
   if(hit?.kind==='node'){
