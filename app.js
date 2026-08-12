@@ -517,7 +517,7 @@ function surfaceCurveData(s){
     return g.point.clone();
   });
 
-  const curve=new THREE.CatmullRomCurve3(points,false,'centripetal',.35);
+  const curve=new THREE.CatmullRomCurve3(points,false,'centripetal',.45);
   return {curve,guides,points};
 }
 
@@ -1059,7 +1059,7 @@ function strapCurve(s){
     return new THREE.QuadraticBezierCurve3(A,autoControlWorld(s),B);
   }
   const pts=[A,...s.controls.slice().sort((a,b)=>a.t-b.t).map(c=>manualControlWorld(s,c)),B];
-  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.32);
+  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
 }
 function effectiveStrapCurve(s){
   if((s.surfaceLevel||0)>0){
@@ -1499,7 +1499,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       // This remains the cheap standard geometry path; controls are evaluated
       // with vector math only while dragging.
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
-      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.32);
+      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
     }
   }else{
     surfaceData=surfaceCurveData(s);
@@ -2469,45 +2469,6 @@ function waypointBaseLiftForStrap(s){
 // Cheap tautening pass over the already-computed dense surface samples.
 // No new raycasts: a shortcut is accepted only when its straight segment
 // stays outside the sampled body shell at every intermediate sample.
-function tautenProjectedRoute(samples,clearance,maxPoints=12){
-  if(!samples||samples.length<=2)return samples||[];
-
-  function shortcutIsClear(i,j){
-    if(j<=i+1)return true;
-    const a=samples[i].point,b=samples[j].point;
-    for(let k=i+1;k<j;k++){
-      const u=(samples[k].t-samples[i].t)/
-              Math.max(1e-8,samples[j].t-samples[i].t);
-      const q=a.clone().lerp(b,u);
-      const surf=samples[k].point;
-      const n=samples[k].normal;
-      const signed=q.clone().sub(surf).dot(n);
-
-      // Direct line must remain above the same virtual design shell.
-      if(signed<clearance-.003)return false;
-    }
-    return true;
-  }
-
-  const keep=[samples[0]];
-  let i=0;
-  while(i<samples.length-1&&keep.length<maxPoints-1){
-    let best=i+1;
-
-    // Greedy: jump as far as possible while staying clear of body samples.
-    for(let j=samples.length-1;j>i+1;j--){
-      if(shortcutIsClear(i,j)){best=j;break}
-    }
-
-    keep.push(samples[best]);
-    i=best;
-  }
-
-  if(keep[keep.length-1]!==samples[samples.length-1])
-    keep.push(samples[samples.length-1]);
-
-  return keep;
-}
 
 function projectedChordSamples(s,{count=null,lift=0}={}){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
@@ -2647,36 +2608,13 @@ function projectEdgeCandidateToBody(candidate,preferredNormal){
   return best;
 }
 
-
-function smoothRequiredLift(values,passes=2){
-  if(!values?.length)return [];
-  let out=values.slice();
-
-  for(let pass=0;pass<passes;pass++){
-    const next=out.slice();
-    for(let i=1;i<out.length-1;i++){
-      // Weighted 1D smoothing. We smooth only the correction scalar,
-      // never the underlying surface route.
-      const avg=(out[i-1]+2*out[i]+out[i+1])/4;
-
-      // Safety rule: smoothing may lift more, but never reduce below the
-      // locally required collision-safe lift.
-      next[i]=Math.max(values[i],avg);
-    }
-    out=next;
-  }
-  return out;
-}
-
 function widthConstrainedProjectedRoute(s,samples,lift){
   if(!samples||samples.length<2)return samples||[];
 
   const halfW=Math.max(.0003,s.widthMM*.0037*.5);
-  const frames=[];
-  const required=[];
+  const out=[];
   let prevSide=null;
 
-  // Pass 1: measure the minimum outward correction required by either edge.
   for(let i=0;i<samples.length;i++){
     const g=samples[i];
 
@@ -2694,7 +2632,6 @@ function widthConstrainedProjectedRoute(s,samples,lift){
     let side=new THREE.Vector3().crossVectors(normal,tangent);
     if(side.lengthSq()<1e-8)side=prevSide?prevSide.clone():strapFrame(s).side.clone();
     side.normalize();
-
     if(prevSide&&side.dot(prevSide)<0)side.negate();
     prevSide=side.clone();
 
@@ -2709,144 +2646,189 @@ function widthConstrainedProjectedRoute(s,samples,lift){
       g.point.clone().addScaledVector(side,halfW),normal
     );
 
-    let need=0;
+    let requiredLift=0;
     if(leftHit){
       const desired=leftHit.point.clone().addScaledVector(leftHit.normal,lift);
-      need=Math.max(need,desired.clone().sub(leftCandidate).dot(normal));
+      requiredLift=Math.max(
+        requiredLift,
+        desired.clone().sub(leftCandidate).dot(normal)
+      );
     }
     if(rightHit){
       const desired=rightHit.point.clone().addScaledVector(rightHit.normal,lift);
-      need=Math.max(need,desired.clone().sub(rightCandidate).dot(normal));
+      requiredLift=Math.max(
+        requiredLift,
+        desired.clone().sub(rightCandidate).dot(normal)
+      );
     }
-
-    frames.push({tangent,normal,side,centerShell,leftCandidate,rightCandidate});
-    required.push(Math.max(0,need));
-  }
-
-  // Pass 2: smooth ONLY the outward correction scalar.
-  // This removes small saw-tooth bumps while never going below the
-  // collision-safe requirement from pass 1.
-  const corrected=smoothRequiredLift(required,3);
-
-  const out=[];
-  for(let i=0;i<samples.length;i++){
-    const g=samples[i];
-    const f=frames[i];
-    const correction=corrected[i];
-
-    const correctedPoint=g.point.clone().addScaledVector(f.normal,correction);
 
     out.push({
       ...g,
-      point:correctedPoint,
-      normal:f.normal,
-      side:f.side,
-      requiredLift:required[i],
-      smoothedLift:correction,
-      displayPoint:correctedPoint.clone().addScaledVector(f.normal,lift),
-      leftDisplay:f.leftCandidate.clone().addScaledVector(f.normal,correction),
-      rightDisplay:f.rightCandidate.clone().addScaledVector(f.normal,correction)
+      normal,
+      side,
+      requiredPush:Math.max(0,requiredLift),
+      centerShell,
+      leftDisplay:leftCandidate,
+      rightDisplay:rightCandidate
     });
   }
+
   return out;
 }
 
 
-function routePointAtSamples(samples,t){
-  if(!samples?.length)return null;
-  if(t<=samples[0].t)return samples[0].displayPoint.clone();
-  if(t>=samples[samples.length-1].t)return samples[samples.length-1].displayPoint.clone();
+function smoothPushEnvelope(values,radius=3,passes=2){
+  if(!values?.length)return [];
+  let out=values.slice();
 
-  let hi=1;
-  while(hi<samples.length&&samples[hi].t<t)hi++;
-  hi=Math.min(hi,samples.length-1);
-  const lo=Math.max(0,hi-1);
-  const a=samples[lo],b=samples[hi];
-  const u=b.t>a.t?(t-a.t)/(b.t-a.t):0;
-  return a.displayPoint.clone().lerp(b.displayPoint,u);
-}
-
-function splineStaysInThreeLineCorridor(curve,samples,tolerance=.018){
-  if(!curve||!samples?.length)return true;
-
-  // Cheap validation against the already-computed corrected 3-line route.
-  // No new body raycasts here.
-  const checks=Math.min(28,Math.max(12,samples.length));
-
-  for(let i=0;i<=checks;i++){
-    const t=i/checks;
-    const p=curve.getPoint(t);
-    const ref=routePointAtSamples(samples,t);
-    if(!ref)continue;
-
-    if(p.distanceTo(ref)>tolerance)return false;
+  // Expand each required push softly to neighbours.
+  // The body can push the strap away but never pull it inward.
+  for(let pass=0;pass<passes;pass++){
+    const next=out.slice();
+    for(let i=0;i<out.length;i++){
+      let best=out[i];
+      for(let d=1;d<=radius;d++){
+        const fall=Math.max(0,1-d/(radius+1));
+        if(i-d>=0)best=Math.max(best,out[i-d]*fall);
+        if(i+d<out.length)best=Math.max(best,out[i+d]*fall);
+      }
+      next[i]=best;
+    }
+    out=next;
   }
-  return true;
+
+  return out;
 }
 
-function chooseAutoControlsFromRoute(s,samples){
-  // Start from an aggressively taut route so concave regions can still be bridged.
-  let reduced=tautenProjectedRoute(samples,waypointBaseLiftForStrap(s),18);
+function baseTensionCurveForAuto(s){
+  const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
+  if(!aNode||!bNode)return null;
 
-  // Keep at most 18 route points. Then validate the actual CatmullRom spline.
-  // If it swings outside the measured route corridor, add the most relevant
-  // missing sample and retry.
-  const maxRoutePoints=18;
-  let selected=reduced.slice();
+  const A=nodeWorldPosition(aNode),B=nodeWorldPosition(bNode);
 
-  for(let attempt=0;attempt<7;attempt++){
-    const pts=selected.map(g=>g.displayPoint.clone());
-    if(pts.length<2)break;
+  // Use the original tensioned no-waypoint strap shape as the base.
+  // This preserves natural overspanning through concave regions.
+  const oldControls=s.controls;
+  const oldSurface=s.surfaceLevel;
+  s.controls=[];
+  s.surfaceLevel=0;
 
-    const curve=pts.length===2
-      ?new THREE.LineCurve3(pts[0],pts[1])
-      :new THREE.CatmullRomCurve3(pts,false,'centripetal',.35);
+  const ctrl=autoControlWorld(s);
+  const curve=new THREE.QuadraticBezierCurve3(A,ctrl,B);
 
-    if(splineStaysInThreeLineCorridor(curve,samples,.020))break;
-    if(selected.length>=maxRoutePoints)break;
+  s.controls=oldControls;
+  s.surfaceLevel=oldSurface;
+  return curve;
+}
 
-    // Add the sample that is currently farthest from the candidate spline.
-    let best=null,bestD=-1;
+function buildPushedAutoRoute(s,surfaceSamples,lift){
+  const baseCurve=baseTensionCurveForAuto(s);
+  if(!baseCurve||surfaceSamples.length<2)return surfaceSamples;
+
+  const measured=widthConstrainedProjectedRoute(s,surfaceSamples,lift);
+  const rawPush=measured.map(g=>g.requiredPush||0);
+  const smoothPush=smoothPushEnvelope(rawPush,4,2);
+
+  const route=[];
+  for(let i=0;i<measured.length;i++){
+    const g=measured[i];
+    const t=g.t;
+
+    // Base tensioned point is authoritative.
+    const base=baseCurve.getPoint(t);
+
+    // Compare base curve against the already-known safe center shell.
+    const safeCenter=g.centerShell;
+    const n=g.normal.clone().normalize();
+
+    const signed=base.clone().sub(safeCenter).dot(n);
+
+    // requiredPush is defined relative to the safe center shell.
+    // If base curve is already farther out, no push is needed.
+    const need=Math.max(0,smoothPush[i]-signed);
+
+    const p=base.clone().addScaledVector(n,need);
+
+    route.push({
+      ...g,
+      point:p.clone().addScaledVector(n,-lift),
+      displayPoint:p,
+      appliedPush:need,
+      rawRequiredPush:rawPush[i],
+      smoothedRequiredPush:smoothPush[i]
+    });
+  }
+
+  return route;
+}
+
+function simplifyPushedRoute(samples,maxControls=16){
+  if(samples.length<=2)return samples;
+
+  // Keep endpoints plus points where the applied push envelope meaningfully changes.
+  const keep=[samples[0]];
+  let lastPush=samples[0].appliedPush||0;
+  let lastT=0;
+
+  for(let i=1;i<samples.length-1;i++){
+    const g=samples[i];
+    const p=g.appliedPush||0;
+    const dp=Math.abs(p-lastPush);
+    const dt=g.t-lastT;
+
+    if(dp>.010 || (p>.004&&dt>.09)){
+      keep.push(g);
+      lastPush=p;
+      lastT=g.t;
+      if(keep.length>=maxControls-1)break;
+    }
+  }
+
+  keep.push(samples[samples.length-1]);
+
+  // Always preserve the strongest remaining push peaks.
+  while(keep.length<maxControls){
+    let best=null,bestVal=.006;
     for(const g of samples){
-      if(selected.some(x=>Math.abs(x.t-g.t)<1e-6))continue;
-      const q=curve.getPoint(THREE.MathUtils.clamp(g.t,0,1));
-      const d=q.distanceTo(g.displayPoint);
-      if(d>bestD){bestD=d;best=g}
+      if(keep.some(k=>Math.abs(k.t-g.t)<1e-6))continue;
+      const val=g.appliedPush||0;
+      if(val>bestVal){bestVal=val;best=g}
     }
     if(!best)break;
-
-    selected.push(best);
-    selected.sort((a,b)=>a.t-b.t);
+    keep.push(best);
+    keep.sort((a,b)=>a.t-b.t);
   }
 
-  return selected;
+  return keep;
 }
-
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
 
   const lift=waypointBaseLiftForStrap(s);
+
+  // Dense ~1 cm surface measurement stays exactly as in V1.8n.
   let samples=projectedChordSamples(s,{lift});
   if(samples.length<3)return;
 
-  // 1) Dense centerline projection (~1 cm)
+  // Only refine the measurement route where convex body geometry needs it.
   samples=refineProjectedGuide(s,samples,lift,2);
 
-  // 2) Width-aware center + left + right edge constraint
-  //    with smoothed outward correction.
-  samples=widthConstrainedProjectedRoute(s,samples,lift);
+  // Start from a naturally tensioned strap and let the 3-line body measurement
+  // push that curve outward only where center/left/right need clearance.
+  const pushed=buildPushedAutoRoute(s,samples,lift);
 
-  // 3) Tensioned / overspanning route, but keep enough controls that the
-  //    actual final spline stays inside the measured 3-line corridor.
-  const reduced=chooseAutoControlsFromRoute(s,samples);
+  // Convert only the meaningful push-envelope changes to Auto waypoints.
+  const reduced=simplifyPushedRoute(pushed,16);
 
   s.surfaceLevel=0;
   s.controls=[];
+
   for(const g of reduced.slice(1,-1)){
     const c={t:g.t,waypoint:true,autoProjected:true};
     bindWaypointToFrame(s,c,g.point,g.normal);
     s.controls.push(c);
   }
+
   s.controls.sort((a,b)=>a.t-b.t);
   updateStrapGeometry(s);
 }

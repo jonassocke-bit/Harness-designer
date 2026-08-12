@@ -1,34 +1,34 @@
-# Harness Designer V1.8o
+# Harness Designer V1.8p — CLEAN PUSH
 
-Based on the successful V1.8n 3-line branch.
+Based directly on V1.8n 3-LINE.
 
-## What stays unchanged
-- ~1 cm longitudinal projection density
-- center + left + right strap-edge checks
-- actual strap width is used
-- concave regions can still be overspanned
-- Auto remains the default
-- panels unchanged
+This build deliberately removes later corridor/spline experiments.
 
-## New smoothing
-The body/surface route itself is NOT smoothed.
-Only the outward correction required by the two outer strap edges is smoothed.
+## Clean Auto pipeline
+1. Original naturally tensioned no-waypoint strap curve is the base.
+2. Dense ~1 cm center projection is measured.
+3. Left and right physical strap edges are measured too.
+4. These measurements produce only a REQUIRED OUTWARD PUSH value.
+5. Push values are softened over neighbouring samples.
+6. The body may only push the tensioned base curve OUTWARD.
+7. Concave regions therefore remain naturally overspanned.
+8. Only meaningful push-envelope changes become Auto control points.
 
-Safety rule:
-the smoothed correction may be larger than the raw requirement,
-but never smaller.
+The measured body route no longer directly dictates the final strap path.
 
-This removes small saw-tooth / bumpy edge corrections without reintroducing clipping.
+## Removed / avoided
+- no route-corridor spline repair
+- no extra spline reconstruction pass
+- no extra longitudinal sampling
+- no body-following simplifier controlling the final strap shape
+- no smoothing of the mannequin surface route itself
 
-## Better final spline
-The tensioned route now allows up to 18 route points.
-The actual CatmullRom result is checked against the already-computed
-3-line-safe route, without new raycasts.
+## Ribbon orientation
+The V1.8n waypoint-surface-normal orientation fix remains in place to prevent
+the occasional 90-degree ribbon rotation.
 
-If the final spline swings too far away from that corridor, the most relevant
-missing sample is added and the spline is tried again.
+## Manual guide
+The visible +Punkt guide remains the 3-line diagnostic:
+center + left edge + right edge.
 
-This preserves the desired overspanning behavior while making the visible strap
-follow the measured route more faithfully.
-
-CatmullRom tension was also reduced from .45 to .32 for a smoother visible strap.
+Panels are unchanged.
