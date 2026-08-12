@@ -1,16 +1,18 @@
-# V1.9k BODY COLOR TEST
+# V1.9k2 BODY COLOR SAFE
 
-Diagnostic build based directly on V1.9j3.
+Rebuilt directly from the known-starting V1.9j3.
 
-Only intended feature addition:
-- live Mannequin color picker in the Body panel
-- color applies to all mannequin body meshes
-- chosen color is persisted in localStorage
-- current default remains #e9e9e9
+V1.9k startup bug:
+BODY_MAT referenced `bodyColorHex` before `bodyColorHex` was initialized,
+causing a browser ReferenceError (temporal dead zone). `node --check` cannot
+detect that class of runtime initialization error.
 
-Purpose:
-Use extreme mannequin colors (red, blue, black, green) to determine whether the
-angle-dependent bright lines seen through panels are actually mannequin pixels
-showing through, or are instead panel shading/lighting artifacts.
+V1.9k2:
+- leaves BODY_MAT startup construction exactly as in V1.9j3
+- initializes bodyColorHex before runtime use
+- applies saved color only after the fallback body exists
+- recolors all body mesh materials live
+- stores the chosen color in localStorage
+- reapplies it after integrated body morph/model updates
 
-Panel geometry and extraction logic are otherwise unchanged.
+No panel geometry/extraction logic was changed.

@@ -58,7 +58,7 @@ const panelRoot=new THREE.Group();scene.add(panelRoot);
 const panelGuideRoot=new THREE.Group();scene.add(panelGuideRoot);
 const waypointGuideRoot=new THREE.Group();scene.add(waypointGuideRoot);
 
-const BODY_MAT=new THREE.MeshStandardMaterial({color:new THREE.Color(bodyColorHex),roughness:.72,metalness:0});
+const BODY_MAT=new THREE.MeshStandardMaterial({color:0xe9e9e9,roughness:.72,metalness:0});
 const METAL_MAT=new THREE.MeshStandardMaterial({color:0xc7c8cc,roughness:.25,metalness:.85});
 const METAL_SEL=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.18,metalness:.9,emissive:0x6a6038,emissiveIntensity:.25});
 const POINT_MAT=new THREE.MeshBasicMaterial({color:0xffffff});
@@ -72,11 +72,11 @@ const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,met
 const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
 const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
+let bodyColorHex=localStorage.getItem('hd:bodyColor')||'#e9e9e9';
 let bodyMeshes=[];
 let importedModel=null;
 let integratedBodyRoot=null,integratedBodyMesh=null,integratedBodyDict=null;
 let integratedBodyBaseScale=1,integratedBodyLoading=false,usingIntegratedBody=true;
-let bodyColorHex=localStorage.getItem('hd:bodyColor')||'#e9e9e9';
 let bodySystem={
   gender:localStorage.getItem('hd:bodyGender')||'female',
   shape:Number(localStorage.getItem('hd:bodyShape')||0),
@@ -135,9 +135,9 @@ function applyBodyColor(){
   BODY_MAT.color.copy(c);
 
   for(const mesh of bodyMeshes){
-    const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
-    for(const mat of materials){
-      if(mat?.color){
+    const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+    for(const mat of mats){
+      if(mat&&mat.color){
         mat.color.copy(c);
         mat.needsUpdate=true;
       }
@@ -205,14 +205,16 @@ function updateBodyUI(){
   bodyHeightValue.textContent=`${Math.round(bodySystem.height)} cm`;
   bodyArmsValue.textContent=Math.abs(ar)<.03?'A-Pose':ar<0?`Gerade ${Math.round(-ar*100)}%`:`Unten ${Math.round(ar*100)}%`;
   bodyLegsValue.textContent=bodySystem.legs<.03?'Offen':`Zusammen ${Math.round(bodySystem.legs*100)}%`;
-  if(bodyColorPicker)bodyColorPicker.value=bodyColorHex;
 }
 
-bodyColorPicker.addEventListener('input',()=>{
-  bodyColorHex=bodyColorPicker.value;
-  localStorage.setItem('hd:bodyColor',bodyColorHex);
-  applyBodyColor();
-});
+if(bodyColorPicker){
+  bodyColorPicker.value=bodyColorHex;
+  bodyColorPicker.addEventListener('input',()=>{
+    bodyColorHex=bodyColorPicker.value;
+    try{localStorage.setItem('hd:bodyColor',bodyColorHex)}catch{}
+    applyBodyColor();
+  });
+}
 
 function saveBodyUI(){
   localStorage.setItem('hd:bodyGender',bodySystem.gender);
