@@ -1,28 +1,14 @@
-# Harness Designer V1.9a — AUTO CORE
+# Harness Designer V1.9b METHOD LAB
 
-A deliberate strap-core simplification based on the successful V1.8n 3-line detector.
+Built deliberately from V1.8n 3-LINE.
 
-## Straps
-- Manual +/- waypoint workflow removed from the UI.
-- Auto is always active.
-- One dense ~1 cm route is calculated from:
-  tensioned base curve -> center/left/right collision measurement -> outward push envelope.
-- The final visible ribbon is swept directly along that dense route.
-- No reduction to a small waypoint set before rendering.
-- 48 render cross-sections for a smoother visible band.
-- Route normals drive ribbon orientation.
-- Debug toggle optionally shows centerline, both edge traces and a reduced set of path dots.
-- Debug is OFF by default.
+Per strap methods:
+- Classic: exact V1.8n Auto reference.
+- Push: tensioned base curve; 3-line checks only push outward.
+- Strip: experimental surface-strip method where physical left/right edges are independently projected to the mannequin and define the resulting route, close to extracting/offsetting a narrow mannequin strip.
 
-## Ring-on-ring snap
-- ordinary visible rings snap only when centers are almost exactly overlapping
-- snap-in radius: .028 scene units
-- snap-out radius: .048 scene units
-- moved ring is stored as Guest; stationary ring is Host
-- attached strap topology is remembered
-- a former Host<->Guest strap is restored on separation
-- pulling away in the same drag gesture immediately restores the Guest
-- the existing link/separate button separates a merged Guest next to its Host
-- panel boundary slots use the existing merge-stack mechanism
+Debug toggle shows center/left/right diagnostic lines and route samples. Debug is off by default.
 
-Axis mirror merge remains separate and unchanged.
+The V1.8n cheap drag preview is retained; the selected method is recomputed after release by the existing Auto finalize path.
+
+Also included: generic ring-on-ring snap with very small snap radius, same-drag pull-apart, topology memory, and separation through the existing link/separate button.

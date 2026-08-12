@@ -224,3 +224,5 @@ input[type=range]{width:100%;height:26px;margin:0;accent-color:white}
   color:#17171a;
   border-color:#fff;
 }
+
+.method-btn.active,#strapDebugBtn.active{background:#fff;color:#17171a;border-color:#fff}

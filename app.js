@@ -25,7 +25,7 @@ const pointSizeControl=$('pointSizeControl'),ringDiameterControl=$('ringDiameter
 const pointSizeSlider=$('pointSizeSlider'),ringDiameterSlider=$('ringDiameterSlider'),ringThicknessSlider=$('ringThicknessSlider');
 const anchorPositionControl=$('anchorPositionControl'),anchorPositionSlider=$('anchorPositionSlider');
 const strapWidthSlider=$('strapWidthSlider'),strapSlackSlider=$('strapSlackSlider');
-const curvePointCount=$('curvePointCount'),curveMinusBtn=$('curveMinusBtn'),curvePlusBtn=$('curvePlusBtn'),curveAutoBtn=$('curveAutoBtn');
+const curvePointCount=$('curvePointCount'),curveMinusBtn=$('curveMinusBtn'),curvePlusBtn=$('curvePlusBtn'),curveAutoBtn=$('curveAutoBtn'),strapDebugBtn=$('strapDebugBtn');
 const addAnchorBtn=$('addAnchorBtn');
 
 const rotXSlider=$('rotXSlider'),rotYSlider=$('rotYSlider'),rotZSlider=$('rotZSlider'),surfaceOffsetSlider=$('surfaceOffsetSlider');
@@ -673,14 +673,6 @@ function mirrorStrapMeshFromMaster(master,slave){
 
   // Keep materialized waypoint state ready for a future unlink, but do not
   // independently project it while the pair is linked.
-  slave.autoRoute=(master.autoRoute||[]).map(g=>({
-    ...g,
-    point:g.point?[-g.point[0],g.point[1],g.point[2]]:g.point,
-    normal:g.normal?[-g.normal[0],g.normal[1],g.normal[2]]:g.normal,
-    left:g.right?[-g.right[0],g.right[1],g.right[2]]:null,
-    right:g.left?[-g.left[0],g.left[1],g.left[2]]:null
-  }));
-  slave.debugRoute=master.debugRoute;
   slave.controls=master.controls.map(c=>{
     const d={...c};
     if(c.surfacePos)d.surfacePos=[-c.surfacePos[0],c.surfacePos[1],c.surfacePos[2]];
@@ -1071,18 +1063,26 @@ function strapCurve(s){
   return new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
 }
 function effectiveStrapCurve(s){
-  return autoRouteCurve(s)||strapCurve(s);
+  if((s.surfaceLevel||0)>0){
+    const data=surfaceCurveData(s);
+    if(data)return data.curve;
+  }
+  return strapCurve(s);
 }
 function strapPointAt(s,t){return effectiveStrapCurve(s).getPoint(THREE.MathUtils.clamp(t,0,1))}
 function strapNormalAt(s,t){
   const tt=THREE.MathUtils.clamp(t,0,1);
-  if(s.autoRoute?.length){
-    const curve=autoRouteCurve(s),tan=curve.getTangent(tt).normalize();
-    let n=autoRouteNormalAt(s,tt);
-    n.addScaledVector(tan,-n.dot(tan));
-    if(n.lengthSq()<1e-8)n=strapFrame(s).normal.clone();
-    return n.normalize();
+
+  if((s.surfaceLevel||0)>0){
+    const data=surfaceCurveData(s);
+    if(data){
+      const tan=data.curve.getTangent(tt).normalize();
+      let n=surfaceNormalAtData(data,tt);
+      n.addScaledVector(tan,-n.dot(tan));
+      if(n.lengthSq()>1e-8)return n.normalize();
+    }
   }
+
   const f=strapFrame(s),tan=strapCurve(s).getTangent(tt).normalize();
   let n=f.normal.clone().addScaledVector(tan,-f.normal.dot(tan));
   if(n.lengthSq()<1e-8)n=f.normal.clone();
@@ -1428,7 +1428,7 @@ function updateAllPanels(){
 }
 
 
-const STRAP_SAMPLES=48;
+const STRAP_SAMPLES=18;
 function initStrapGeometry(){
   const positions=new Float32Array((STRAP_SAMPLES+1)*4*3);
   const indices=[];
@@ -1453,8 +1453,9 @@ function makeStrap(data={}){
     previousPartnerId:data.previousPartnerId||null,
     manualUnlinked:!!data.manualUnlinked,
     autoProject:true,
-    autoRoute:historyClone(data.autoRoute||[]),
+    autoMethod:data.autoMethod||'classic',
     debugRoute:!!data.debugRoute,
+    methodRoute:null,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -1484,11 +1485,11 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   }
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
 
-  const surfaceMode=false;
-  let renderCurve=autoRouteCurve(s);
+  const surfaceMode=(s.surfaceLevel||0)>0;
+  let renderCurve=null;
   let surfaceData=null;
 
-  if(!renderCurve){
+  if(!surfaceMode){
     // IMPORTANT: untouched fast V1.4h standard path.
     const curve=strapCurve(s);
     const firstGuide=curve.getPoint(1/STRAP_SAMPLES),lastGuide=curve.getPoint(1-1/STRAP_SAMPLES);
@@ -1503,6 +1504,18 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       // with vector math only while dragging.
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
       renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+    }
+  }else{
+    surfaceData=surfaceCurveData(s);
+    if(!surfaceData){
+      // Fail-safe fallback to the known-good standard geometry.
+      const curve=strapCurve(s);
+      const a=visibleEndpoint(aNode,curve.getPoint(1/STRAP_SAMPLES));
+      const b=visibleEndpoint(bNode,curve.getPoint(1-1/STRAP_SAMPLES));
+      renderCurve=new THREE.QuadraticBezierCurve3(a,autoControlWorld(s),b);
+      surfaceData=null;
+    }else{
+      renderCurve=surfaceData.curve;
     }
   }
 
@@ -1527,13 +1540,6 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       }
       normal.normalize();
     }else{
-      if(s.autoRoute?.length){ 
-        normal=autoRouteNormalAt(s,t);
-        normal.addScaledVector(tan,-normal.dot(tan));
-        if(normal.lengthSq()<1e-8)normal=prevNormal?prevNormal.clone():strapFrame(s).normal.clone();
-        normal.normalize();
-        if(prevNormal&&normal.dot(prevNormal)<0)normal.negate();
-      }else{
       const hasWaypointNormals=s.controls?.some(c=>c.waypoint&&c.surfaceNormal);
 
       if(hasWaypointNormals){
@@ -1557,7 +1563,6 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
         normal.addScaledVector(tan,-normal.dot(tan));
         if(normal.lengthSq()<1e-8)normal=strapFrame(s).normal.clone();
         normal.normalize();
-      }
       }
     }
 
@@ -1618,33 +1623,8 @@ function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId)updateStrapGeometry(s);
 }
 function updateControlHandles(s){
+  // V1.1: generated curve points are internal only.
   s.controlGroup.clear();
-  if(!s.debugRoute||!s.autoRoute?.length)return;
-
-  const addLine=(key,opacity)=>{
-    const pos=[];
-    for(const g of s.autoRoute){
-      const arr=key==='point'?g.point:g[key];
-      if(!arr)continue;
-      pos.push(arr[0],arr[1],arr[2]);
-    }
-    if(pos.length<6)return;
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-    const mat=new THREE.LineBasicMaterial({color:0x00d8ff,transparent:true,opacity,depthWrite:false});
-    const line=new THREE.Line(geo,mat);line.renderOrder=20;s.controlGroup.add(line);
-  };
-  addLine('point',.95);addLine('left',.42);addLine('right',.42);
-
-  const every=Math.max(1,Math.ceil(s.autoRoute.length/16));
-  const pts=[];
-  for(let i=0;i<s.autoRoute.length;i+=every){
-    const p=s.autoRoute[i].point;pts.push(p[0],p[1],p[2]);
-  }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
-  const mat=new THREE.PointsMaterial({color:0x00d8ff,size:4,sizeAttenuation:false,depthWrite:false});
-  const points=new THREE.Points(geo,mat);points.renderOrder=21;s.controlGroup.add(points);
 }
 function rebuildWrapsForNode(n){
   n.wrapGroup.clear();
@@ -2047,7 +2027,17 @@ function showSelection(){
   }else if(selected.kind==='strap'){
     strapWidthSlider.value=selected.widthMM;strapSlackSlider.value=selected.slack;
     syncParamUI('strapWidth',selected.widthMM);syncParamUI('strapSlack',selected.slack);
-    curvePointCount.textContent='Auto · 3-Linien';
+    const wp=selected.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
+    curveMinusBtn.classList.toggle('active',(selected.autoMethod||'classic')==='classic');
+    curvePlusBtn.classList.toggle('active',selected.autoMethod==='push');
+    curveAutoBtn.classList.toggle('active',selected.autoMethod==='strip');
+    strapDebugBtn.classList.toggle('active',!!selected.debugRoute);
+    const lvl=selected.surfaceLevel||0;
+    if(wp)curvePointCount.textContent=`${wp} ${wp===1?'Punkt':'Punkte'} · ${wp+1} Teile`;
+    else if(lvl){
+      const internal=Math.pow(2,lvl)-1,sections=Math.pow(2,lvl);
+      curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
+    }else curvePointCount.textContent=selected.autoProject?'Auto':'Standard';
   }else if(selected.kind==='panel'){
     panelOffsetSlider.value=selected.offsetMM??panelDefaults.offsetMM;
     syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
@@ -2407,20 +2397,9 @@ nodeRingToggle.addEventListener('click',()=>{
 });
 linkSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
-
   if(selected.kind==='node'&&selected.snapMergeState){
-    const host=selected;
-    const side=nodeWorldNormal(host).clone().cross(new THREE.Vector3(0,1,0));
-    if(side.lengthSq()<1e-8)side.set(1,0,0);
-    side.normalize();
-    const spawn=nodeWorldPosition(host).clone().addScaledVector(side,RING_SNAP_OUT*1.5);
-    const guest=genericUnmergeRing(host,spawn);
-    selectObject(guest);refreshAutomaticCrossings();commitHistory();
-    showToast('Gemergten Ring getrennt');
-    updateLinkButton();
-    return;
+    const guest=genericUnmergeRing(selected);selectObject(guest);refreshAutomaticCrossings();commitHistory();showToast('Gemergten Ring getrennt');updateLinkButton();return;
   }
-
   const linked=selected.kind==='node'?!!pairOfNode(selected):selected.kind==='strap'?!!pairOfStrap(selected):!!pairOfPanel(selected);
 
   if(linked){
@@ -2474,6 +2453,28 @@ deleteSelectedBtn.addEventListener('click',()=>{
   commitHistory();
 });
 
+
+function setSelectedStrapMethod(method){
+  if(selected?.kind!=='strap')return;
+  clearWaypointGuide();selected.autoMethod=method;rebuildAutoProjection(selected);
+  const ps=pairOfStrap(selected);if(ps){ps.autoMethod=method;rebuildAutoProjection(ps)}
+  showSelection();refreshAutomaticCrossings();commitHistory();
+}
+curveMinusBtn.addEventListener('click',()=>setSelectedStrapMethod('classic'));
+curvePlusBtn.addEventListener('click',()=>setSelectedStrapMethod('push'));
+curveAutoBtn.addEventListener('click',()=>setSelectedStrapMethod('strip'));
+strapDebugBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='strap')return;selected.debugRoute=!selected.debugRoute;
+  if(selected.autoMethod==='classic'){
+    if(selected.debugRoute)buildWaypointGuide(selected);else clearWaypointGuide();
+  }else updateStrapMethodDebug(selected,selected.methodRoute||[]);
+  const ps=pairOfStrap(selected);if(ps){ps.debugRoute=selected.debugRoute;if(ps.autoMethod!=='classic')updateStrapMethodDebug(ps,ps.methodRoute||[])}
+  showSelection();
+});
+
+
+strapWidthSlider.addEventListener('change',()=>{if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)rebuildAutoProjection(p)}});
+strapSlackSlider.addEventListener('change',()=>{if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)rebuildAutoProjection(p)}});
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
 
@@ -2745,15 +2746,41 @@ function widthConstrainedProjectedRoute(s,samples,lift){
   return out;
 }
 
+function rebuildClassicMethod(s){
+  if(!s?.autoProject)return;
 
-function denseAutoBaseCurve(s){
+  const lift=waypointBaseLiftForStrap(s);
+  let samples=projectedChordSamples(s,{lift});
+  if(samples.length<3)return;
+
+  // First obtain the centerline surface route.
+  samples=refineProjectedGuide(s,samples,lift,2);
+
+  // Width-aware constraint: center + both actual strap edges.
+  // The center is lifted only where either outer edge would intersect the body.
+  samples=widthConstrainedProjectedRoute(s,samples,lift);
+
+  // Then tension/simplify the width-safe route.
+  const reduced=tautenProjectedRoute(samples,lift,12);
+
+  s.surfaceLevel=0;
+  s.controls=[];
+  for(const g of reduced.slice(1,-1)){
+    const c={t:g.t,waypoint:true,autoProjected:true};
+    bindWaypointToFrame(s,c,g.point,g.normal);
+    s.controls.push(c);
+  }
+  s.controls.sort((a,b)=>a.t-b.t);
+  updateStrapGeometry(s);
+}
+
+function methodBaseCurve(s){
   const f=strapFrame(s);
   return new THREE.QuadraticBezierCurve3(f.A,autoControlWorld(s),f.B);
 }
-function smoothScalarEnvelope(values,radius=4,passes=3){
+function smoothMethodPush(values,radius=4,passes=2){
   if(!values?.length)return [];
-  const required=values.slice();
-  let out=values.slice();
+  const req=values.slice();let out=values.slice();
   for(let pass=0;pass<passes;pass++){
     const next=out.slice();
     for(let i=0;i<out.length;i++){
@@ -2763,73 +2790,88 @@ function smoothScalarEnvelope(values,radius=4,passes=3){
         if(i-d>=0){sum+=out[i-d]*ww;w+=ww}
         if(i+d<out.length){sum+=out[i+d]*ww;w+=ww}
       }
-      next[i]=Math.max(required[i],sum/w);
+      next[i]=Math.max(req[i],sum/w);
     }
     out=next;
   }
   return out;
 }
-function buildDenseAutoRoute(s,samples,lift){
-  const baseCurve=denseAutoBaseCurve(s);
+function buildPushMethodRoute(s,samples,lift){
+  const base=methodBaseCurve(s);
   const measured=widthConstrainedProjectedRoute(s,samples,lift);
-  if(!baseCurve||measured.length<2)return [];
-
-  const raw=[];
-  for(const g of measured){
-    const base=baseCurve.getPoint(g.t);
-    const n=g.normal.clone().normalize();
-    const safe=g.displayPoint;
-    const signed=base.clone().sub(safe).dot(n);
-    raw.push(Math.max(0,-signed));
-  }
-  const push=smoothScalarEnvelope(raw,5,3);
-
-  return measured.map((g,i)=>{
-    const base=baseCurve.getPoint(g.t);
-    const n=g.normal.clone().normalize();
-    const p=base.clone().addScaledVector(n,push[i]);
-    return {
-      t:g.t,
-      point:p.toArray(),
-      normal:n.toArray(),
-      left:g.leftDisplay?.toArray?.()||null,
-      right:g.rightDisplay?.toArray?.()||null,
-      push:push[i]
-    };
+  const raw=measured.map(g=>{
+    const p=base.getPoint(g.t),n=g.normal.clone().normalize();
+    return Math.max(0,-p.clone().sub(g.displayPoint).dot(n));
   });
+  const pushes=smoothMethodPush(raw,5,3);
+  return measured.map((g,i)=>({...g,finalPoint:base.getPoint(g.t).addScaledVector(g.normal,pushes[i]),push:pushes[i]}));
 }
-function autoRouteCurve(s){
-  if(!s.autoRoute?.length)return null;
-  const pts=s.autoRoute.map(g=>new THREE.Vector3().fromArray(g.point));
-  if(pts.length===2)return new THREE.LineCurve3(pts[0],pts[1]);
-  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.15);
+function buildStripMethodRoute(s,samples,lift){
+  const measured=widthConstrainedProjectedRoute(s,samples,lift);
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];let prevSide=null;
+  for(let i=0;i<measured.length;i++){
+    const g=measured[i],pp=measured[Math.max(0,i-1)].point,pn=measured[Math.min(measured.length-1,i+1)].point;
+    let tan=pn.clone().sub(pp);if(tan.lengthSq()<1e-8)tan=strapFrame(s).tangent.clone();tan.normalize();
+    let n=g.normal.clone();n.addScaledVector(tan,-n.dot(tan));if(n.lengthSq()<1e-8)n=strapFrame(s).normal.clone();n.normalize();
+    let side=new THREE.Vector3().crossVectors(n,tan);if(side.lengthSq()<1e-8)side=prevSide?prevSide.clone():strapFrame(s).side.clone();side.normalize();
+    if(prevSide&&side.dot(prevSide)<0)side.negate();prevSide=side.clone();
+    const lh=projectEdgeCandidateToBody(g.point.clone().addScaledVector(side,-halfW),n);
+    const rh=projectEdgeCandidateToBody(g.point.clone().addScaledVector(side,halfW),n);
+    const left=(lh?lh.point:g.point.clone().addScaledVector(side,-halfW)).clone().addScaledVector(lh?lh.normal:n,lift);
+    const right=(rh?rh.point:g.point.clone().addScaledVector(side,halfW)).clone().addScaledVector(rh?rh.normal:n,lift);
+    const mid=left.clone().lerp(right,.5);
+    let nn=(lh?.normal||n).clone().lerp(rh?.normal||n,.5);if(nn.lengthSq()<1e-8)nn=n.clone();nn.normalize();
+    out.push({...g,finalPoint:mid,normal:nn,stripLeft:left,stripRight:right});
+  }
+  return out;
 }
-function autoRouteNormalAt(s,t){
-  const route=s.autoRoute||[];
-  if(route.length<2)return strapFrame(s).normal.clone();
-  if(t<=route[0].t)return new THREE.Vector3().fromArray(route[0].normal).normalize();
-  if(t>=route[route.length-1].t)return new THREE.Vector3().fromArray(route[route.length-1].normal).normalize();
-  let hi=1;while(hi<route.length&&route[hi].t<t)hi++;
-  const lo=Math.max(0,hi-1),a=route[lo],b=route[Math.min(hi,route.length-1)];
-  const u=b.t>a.t?(t-a.t)/(b.t-a.t):0;
-  let n=new THREE.Vector3().fromArray(a.normal).lerp(new THREE.Vector3().fromArray(b.normal),u);
-  if(n.lengthSq()<1e-8)n=strapFrame(s).normal.clone();
-  return n.normalize();
+function methodRouteToControls(s,route,maxControls){
+  if(!route?.length)return [];
+  const target=Math.min(maxControls,Math.max(7,Math.ceil(route.length/2))),keep=[route[0]];
+  for(let k=1;k<target-1;k++){
+    const t=k/(target-1);let best=route[1],bd=Infinity;
+    for(let i=1;i<route.length-1;i++){const d=Math.abs(route[i].t-t);if(d<bd){bd=d;best=route[i]}}
+    if(keep[keep.length-1]!==best)keep.push(best);
+  }
+  keep.push(route[route.length-1]);return keep;
+}
+function clearStrapMethodDebug(s){
+  if(!s?.controlGroup)return;
+  while(s.controlGroup.children.length){const o=s.controlGroup.children.pop();o.geometry?.dispose?.();o.material?.dispose?.()}
+}
+function updateStrapMethodDebug(s,route){
+  clearStrapMethodDebug(s);if(!s?.debugRoute||!route?.length)return;
+  const line=(getter,opacity)=>{
+    const pos=[];for(const g of route){const p=getter(g);if(p)pos.push(p.x,p.y,p.z)}
+    if(pos.length<6)return;const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    const mat=new THREE.LineBasicMaterial({color:0x00d8ff,transparent:true,opacity,depthWrite:false});const l=new THREE.Line(geo,mat);l.renderOrder=20;s.controlGroup.add(l);
+  };
+  line(g=>g.finalPoint||g.displayPoint,.95);line(g=>g.stripLeft||g.leftDisplay,.40);line(g=>g.stripRight||g.rightDisplay,.40);
+  const pts=[],every=Math.max(1,Math.ceil(route.length/14));for(let i=0;i<route.length;i+=every){const p=route[i].finalPoint||route[i].displayPoint;pts.push(p.x,p.y,p.z)}
+  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
+  const mat=new THREE.PointsMaterial({color:0x00d8ff,size:4,sizeAttenuation:false,depthWrite:false});s.controlGroup.add(new THREE.Points(geo,mat));
 }
 function rebuildAutoProjection(s){
-  if(!s)return;
-  s.autoProject=true;
-  const lift=waypointBaseLiftForStrap(s);
-  let samples=projectedChordSamples(s,{lift});
-  if(samples.length<3){s.autoRoute=[];updateStrapGeometry(s);return}
+  if(!s)return;s.autoProject=true;const method=s.autoMethod||'classic';
+  if(method==='classic'){
+    rebuildClassicMethod(s);s.methodRoute=null;
+    if(s.debugRoute){buildWaypointGuide(s)}else clearWaypointGuide();
+    return;
+  }
+  const lift=waypointBaseLiftForStrap(s);let samples=projectedChordSamples(s,{lift});
+  if(samples.length<3){updateStrapGeometry(s);return}
   samples=refineProjectedGuide(s,samples,lift,2);
-  samples=widthConstrainedProjectedRoute(s,samples,lift);
-  s.autoRoute=buildDenseAutoRoute(s,samples,lift);
-  s.controls=[];
-  s.surfaceLevel=0;
-  updateStrapGeometry(s);
-  updateControlHandles(s);
+  const route=method==='push'?buildPushMethodRoute(s,samples,lift):buildStripMethodRoute(s,samples,lift);
+  s.methodRoute=route;s.controls=[];s.surfaceLevel=0;
+  const reduced=methodRouteToControls(s,route,method==='strip'?24:20);
+  for(const g of reduced.slice(1,-1)){
+    const p=g.finalPoint||g.displayPoint,n=g.normal.clone().normalize(),c={t:g.t,waypoint:true,autoProjected:true};
+    bindWaypointToFrame(s,c,p.clone().addScaledVector(n,-lift),n);
+    const current=manualControlWorld(s,c);c.offset=(c.offset||0)+p.clone().sub(current).dot(n);s.controls.push(c);
+  }
+  s.controls.sort((a,b)=>a.t-b.t);updateStrapGeometry(s);updateControlHandles(s);updateStrapMethodDebug(s,route);
 }
+
 
 function projectChordPointToBody(s,t,lift=0){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
@@ -3060,53 +3102,10 @@ function addWaypointFromGuideHit(s,guideHit){
 }
 
 
-strapWidthSlider.addEventListener('change',()=>{
-  if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)mirrorStrapMeshFromMaster(selected,p)}
-});
-strapSlackSlider.addEventListener('change',()=>{
-  if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)mirrorStrapMeshFromMaster(selected,p)}
-});
-curveAutoBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='strap')return;
-  const on=!selected.debugRoute;
-  selected.debugRoute=on;updateControlHandles(selected);
-  const ps=pairOfStrap(selected);
-  if(ps){ps.debugRoute=on;updateControlHandles(ps)}
-  showSelection();commitHistory();
-});
 
-curvePlusBtn.addEventListener('click',()=>{return;
-  if(selected?.kind!=='strap')return;
-  const s=selected;
-  const wpCount=s.controls.filter(c=>c.waypoint&&!c.inheritedRoute).length;
-  if(wpCount>=6){showToast('Maximal 6 Auflagepunkte');return}
-  if(waypointPlacementStrapId===s.id){cancelWaypointPlacement();return}
-  beginWaypointPlacement(s);
-});
 
-curveMinusBtn.addEventListener('click',()=>{return;
-  if(selected?.kind!=='strap')return;
-  const s=selected;
 
-  const i=[...s.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint&&!x.c.inheritedRoute).at(-1)?.i;
-  if(i===undefined){
-    // One click also converts an old recursive surface strap back to Standard.
-    if(s.surfaceLevel){s.surfaceLevel=0;updateStrapGeometry(s)}
-  }else{
-    s.controls.splice(i,1);
-    updateStrapGeometry(s);
-  }
 
-  const ps=pairOfStrap(s);
-  if(ps){
-    const pi=[...ps.controls].map((c,i)=>({c,i})).filter(x=>x.c.waypoint&&!x.c.inheritedRoute).at(-1)?.i;
-    if(pi!==undefined)ps.controls.splice(pi,1);
-    else ps.surfaceLevel=0;
-    updateStrapGeometry(ps);
-  }
-
-  showSelection();refreshAutomaticCrossings();commitHistory();
-});
 
 addAnchorBtn.addEventListener('click',()=>{
   if(selected?.kind!=='strap')return;
@@ -3637,62 +3636,42 @@ function entmergeRing(merged,p){
 }
 
 
-const RING_SNAP_IN=.028;
-const RING_SNAP_OUT=.048;
-
+const GENERIC_RING_SNAP_IN=.020;
+const GENERIC_RING_SNAP_OUT=.045;
 function nearestGenericRingSnapTarget(n){
   if(!n?.ringVisible||n.mergedState||n.snapMergeState)return null;
-  const p=nodeWorldPosition(n);
-  let best=null,bestD=Infinity;
+  const p=nodeWorldPosition(n);let best=null,bd=Infinity;
   for(const o of nodes.values()){
     if(o===n||!o.ringVisible||o.mergedState||o.snapMergeState)continue;
     if(pairOfNode(n)?.id===o.id)continue;
-    const d=p.distanceTo(nodeWorldPosition(o));
-    if(d<RING_SNAP_IN&&d<bestD){best=o;bestD=d}
+    const d=p.distanceTo(nodeWorldPosition(o));if(d<GENERIC_RING_SNAP_IN&&d<bd){best=o;bd=d}
   }
   return best;
 }
 function genericMergeRingIntoHost(guest,host){
   if(!guest||!host||guest===host)return host;
-  const state={
-    guest:serializeNodeForMerge(guest),
-    topology:captureMergeTopology(guest,host),
-    guestId:guest.id
-  };
-  host.snapMergeState=state;
+  host.snapMergeState={guest:serializeNodeForMerge(guest),topology:captureMergeTopology(guest,host)};
   panelHandleNodeMerge(guest,host,host);
-
   for(const s of [...straps.values()]){
-    if(s.a===guest.id)s.a=host.id;
-    if(s.b===guest.id)s.b=host.id;
-    if(s.a===s.b)removeStrap(s.id);
-    else if(s.a===host.id||s.b===host.id){
-      s.autoRoute=[];rebuildAutoProjection(s);
-    }
+    if(s.a===guest.id)s.a=host.id;if(s.b===guest.id)s.b=host.id;
+    if(s.a===s.b)removeStrap(s.id);else if(s.a===host.id||s.b===host.id)rebuildAutoProjection(s);
   }
-  nodeRoot.remove(guest.group);nodes.delete(guest.id);
-  selected=host;rebuildAllWraps();return host;
+  nodeRoot.remove(guest.group);nodes.delete(guest.id);selected=host;rebuildAllWraps();return host;
 }
-function genericUnmergeRing(host,spawnPoint=null){
+function genericUnmergeRing(host,worldPoint=null){
   const state=host?.snapMergeState;if(!state)return host;
   const hp=nodeWorldPosition(host),hn=nodeWorldNormal(host);
-  let p=spawnPoint?spawnPoint.clone():hp.clone().add(new THREE.Vector3(RING_SNAP_OUT*1.35,0,0));
-  if(p.distanceTo(hp)<RING_SNAP_OUT)p.add(new THREE.Vector3(RING_SNAP_OUT*1.35,0,0));
-
+  let p=worldPoint?.clone?.()||hp.clone().add(new THREE.Vector3(GENERIC_RING_SNAP_OUT*1.4,0,0));
+  if(p.distanceTo(hp)<GENERIC_RING_SNAP_OUT)p=hp.clone().add(new THREE.Vector3(GENERIC_RING_SNAP_OUT*1.4,0,0));
   const guest=makeNode({...state.guest,id:state.guest.id,position:p.toArray(),normal:hn.toArray(),snapMergeState:null});
   for(const s of [...straps.values()])if(s.a===host.id||s.b===host.id)removeStrap(s.id);
-
   for(const d of state.topology||[]){
-    const a=d.a===state.guest.id?guest.id:d.a;
-    const b=d.b===state.guest.id?guest.id:d.b;
+    const a=d.a===state.guest.id?guest.id:d.a,b=d.b===state.guest.id?guest.id:d.b;
     if(!nodes.has(a)||!nodes.has(b)||a===b)continue;
-    const s=makeStrap({id:d.id,a,b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,controls:[],surfaceLevel:0});
-    s.mirrorId=d.mirrorId||null;
-    rebuildAutoProjection(s);
+    const s=makeStrap({id:d.id,a,b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,controls:d.controls,surfaceLevel:d.surfaceLevel||0});
+    s.mirrorId=d.mirrorId||null;rebuildAutoProjection(s);
   }
-  panelHandleNodeEntmerge(host,guest,host);
-  host.snapMergeState=null;
-  selected=guest;rebuildAllWraps();return guest;
+  panelHandleNodeEntmerge(host,guest,host);host.snapMergeState=null;selected=guest;rebuildAllWraps();return guest;
 }
 function maybeAxisMergeOrEntmerge(n){
   const p=nodeWorldPosition(n);
@@ -3990,18 +3969,12 @@ function requestNodeDrag(n,x,y){
   dragRaf=requestAnimationFrame(()=>{
     dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
 
-    // Generic ring-on-ring merge proxy. Host stays fixed while the same finger
-    // may immediately pull the guest back out of the snap.
-    if(single?.snapMergeHostId&&q.n.id===single.snapMergeHostId){
-      const host=nodes.get(single.snapMergeHostId);
-      const hit=bodyHit(q.x,q.y);
-      if(!host||!hit)return;
-      if(hit.point.distanceTo(nodeWorldPosition(host))>RING_SNAP_OUT){
-        const guest=genericUnmergeRing(host,hit.point);
-        if(single){single.activeNodeId=guest.id;single.snapMergeHostId=null}
-        selected=guest;refreshMaterials();showSelection();
-        setNodeWorldPosition(guest,hit.point);guest.normal=worldNormal(hit).toArray();syncNodeTransform(guest);
-        updateAttachedStraps(guest.id);
+    // Generic ring-on-ring merge: host stays fixed; drag far enough to restore guest.
+    if(q.n.snapMergeState){
+      const current=nodeWorldPosition(q.n),hit=bodyHit(q.x,q.y);
+      if(hit&&hit.point.distanceTo(current)>GENERIC_RING_SNAP_OUT){
+        const guest=genericUnmergeRing(q.n,hit.point);if(single)single.activeNodeId=guest.id;
+        selected=guest;refreshMaterials();showSelection();setNodeWorldPosition(guest,hit.point);guest.normal=worldNormal(hit).toArray();syncNodeTransform(guest);updateAttachedStraps(guest.id);
       }
       return;
     }
@@ -4084,15 +4057,9 @@ function requestNodeDrag(n,x,y){
     }else{
       setNodeWorldPosition(q.n,p);q.n.normal=normal.toArray();syncNodeTransform(q.n);
       updateAttachedStraps(q.n.id);
-
       if(q.n.ringVisible){
         const target=nearestGenericRingSnapTarget(q.n);
-        if(target){
-          const host=genericMergeRingIntoHost(q.n,target);
-          if(single){single.activeNodeId=host.id;single.snapMergeHostId=host.id}
-          selected=host;refreshMaterials();showSelection();
-          return;
-        }
+        if(target){const host=genericMergeRingIntoHost(q.n,target);if(single)single.activeNodeId=host.id;selected=host;refreshMaterials();showSelection();return}
       }
     }
 
