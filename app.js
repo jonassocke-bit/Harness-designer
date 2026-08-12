@@ -517,7 +517,7 @@ function surfaceCurveData(s){
     return g.point.clone();
   });
 
-  const curve=new THREE.CatmullRomCurve3(points,false,'centripetal',.45);
+  const curve=new THREE.CatmullRomCurve3(points,false,'centripetal',.28);
   return {curve,guides,points};
 }
 
@@ -1059,7 +1059,7 @@ function strapCurve(s){
     return new THREE.QuadraticBezierCurve3(A,autoControlWorld(s),B);
   }
   const pts=[A,...s.controls.slice().sort((a,b)=>a.t-b.t).map(c=>manualControlWorld(s,c)),B];
-  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+  return new THREE.CatmullRomCurve3(pts,false,'centripetal',.28);
 }
 function effectiveStrapCurve(s){
   if((s.surfaceLevel||0)>0){
@@ -1499,7 +1499,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
       // This remains the cheap standard geometry path; controls are evaluated
       // with vector math only while dragging.
       const pts=[a,...s.controls.slice().sort((x,y)=>x.t-y.t).map(c=>manualControlWorld(s,c)),b];
-      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.45);
+      renderCurve=new THREE.CatmullRomCurve3(pts,false,'centripetal',.28);
     }
   }else{
     surfaceData=surfaceCurveData(s);
@@ -2677,26 +2677,23 @@ function widthConstrainedProjectedRoute(s,samples,lift){
 }
 
 
-function smoothPushEnvelope(values,radius=3,passes=2){
+function smoothPushEnvelope(values,radius=5,passes=3){
   if(!values?.length)return [];
+  const required=values.slice();
   let out=values.slice();
-
-  // Expand each required push softly to neighbours.
-  // The body can push the strap away but never pull it inward.
   for(let pass=0;pass<passes;pass++){
     const next=out.slice();
     for(let i=0;i<out.length;i++){
-      let best=out[i];
+      let weighted=out[i]*4,weight=4;
       for(let d=1;d<=radius;d++){
-        const fall=Math.max(0,1-d/(radius+1));
-        if(i-d>=0)best=Math.max(best,out[i-d]*fall);
-        if(i+d<out.length)best=Math.max(best,out[i+d]*fall);
+        const w=radius+1-d;
+        if(i-d>=0){weighted+=out[i-d]*w;weight+=w}
+        if(i+d<out.length){weighted+=out[i+d]*w;weight+=w}
       }
-      next[i]=best;
+      next[i]=Math.max(required[i],weighted/weight);
     }
     out=next;
   }
-
   return out;
 }
 
@@ -2727,7 +2724,7 @@ function buildPushedAutoRoute(s,surfaceSamples,lift){
 
   const measured=widthConstrainedProjectedRoute(s,surfaceSamples,lift);
   const rawPush=measured.map(g=>g.requiredPush||0);
-  const smoothPush=smoothPushEnvelope(rawPush,4,2);
+  const smoothPush=smoothPushEnvelope(rawPush,5,3);
 
   const route=[];
   for(let i=0;i<measured.length;i++){
@@ -2762,43 +2759,28 @@ function buildPushedAutoRoute(s,surfaceSamples,lift){
   return route;
 }
 
-function simplifyPushedRoute(samples,maxControls=16){
+function simplifyPushedRoute(samples,maxControls=30){
   if(samples.length<=2)return samples;
-
-  // Keep endpoints plus points where the applied push envelope meaningfully changes.
+  const target=Math.min(maxControls,Math.max(8,Math.ceil(samples.length/2)));
   const keep=[samples[0]];
-  let lastPush=samples[0].appliedPush||0;
-  let lastT=0;
-
-  for(let i=1;i<samples.length-1;i++){
-    const g=samples[i];
-    const p=g.appliedPush||0;
-    const dp=Math.abs(p-lastPush);
-    const dt=g.t-lastT;
-
-    if(dp>.010 || (p>.004&&dt>.09)){
-      keep.push(g);
-      lastPush=p;
-      lastT=g.t;
-      if(keep.length>=maxControls-1)break;
+  for(let k=1;k<target-1;k++){
+    const t=k/(target-1);
+    let best=samples[1],bestD=Infinity;
+    for(let i=1;i<samples.length-1;i++){
+      const d=Math.abs(samples[i].t-t);
+      if(d<bestD){bestD=d;best=samples[i]}
     }
+    if(keep[keep.length-1]!==best)keep.push(best);
   }
-
   keep.push(samples[samples.length-1]);
-
-  // Always preserve the strongest remaining push peaks.
-  while(keep.length<maxControls){
-    let best=null,bestVal=.006;
-    for(const g of samples){
-      if(keep.some(k=>Math.abs(k.t-g.t)<1e-6))continue;
-      const val=g.appliedPush||0;
-      if(val>bestVal){bestVal=val;best=g}
-    }
-    if(!best)break;
-    keep.push(best);
-    keep.sort((a,b)=>a.t-b.t);
-  }
-
+  const peaks=samples.slice(1,-1)
+    .filter((g,i)=> {
+      const prev=samples[i]?.appliedPush||0,cur=g.appliedPush||0,next=samples[i+2]?.appliedPush||0;
+      return cur>.008&&cur>=prev&&cur>=next;
+    })
+    .sort((a,b)=>(b.appliedPush||0)-(a.appliedPush||0)).slice(0,4);
+  for(const p of peaks)if(!keep.some(k=>Math.abs(k.t-p.t)<.015))keep.push(p);
+  keep.sort((a,b)=>a.t-b.t);
   return keep;
 }
 function rebuildAutoProjection(s){
@@ -2818,7 +2800,7 @@ function rebuildAutoProjection(s){
   const pushed=buildPushedAutoRoute(s,samples,lift);
 
   // Convert only the meaningful push-envelope changes to Auto waypoints.
-  const reduced=simplifyPushedRoute(pushed,16);
+  const reduced=simplifyPushedRoute(pushed,30);
 
   s.surfaceLevel=0;
   s.controls=[];

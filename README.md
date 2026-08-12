@@ -1,34 +1,12 @@
-# Harness Designer V1.8p — CLEAN PUSH
+# Harness Designer V1.8q — SMOOTH PUSH
 
-Based directly on V1.8n 3-LINE.
+Based on V1.8p. 3-line collision checks and ~1 cm raycast spacing are unchanged.
 
-This build deliberately removes later corridor/spline experiments.
+Changes:
+- up to 30 regularly distributed final curve controls instead of 16 event-like controls
+- strongest push peaks preserved
+- broader smoothing of only the outward push scalar
+- smoothing never drops below the collision-safe requirement
+- softer CatmullRom interpolation (.28 instead of .45)
 
-## Clean Auto pipeline
-1. Original naturally tensioned no-waypoint strap curve is the base.
-2. Dense ~1 cm center projection is measured.
-3. Left and right physical strap edges are measured too.
-4. These measurements produce only a REQUIRED OUTWARD PUSH value.
-5. Push values are softened over neighbouring samples.
-6. The body may only push the tensioned base curve OUTWARD.
-7. Concave regions therefore remain naturally overspanned.
-8. Only meaningful push-envelope changes become Auto control points.
-
-The measured body route no longer directly dictates the final strap path.
-
-## Removed / avoided
-- no route-corridor spline repair
-- no extra spline reconstruction pass
-- no extra longitudinal sampling
-- no body-following simplifier controlling the final strap shape
-- no smoothing of the mannequin surface route itself
-
-## Ribbon orientation
-The V1.8n waypoint-surface-normal orientation fix remains in place to prevent
-the occasional 90-degree ribbon rotation.
-
-## Manual guide
-The visible +Punkt guide remains the 3-line diagnostic:
-center + left edge + right edge.
-
-Panels are unchanged.
+Panels unchanged.
