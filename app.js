@@ -1335,21 +1335,143 @@ function extractBodyTrianglesForPanel(panel){
   }
   return result;
 }
+
+function signedArea2(poly){
+  let a=0;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    a+=poly[j].x*poly[i].y-poly[i].x*poly[j].y;
+  }
+  return a*.5;
+}
+function clipPolyAgainstEdge(poly,a,b,keepLeft=true){
+  const out=[];
+  if(!poly.length)return out;
+
+  const cross=(p)=>(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+  const inside=(p)=>keepLeft?cross(p)>=-1e-9:cross(p)<=1e-9;
+
+  for(let i=0;i<poly.length;i++){
+    const cur=poly[i],prev=poly[(i+poly.length-1)%poly.length];
+    const curIn=inside(cur),prevIn=inside(prev);
+
+    if(curIn!==prevIn){
+      const dx=cur.x-prev.x,dy=cur.y-prev.y;
+      const ex=b.x-a.x,ey=b.y-a.y;
+      const den=dx*ey-dy*ex;
+
+      if(Math.abs(den)>1e-12){
+        const t=((a.x-prev.x)*ey-(a.y-prev.y)*ex)/den;
+        out.push({
+          x:prev.x+dx*t,
+          y:prev.y+dy*t
+        });
+      }
+    }
+    if(curIn)out.push({x:cur.x,y:cur.y});
+  }
+  return out;
+}
+function clipTriangleToTriangle(subject,clipTri){
+  let poly=subject.map(p=>({x:p.x,y:p.y}));
+  const keepLeft=signedArea2(clipTri)>=0;
+
+  for(let i=0;i<3&&poly.length>=3;i++){
+    poly=clipPolyAgainstEdge(
+      poly,
+      clipTri[i],
+      clipTri[(i+1)%3],
+      keepLeft
+    );
+  }
+  return poly;
+}
+function barycentric2D(p,a,b,c){
+  const v0x=b.x-a.x,v0y=b.y-a.y;
+  const v1x=c.x-a.x,v1y=c.y-a.y;
+  const v2x=p.x-a.x,v2y=p.y-a.y;
+  const den=v0x*v1y-v1x*v0y;
+
+  if(Math.abs(den)<1e-12)return {u:1,v:0,w:0};
+
+  const v=(v2x*v1y-v1x*v2y)/den;
+  const w=(v0x*v2y-v2x*v0y)/den;
+  const u=1-v-w;
+  return {u,v,w};
+}
+function interpolateBodyTriPoint(tri,p2,basis,panel){
+  const a2=panel2D(panel,tri.p[0],basis);
+  const b2=panel2D(panel,tri.p[1],basis);
+  const c2=panel2D(panel,tri.p[2],basis);
+  const bc=barycentric2D(p2,a2,b2,c2);
+
+  const q=tri.p[0].clone().multiplyScalar(bc.u)
+    .addScaledVector(tri.p[1],bc.v)
+    .addScaledVector(tri.p[2],bc.w);
+
+  let n=tri.n[0].clone().multiplyScalar(bc.u)
+    .addScaledVector(tri.n[1],bc.v)
+    .addScaledVector(tri.n[2],bc.w);
+
+  if(n.lengthSq()<1e-10)n=tri.n[0].clone();
+  n.normalize();
+  return {q,n};
+}
+function clippedPanelPieces(panel,extracted){
+  const boundary=panelBoundaryWorld(panel);
+  const basis=panelBasis(panel);
+  const contour=boundary.map(p=>panel2D(panel,p,basis));
+  const boundaryTris=THREE.ShapeUtils.triangulateShape(contour,[]);
+  const pieces=[];
+
+  for(const tri of extracted){
+    const subject=tri.p.map(p=>panel2D(panel,p,basis));
+
+    for(const bt of boundaryTris){
+      const clipTri=bt.map(i=>contour[i]);
+      const clipped=clipTriangleToTriangle(subject,clipTri);
+      if(clipped.length<3)continue;
+
+      // Fan triangulation is valid here because clipping a triangle against
+      // another triangle always produces a convex polygon.
+      for(let i=1;i<clipped.length-1;i++){
+        pieces.push([
+          interpolateBodyTriPoint(tri,clipped[0],basis,panel),
+          interpolateBodyTriPoint(tri,clipped[i],basis,panel),
+          interpolateBodyTriPoint(tri,clipped[i+1],basis,panel)
+        ]);
+      }
+    }
+  }
+  return pieces;
+}
 function buildPanelGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
 
   const extracted=extractBodyTrianglesForPanel(panel);
   if(!extracted.length)return buildPanelPreviewGeometry(panel);
 
+  // Only boundary triangles are cut. Interior body triangles pass through
+  // unchanged in practice; all resulting vertices still lie exactly on the
+  // original mannequin triangles via barycentric interpolation.
+  const pieces=clippedPanelPieces(panel,extracted);
+  if(!pieces.length)return buildPanelPreviewGeometry(panel);
+
   const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
 
-  for(const tri of extracted){
-    for(let i=0;i<3;i++){
-      const n=tri.n[i].clone().normalize();
-      const q=tri.p[i].clone().addScaledVector(n,lift);
+  for(const tri of pieces){
+    const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
+
+    // Keep the existing simple ring opening behaviour for this test.
+    // Outer panel boundary is now exact; ring-hole clipping can be the next
+    // isolated refinement if needed.
+    const cutRings=panelCutRings(panel);
+    if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
+
+    for(const v of tri){
+      const q=v.q.clone().addScaledVector(v.n,lift);
       positions.push(q.x,q.y,q.z);
-      normals.push(n.x,n.y,n.z);
+      normals.push(v.n.x,v.n.y,v.n.z);
     }
   }
 
@@ -1357,12 +1479,11 @@ function buildPanelGeometry(panel){
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
   g.computeBoundingSphere();
-
-  // Development metrics used by the panel editor / console.
   g.userData={
     extraction:true,
+    cleanBoundary:true,
     sourceTriangles:extracted.length,
-    outputTriangles:extracted.length
+    outputTriangles:positions.length/9
   };
   return g;
 }

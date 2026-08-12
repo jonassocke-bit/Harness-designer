@@ -1,31 +1,30 @@
-# Harness Designer V1.9d — PANEL EXTRACT TEST
+# Harness Designer V1.9e — PANEL CLEAN EDGE
 
-This is deliberately a panel-only experiment based on V1.9c.
+Based directly on the successful V1.9d mesh-extraction panel prototype.
 
-Rings and straps are not redesigned in this build.
+## What changed
+The panel still copies the actual mannequin mesh triangles and offsets them
+along their original normals.
 
-## New panel algorithm
-The committed panel no longer:
-- triangulates a new flat polygon
-- recursively subdivides it
-- raycasts every generated vertex onto the mannequin
+Only the outer boundary has changed:
 
-Instead it:
-1. reads the actual current body mesh triangles
-2. uses `Mesh.getVertexPosition()` so active morph targets are included
-3. tests body-triangle centroids against the panel boundary
-4. rejects triangles outside the local curved surface slab / wrong-facing shell
-5. reuses the original mannequin vertex positions and vertex normals
-6. copies those body triangles
-7. offsets each copied vertex along its existing normal by the panel offset
+- mannequin triangles are projected into the panel's local 2D basis
+- the panel polygon is triangulated once
+- source body triangles that cross the panel boundary are clipped against those
+  boundary triangles
+- newly created boundary vertices are reconstructed on the ORIGINAL body
+  triangle using barycentric interpolation
+- interpolated mannequin normals are used for the panel offset
 
-This is a direct body-mesh extraction prototype.
+This means the new edge follows the requested panel boundary instead of the
+mannequin's triangle grid, while the panel surface itself is still taken
+directly from the mannequin.
 
-## Expected tradeoff
-The body conformity should be essentially exact and generation should be much faster.
-The boundary will initially follow the mannequin's triangle grid and can therefore
-look jagged. If this test proves fast and reliable, V2 can add a second boundary
-clipping pass only along the edge, instead of rebuilding/raycasting the entire panel.
+No per-vertex body raycasts are reintroduced.
 
-Ring holes remain centroid-based for this experiment.
-Dragging still uses the cheap flat preview; extraction happens after release.
+## Known intentional limitation of this test
+Ring holes still use the previous centroid-based triangle rejection.
+The OUTER panel edge is the part being tested here.
+
+Dragging still uses the cheap preview and the mesh extraction / edge clipping
+runs only after release.
