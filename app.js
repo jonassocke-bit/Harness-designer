@@ -2322,8 +2322,7 @@ function showSelection(){
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
     }else curvePointCount.textContent=selected.autoProject?'Auto':'Standard';
   }else if(selected.kind==='panel'){
-    panelOffsetSlider.value=selected.offsetMM??panelDefaults.offsetMM;
-    syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
+    { const testOffset=THREE.MathUtils.clamp(Number(selected.offsetMM??panelDefaults.offsetMM),0,5); panelOffsetSlider.value=testOffset; syncParamUI('panelOffset',testOffset); }
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
@@ -2539,7 +2538,7 @@ const PRESETS={
   rotZ:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   surfaceOffset:{defaults:[0,2,5,10],min:0,max:30,step:.5},
   globalAnchorSize:{defaults:[8,12,16,20],min:4,max:30,step:1},
-  panelOffset:{defaults:[0,1,2,5],min:0,max:12,step:.5}
+  panelOffset:{defaults:[0,1,2,3,5],min:0,max:5,step:.1}
 };
 const PARAMS=new Map();
 function setupParam(name,slider,tools,onInput){

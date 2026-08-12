@@ -1,3 +1,3 @@
-# V1.9g WELDED PANEL
+Harness Designer V1.9h – Panel Offset Test
 
-Built from working V1.9f2. Panel vertices are welded on-body (0.10 mm tolerance), shared normals are computed, and only then is the existing panel offset applied. No extra raycasts or sampling passes. Ring-hole logic intentionally unchanged.
+Diagnostic build based on V1.9g. Panel geometry logic unchanged. Adds a fine 0–5 mm live panel-offset control (0.1 mm steps) to test whether grazing-angle artifacts are z-fighting.
