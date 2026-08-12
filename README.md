@@ -1,30 +1,23 @@
-# Harness Designer V1.9e — PANEL CLEAN EDGE
+# Harness Designer V1.9f — PANEL FILLED EDGE
 
-Based directly on the successful V1.9d mesh-extraction panel prototype.
+Fixes the remaining staircase/gaps seen in V1.9e.
 
-## What changed
-The panel still copies the actual mannequin mesh triangles and offsets them
-along their original normals.
+The V1.9e problem was not the clipping itself. The extraction stage discarded
+body triangles whose CENTROID was outside the panel before the clipping stage
+ever saw them. A triangle could therefore cross the requested panel boundary
+but disappear completely.
 
-Only the outer boundary has changed:
+V1.9f:
+- keeps the fast direct mannequin-mesh extraction
+- keeps morph-aware body vertices and original/interpolated normals
+- keeps the cheap drag preview
+- uses a cheap panel AABB first
+- then retains every source body triangle that actually overlaps the panel
+- clips those crossing triangles to the requested boundary
+- fan-triangulates each resulting convex clipped polygon
+- reconstructs every new edge vertex on its original mannequin triangle with
+  barycentric interpolation
+- performs no dense panel raycast pass
 
-- mannequin triangles are projected into the panel's local 2D basis
-- the panel polygon is triangulated once
-- source body triangles that cross the panel boundary are clipped against those
-  boundary triangles
-- newly created boundary vertices are reconstructed on the ORIGINAL body
-  triangle using barycentric interpolation
-- interpolated mannequin normals are used for the panel offset
-
-This means the new edge follows the requested panel boundary instead of the
-mannequin's triangle grid, while the panel surface itself is still taken
-directly from the mannequin.
-
-No per-vertex body raycasts are reintroduced.
-
-## Known intentional limitation of this test
-Ring holes still use the previous centroid-based triangle rejection.
-The OUTER panel edge is the part being tested here.
-
-Dragging still uses the cheap preview and the mesh extraction / edge clipping
-runs only after release.
+So the missing pieces along the outer edge are now actually generated rather
+than merely cutting away the old body triangles.
