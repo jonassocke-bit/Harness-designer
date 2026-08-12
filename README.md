@@ -1,14 +1,27 @@
-# Harness Designer V1.8l STABLE
+# Harness Designer V1.8m
 
-This is an exact rollback to the V1.8i runtime.
+Based directly on V1.8l / V1.8i stable runtime.
 
-No strap, Auto, ring endpoint, waypoint, projection, panel, snap, merge, or interaction
-logic has been changed.
+## Auto strap change: surface route -> taut route
+The dense ~1 cm projected surface path remains the safe starting point.
 
-Only the displayed version/name was changed.
+Auto then performs a cheap simplification without additional raycasts:
+- try to connect a current kept sample directly to a later sample
+- compare that direct line with every already-known body sample in between
+- accept the jump only if the line stays above the virtual body-clearance shell
+- otherwise retain the required contact sample
 
-Reason:
-V1.8j and V1.8k modified endpoint/clearance behavior and unintentionally changed the
-previously successful Auto strap geometry.
+Effect:
+- convex obstacles such as breast/shoulder remain contacted
+- concave body regions such as under-bust/waist can be bridged
+- points are removed rather than added
+- runtime stays low because the pass uses the already generated surface samples
 
-Use this as the stable baseline before any further ring-offset or merge work.
+## Global distance
+The global mannequin offset now also contributes to waypoint/Auto strap clearance.
+Rings already used this global offset in `syncNodeTransform()`.
+
+The strap curve itself is NOT forced onto one rigid offset shell. Existing
+V1.8i tension/slack behavior remains, with the global offset added on top.
+
+Panels are unchanged.

@@ -1013,14 +1013,14 @@ function manualControlWorld(s,c){
     const t=THREE.MathUtils.clamp(c.t??.5,0,1);
     const centerWeight=Math.sin(Math.PI*t);
     const waypointBulge=slack*THREE.MathUtils.clamp(f.length*.34,.025,.32)*centerWeight;
-    return p.addScaledVector(n,baseClearance+waypointBulge);
+    return p.addScaledVector(n,surfaceOffsetScene()+baseClearance+waypointBulge);
   }
 
   // Legacy explicit surface controls from old saved projects.
   if(c.surfacePos){
     const p=new THREE.Vector3().fromArray(c.surfacePos);
     const n=c.surfaceNormal?new THREE.Vector3().fromArray(c.surfaceNormal).normalize():f.normal;
-    return p.addScaledVector(n,clearance);
+    return p.addScaledVector(n,surfaceOffsetScene()+clearance);
   }
 
   // Legacy control compatibility for older saved projects.
@@ -2417,6 +2417,55 @@ function clearWaypointGuide(){
 // Start from the straight endpoint chord, project samples to the mannequin,
 // reject implausible jumps, then fill tiny misses by interpolation.
 // This is intentionally NOT the old recursive collision solver.
+
+function waypointBaseLiftForStrap(s){
+  const f=strapFrame(s);
+  return surfaceOffsetScene()+THREE.MathUtils.clamp(f.length*.018,.006,.022);
+}
+
+// Cheap tautening pass over the already-computed dense surface samples.
+// No new raycasts: a shortcut is accepted only when its straight segment
+// stays outside the sampled body shell at every intermediate sample.
+function tautenProjectedRoute(samples,clearance,maxPoints=12){
+  if(!samples||samples.length<=2)return samples||[];
+
+  function shortcutIsClear(i,j){
+    if(j<=i+1)return true;
+    const a=samples[i].point,b=samples[j].point;
+    for(let k=i+1;k<j;k++){
+      const u=(samples[k].t-samples[i].t)/
+              Math.max(1e-8,samples[j].t-samples[i].t);
+      const q=a.clone().lerp(b,u);
+      const surf=samples[k].point;
+      const n=samples[k].normal;
+      const signed=q.clone().sub(surf).dot(n);
+
+      // Direct line must remain above the same virtual design shell.
+      if(signed<clearance-.003)return false;
+    }
+    return true;
+  }
+
+  const keep=[samples[0]];
+  let i=0;
+  while(i<samples.length-1&&keep.length<maxPoints-1){
+    let best=i+1;
+
+    // Greedy: jump as far as possible while staying clear of body samples.
+    for(let j=samples.length-1;j>i+1;j--){
+      if(shortcutIsClear(i,j)){best=j;break}
+    }
+
+    keep.push(samples[best]);
+    i=best;
+  }
+
+  if(keep[keep.length-1]!==samples[samples.length-1])
+    keep.push(samples[samples.length-1]);
+
+  return keep;
+}
+
 function projectedChordSamples(s,{count=null,lift=0}={}){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return [];
@@ -2531,10 +2580,19 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 
 function rebuildAutoProjection(s){
   if(!s?.autoProject)return;
-  let samples=projectedChordSamples(s,{lift:surfaceClearanceForStrap(s)});
+
+  const lift=waypointBaseLiftForStrap(s);
+  let samples=projectedChordSamples(s,{lift});
   if(samples.length<3)return;
-  samples=refineProjectedGuide(s,samples,surfaceClearanceForStrap(s),2);
-  const reduced=simplifyProjectedRoute(samples,8);
+
+  // First obtain the guaranteed-safe hugging route.
+  samples=refineProjectedGuide(s,samples,lift,2);
+
+  // Then remove every contact point that is not actually required.
+  // Concave regions (under-bust / waist) are bridged automatically, while
+  // convex obstacles remain as contact points.
+  const reduced=tautenProjectedRoute(samples,lift,12);
+
   s.surfaceLevel=0;
   s.controls=[];
   for(const g of reduced.slice(1,-1)){
@@ -2622,12 +2680,13 @@ function refineProjectedGuide(s,samples,lift,maxDepth=2){
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-  let samples=projectedChordSamples(s,{lift:.011});
+  const guideLift=waypointBaseLiftForStrap(s);
+  let samples=projectedChordSamples(s,{lift:guideLift});
   if(samples.length<2)return false;
 
-  // Keep the normal ~1.7 cm density, but locally add only the samples needed
-  // to keep the cyan guide outside strongly convex body regions.
-  samples=refineProjectedGuide(s,samples,.011,2);
+  // Locally refine only where straight visual segments would cut into a
+  // strongly convex part of the mannequin.
+  samples=refineProjectedGuide(s,samples,guideLift,2);
   waypointGuideSamples=samples;
 
   const positions=[];
