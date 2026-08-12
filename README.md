@@ -1,3 +1,11 @@
-Harness Designer V1.9h – Panel Offset Test
+# Harness Designer V1.9i — DOUBLE SIDE TEST
 
-Diagnostic build based on V1.9g. Panel geometry logic unchanged. Adds a fine 0–5 mm live panel-offset control (0.1 mm steps) to test whether grazing-angle artifacts are z-fighting.
+Based directly on V1.9h offset test.
+
+Only intended change:
+- PANEL_MAT and PANEL_SEL render with THREE.DoubleSide.
+
+No geometry, panel extraction, clipping, offset, strap, ring or snap logic was changed.
+
+If the angle-dependent white cracks disappear, back-face culling / triangle winding is the cause.
+If they remain, the issue is a real geometry discontinuity.
