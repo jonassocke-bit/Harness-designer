@@ -12,6 +12,7 @@ const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),ro
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
 const panelToggle=$('panelToggle'),panelConfirmBtn=$('panelConfirmBtn');
 const panelControls=$('panelControls'),panelOffsetSlider=$('panelOffsetSlider'),panelOffsetTools=$('panelOffsetTools');
+const panelExtractDebugBtn=$('panelExtractDebugBtn'),panelPerfReadout=$('panelPerfReadout');
 const modelInput=$('modelInput'),uploadModelBtn=$('uploadModelBtn'),reloadModelBtn=$('reloadModelBtn');
 const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationResetBtn');
 const bodyFemaleBtn=$('bodyFemaleBtn'),bodyMaleBtn=$('bodyMaleBtn');
@@ -66,8 +67,8 @@ const STRAP_SEL=new THREE.MeshStandardMaterial({color:0x1c1b18,roughness:.55,met
 const WRAP_MAT=new THREE.MeshStandardMaterial({color:0x171718,roughness:.58,metalness:0,side:THREE.DoubleSide});
 const CONTROL_MAT=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.78});
 const PANEL_PICK_MAT=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.2,metalness:.55,emissive:0x007c96,emissiveIntensity:.55});
-const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3,side:THREE.DoubleSide});
-const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3,side:THREE.DoubleSide});
+const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:.92,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
+const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
 const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
 let bodyMeshes=[];
@@ -1269,127 +1270,84 @@ function panelPolygonMargin2(p,poly){
   return d;
 }
 
-function weldPanelGeometry(geometry,tolerance=0.0001){
-  if(!geometry?.attributes?.position)return geometry;
-  const src=geometry.index?geometry.toNonIndexed():geometry.clone();
-  const pos=src.attributes.position, cell=Math.max(1e-7,tolerance);
-  const buckets=new Map(), verts=[], indices=[];
-  const key=(x,y,z)=>Math.round(x/cell)+","+Math.round(y/cell)+","+Math.round(z/cell);
-  for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i),k=key(x,y,z);
-    let vi=buckets.get(k);
-    if(vi===undefined){vi=verts.length/3;verts.push(x,y,z);buckets.set(k,vi);}
-    indices.push(vi);
-  }
-  const out=new THREE.BufferGeometry();
-  out.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
-  out.setIndex(indices);
-  out.computeVertexNormals();
-  out.computeBoundingSphere();
-  out.computeBoundingBox();
-  src.dispose();
-  return out;
-}
-function offsetWeldedPanelGeometry(geometry,distance){
-  if(!geometry?.attributes?.position)return geometry;
-  if(!geometry.attributes.normal)geometry.computeVertexNormals();
-  const p=geometry.attributes.position,n=geometry.attributes.normal;
-  for(let i=0;i<p.count;i++)p.setXYZ(i,p.getX(i)+n.getX(i)*distance,p.getY(i)+n.getY(i)*distance,p.getZ(i)+n.getZ(i)*distance);
-  p.needsUpdate=true;
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.computeBoundingBox();
-  return geometry;
-}
-
-function extractBodyTrianglesForPanel(panel){
-  const boundary=panelBoundaryWorld(panel);
-  if(boundary.length<3)return [];
-
-  const basis=panelBasis(panel);
-  const poly=boundary.map(p=>panel2D(panel,p,basis));
-  const boundaryTris=THREE.ShapeUtils.triangulateShape(poly,[]);
-  const cutRings=panelCutRings(panel);
-
-  let boundaryDepth=0;
-  for(const p of boundary)boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
-  const slab=Math.max(.10,boundaryDepth+.24);
-
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  for(const p of poly){
-    minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
-    maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y);
-  }
-
-  const result=[];
-  const va=new THREE.Vector3(),vb=new THREE.Vector3(),vc=new THREE.Vector3();
-  const na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
-
-  for(const mesh of bodyMeshes){
-    if(!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position)continue;
-    mesh.updateMatrixWorld(true);
-
-    const g=mesh.geometry;
-    const idx=g.index ? g.index.array : null;
-    const triCount=idx ? Math.floor(idx.length/3) : Math.floor(g.attributes.position.count/3);
-
-    for(let ti=0;ti<triCount;ti++){
-      const ia=idx?idx[ti*3]:ti*3;
-      const ib=idx?idx[ti*3+1]:ti*3+1;
-      const ic=idx?idx[ti*3+2]:ti*3+2;
-
-      bodyVertexWorld(mesh,ia,va);
-      bodyVertexWorld(mesh,ib,vb);
-      bodyVertexWorld(mesh,ic,vc);
-
-      const centroid=va.clone().add(vb).add(vc).multiplyScalar(1/3);
-      if(panelPlaneDistance(centroid,basis)>slab)continue;
-
-      bodyVertexNormalWorld(mesh,ia,na);
-      bodyVertexNormalWorld(mesh,ib,nb);
-      bodyVertexNormalWorld(mesh,ic,nc);
-
-      let avgN=na.clone().add(nb).add(nc);
-      if(avgN.lengthSq()<1e-8)avgN=basis.normal.clone();
-      avgN.normalize();
-      if(avgN.dot(basis.normal)<-.18)continue;
-
-      const tri2=[
-        panel2D(panel,va,basis),
-        panel2D(panel,vb,basis),
-        panel2D(panel,vc,basis)
-      ];
-
-      let tMinX=Infinity,tMinY=Infinity,tMaxX=-Infinity,tMaxY=-Infinity;
-      for(const p of tri2){
-        tMinX=Math.min(tMinX,p.x); tMinY=Math.min(tMinY,p.y);
-        tMaxX=Math.max(tMaxX,p.x); tMaxY=Math.max(tMaxY,p.y);
-      }
-      if(tMaxX<minX || tMinX>maxX || tMaxY<minY || tMinY>maxY)continue;
-
-      // Retain every mannequin triangle that has a genuine area overlap with
-      // the requested panel, even if the triangle centroid lies outside it.
-      let overlaps=false;
-      for(const bt of boundaryTris){
-        const clipTri=[poly[bt[0]],poly[bt[1]],poly[bt[2]]];
-        if(clipTriangleToTriangle(tri2,clipTri).length>=3){
-          overlaps=true;
-          break;
-        }
-      }
-      if(!overlaps)continue;
-
-      if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-
-      result.push({
-        p:[va.clone(),vb.clone(),vc.clone()],
-        n:[na.clone(),nb.clone(),nc.clone()],
-        centroid:centroid.clone(),
-        margin:panelPolygonMargin2(panel2D(panel,centroid,basis),poly)
-      });
+const bodyTriAdjCache=new WeakMap();
+function triangleAdjacencyForGeometry(g){
+  const cached=bodyTriAdjCache.get(g);if(cached)return cached;
+  const idx=g.index?.array||null,triCount=idx?Math.floor(idx.length/3):Math.floor(g.attributes.position.count/3);
+  const neighbors=Array.from({length:triCount},()=>new Set()),edgeMap=new Map(),edgeKey=(a,b)=>a<b?a+":"+b:b+":"+a;
+  for(let ti=0;ti<triCount;ti++){
+    const a=idx?idx[ti*3]:ti*3,b=idx?idx[ti*3+1]:ti*3+1,c=idx?idx[ti*3+2]:ti*3+2;
+    for(const [u,v] of [[a,b],[b,c],[c,a]]){
+      const k=edgeKey(u,v),o=edgeMap.get(k);
+      if(o===undefined)edgeMap.set(k,ti);else{neighbors[ti].add(o);neighbors[o].add(ti)}
     }
   }
-  return result;
+  const out=neighbors.map(s=>[...s]);bodyTriAdjCache.set(g,out);return out;
+}
+function selectConnectedPanelComponent(candidates,panel){
+  if(!candidates.length)return [];
+  const boundary=panelBoundaryWorld(panel),target=boundary.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/Math.max(1,boundary.length));
+  const byMesh=new Map();
+  for(const c of candidates){if(!byMesh.has(c.mesh))byMesh.set(c.mesh,new Map());byMesh.get(c.mesh).set(c.triIndex,c)}
+  let best=[],bestScore=Infinity;
+  for(const [mesh,map] of byMesh){
+    const adj=triangleAdjacencyForGeometry(mesh.geometry),seen=new Set();
+    for(const seed of map.keys()){
+      if(seen.has(seed))continue;
+      const q=[seed],comp=[];seen.add(seed);
+      while(q.length){
+        const ti=q.pop(),r=map.get(ti);if(!r)continue;comp.push(r);
+        for(const nb of adj[ti]||[])if(map.has(nb)&&!seen.has(nb)){seen.add(nb);q.push(nb)}
+      }
+      let md=Infinity;for(const r of comp)md=Math.min(md,r.centroid.distanceTo(target));
+      const score=md-comp.length*.00002;
+      if(score<bestScore){bestScore=score;best=comp}
+    }
+  }
+  return best;
+}
+let panelExtractDebug=false;
+const panelExtractDebugRoot=new THREE.Group();helperRoot.add(panelExtractDebugRoot);
+function clearPanelExtractDebug(){
+  while(panelExtractDebugRoot.children.length){const o=panelExtractDebugRoot.children.pop();o.geometry?.dispose?.();o.material?.dispose?.()}
+}
+function showPanelExtractDebug(panel,triangles){
+  clearPanelExtractDebug();panelExtractDebugBtn?.classList.toggle('active',panelExtractDebug);
+  if(!panelExtractDebug||!triangles?.length)return;
+  const pos=[];
+  for(const tri of triangles){const [a,b,c]=tri.p;for(const [u,v] of [[a,b],[b,c],[c,a]])pos.push(u.x,u.y,u.z,v.x,v.y,v.z)}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const m=new THREE.LineBasicMaterial({color:0xffcc55,transparent:true,opacity:.85,depthTest:false});
+  const l=new THREE.LineSegments(g,m);l.renderOrder=100;panelExtractDebugRoot.add(l);
+}
+function extractBodyTrianglesForPanel(panel){
+  const boundary=panelBoundaryWorld(panel);if(boundary.length<3)return [];
+  const basis=panelBasis(panel),poly=boundary.map(p=>panel2D(panel,p,basis)),boundaryTris=THREE.ShapeUtils.triangulateShape(poly,[]);
+  let boundaryDepth=0;for(const p of boundary)boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
+  const slab=Math.max(.12,boundaryDepth+.32);
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const p of poly){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}
+  const candidates=[],va=new THREE.Vector3(),vb=new THREE.Vector3(),vc=new THREE.Vector3(),na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
+  for(const mesh of bodyMeshes){
+    if(!mesh?.geometry?.attributes?.position)continue;mesh.updateMatrixWorld(true);
+    const g=mesh.geometry,idx=g.index?.array||null,triCount=idx?Math.floor(idx.length/3):Math.floor(g.attributes.position.count/3);
+    for(let ti=0;ti<triCount;ti++){
+      const ia=idx?idx[ti*3]:ti*3,ib=idx?idx[ti*3+1]:ti*3+1,ic=idx?idx[ti*3+2]:ti*3+2;
+      bodyVertexWorld(mesh,ia,va);bodyVertexWorld(mesh,ib,vb);bodyVertexWorld(mesh,ic,vc);
+      const centroid=va.clone().add(vb).add(vc).multiplyScalar(1/3);
+      if(panelPlaneDistance(centroid,basis)>slab)continue;
+      const tri2=[panel2D(panel,va,basis),panel2D(panel,vb,basis),panel2D(panel,vc,basis)];
+      let ax=Infinity,ay=Infinity,bx=-Infinity,by=-Infinity;
+      for(const p of tri2){ax=Math.min(ax,p.x);ay=Math.min(ay,p.y);bx=Math.max(bx,p.x);by=Math.max(by,p.y)}
+      if(bx<minX||ax>maxX||by<minY||ay>maxY)continue;
+      let overlaps=false;
+      for(const bt of boundaryTris){const ct=[poly[bt[0]],poly[bt[1]],poly[bt[2]]];if(clipTriangleToTriangle(tri2,ct).length>=3){overlaps=true;break}}
+      if(!overlaps)continue;
+      bodyVertexNormalWorld(mesh,ia,na);bodyVertexNormalWorld(mesh,ib,nb);bodyVertexNormalWorld(mesh,ic,nc);
+      candidates.push({mesh,triIndex:ti,p:[va.clone(),vb.clone(),vc.clone()],n:[na.clone(),nb.clone(),nc.clone()],centroid});
+    }
+  }
+  const connected=selectConnectedPanelComponent(candidates,panel);showPanelExtractDebug(panel,connected);return connected;
 }
 
 function signedArea2(poly){
@@ -1512,31 +1470,34 @@ function buildPanelGeometry(panel){
   const pieces=clippedPanelPieces(panel,extracted);
   if(!pieces.length)return buildPanelPreviewGeometry(panel);
 
-  const positions=[];
+  const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
-  const cutRings=panelCutRings(panel);
 
   for(const tri of pieces){
     const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
+
+    // Keep the existing simple ring opening behaviour for this test.
+    // Outer panel boundary is now exact; ring-hole clipping can be the next
+    // isolated refinement if needed.
+    const cutRings=panelCutRings(panel);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-    for(const v of tri)positions.push(v.q.x,v.q.y,v.q.z);
+
+    for(const v of tri){
+      const q=v.q.clone().addScaledVector(v.n,lift);
+      positions.push(q.x,q.y,q.z);
+      normals.push(v.n.x,v.n.y,v.n.z);
+    }
   }
 
-  let g=new THREE.BufferGeometry();
+  const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-
-  // Weld first, while the clipped panel is still exactly on the mannequin.
-  // Then derive shared normals and lift the connected panel as one surface.
-  g=weldPanelGeometry(g,0.00010);
-  g=offsetWeldedPanelGeometry(g,lift);
-
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  g.computeBoundingSphere();
   g.userData={
     extraction:true,
     cleanBoundary:true,
-    welded:true,
-    weldedBeforeOffset:true,
     sourceTriangles:extracted.length,
-    outputTriangles:g.index?g.index.count/3:g.attributes.position.count/3
+    outputTriangles:positions.length/9
   };
   return g;
 }
@@ -1566,6 +1527,12 @@ function makePanel(data={}){
   return panel;
 }
 function updatePanelGeometry(panel,{preview=false}={}){
+  if(!panel)return;syncPanelNodeIds(panel);
+  const t0=performance.now(),old=panel.mesh.geometry;
+  panel.mesh.geometry=preview?buildPanelPreviewGeometry(panel):buildPanelGeometry(panel);
+  old?.dispose?.();panel.mesh.visible=panel.nodeIds.length>=3&&panelHasArea(panel);
+  if(!preview&&panelPerfReadout){const ms=performance.now()-t0,r=panelPerfReadout.querySelector('span:last-child');if(r)r.textContent=`${ms.toFixed(ms<10?1:0)} ms`}
+}={}){
   if(!panel)return;
   syncPanelNodeIds(panel);
   const old=panel.mesh.geometry;
@@ -2322,7 +2289,8 @@ function showSelection(){
       curvePointCount.textContent=`Legacy · ${internal} Punkte · ${sections} Teile`;
     }else curvePointCount.textContent=selected.autoProject?'Auto':'Standard';
   }else if(selected.kind==='panel'){
-    { const testOffset=THREE.MathUtils.clamp(Number(selected.offsetMM??panelDefaults.offsetMM),0,5); panelOffsetSlider.value=testOffset; syncParamUI('panelOffset',testOffset); }
+    panelOffsetSlider.value=selected.offsetMM??panelDefaults.offsetMM;
+    syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
   }
 }
 function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
@@ -2538,7 +2506,7 @@ const PRESETS={
   rotZ:{defaults:[-90,0,90,180],min:-180,max:180,step:1},
   surfaceOffset:{defaults:[0,2,5,10],min:0,max:30,step:.5},
   globalAnchorSize:{defaults:[8,12,16,20],min:4,max:30,step:1},
-  panelOffset:{defaults:[0,1,2,3,5],min:0,max:5,step:.1}
+  panelOffset:{defaults:[0,1,2,5],min:0,max:12,step:.5}
 };
 const PARAMS=new Map();
 function setupParam(name,slider,tools,onInput){
@@ -2590,6 +2558,7 @@ strapWidthSlider.addEventListener('change',refreshAutomaticCrossings);
 setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathUtils.degToRad(v)});
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
+panelExtractDebugBtn.addEventListener('click',()=>{panelExtractDebug=!panelExtractDebug;panelExtractDebugBtn.classList.toggle('active',panelExtractDebug);if(!panelExtractDebug)clearPanelExtractDebug();else if(selected?.kind==='panel')updatePanelGeometry(selected)});
 setupParam('panelOffset',panelOffsetSlider,panelOffsetTools,v=>{
   if(selected?.kind!=='panel')return;
   selected.offsetMM=v;

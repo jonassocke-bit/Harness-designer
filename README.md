@@ -1,11 +1,3 @@
-# Harness Designer V1.9i — DOUBLE SIDE TEST
+# V1.9j PANEL FLOODFILL
 
-Based directly on V1.9h offset test.
-
-Only intended change:
-- PANEL_MAT and PANEL_SEL render with THREE.DoubleSide.
-
-No geometry, panel extraction, clipping, offset, strap, ring or snap logic was changed.
-
-If the angle-dependent white cracks disappear, back-face culling / triangle winding is the cause.
-If they remain, the issue is a real geometry discontinuity.
+Connected-surface extraction from V1.9f2. Removes normal rejection, chooses one connected mannequin triangle component, retains exact boundary clipping, adds yellow source-triangle debug and extraction timing. Ring-hole logic unchanged.
