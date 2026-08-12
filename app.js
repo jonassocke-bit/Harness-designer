@@ -1064,13 +1064,9 @@ function strapNormalAt(s,t){
   return n.normalize();
 }
 function visibleEndpoint(node,targetPoint){
-  const normal=nodeWorldNormal(node);
-  const center=nodeWorldPosition(node).clone().addScaledVector(
-    normal,
-    surfaceOffsetScene()+(node.ringVisible?ringTube(node):0)
-  );
+  const center=nodeWorldPosition(node);
   if(!node.ringVisible)return center;
-  const n=normal;
+  const n=nodeWorldNormal(node);
   let d=targetPoint.clone().sub(center);
   d.addScaledVector(n,-d.dot(n));
   if(d.lengthSq()<1e-8)return center;
@@ -2626,13 +2622,12 @@ function refineProjectedGuide(s,samples,lift,maxDepth=2){
 function buildWaypointGuide(s){
   clearWaypointGuide();
   if(!s)return false;
-  const guideLift=surfaceClearanceForStrap(s);
-  let samples=projectedChordSamples(s,{lift:guideLift});
+  let samples=projectedChordSamples(s,{lift:.011});
   if(samples.length<2)return false;
 
-  // Keep the normal projection density, but locally add only the samples needed
+  // Keep the normal ~1.7 cm density, but locally add only the samples needed
   // to keep the cyan guide outside strongly convex body regions.
-  samples=refineProjectedGuide(s,samples,guideLift,2);
+  samples=refineProjectedGuide(s,samples,.011,2);
   waypointGuideSamples=samples;
 
   const positions=[];

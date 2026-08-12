@@ -1,26 +1,14 @@
-# Harness Designer V1.8k
+# Harness Designer V1.8l STABLE
 
-Based directly on V1.8i to restore the preferred strap behavior.
+This is an exact rollback to the V1.8i runtime.
 
-V1.8j is intentionally discarded.
+No strap, Auto, ring endpoint, waypoint, projection, panel, snap, merge, or interaction
+logic has been changed.
 
-What changed versus V1.8i:
-- Ring-side visible strap endpoints now use the actual rendered ring plane:
-  body surface + global surface offset + ring tube radius.
-- The cyan manual projection guide no longer uses a fixed magic lift.
-  It uses V1.8i's existing `surfaceClearanceForStrap(s)` value.
+Only the displayed version/name was changed.
 
-What did NOT change:
-- strapFrame
-- strapCurve
-- manualControlWorld
-- Auto route construction
-- V1.8i tension / clearance / slack behavior
-- ~1 cm projection sampling
-- local convex refinement
-- Auto ON by default
-- panels
+Reason:
+V1.8j and V1.8k modified endpoint/clearance behavior and unintentionally changed the
+previously successful Auto strap geometry.
 
-The strap is therefore NOT forced onto a common virtual shell. It retains the
-slightly free/tensioned behavior seen in V1.8i, while ring transitions and the
-cyan guide use consistent offsets.
+Use this as the stable baseline before any further ring-offset or merge work.
