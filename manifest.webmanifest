@@ -1,6 +1,6 @@
 {
-  "name": "Harness Designer V2 Alpha",
-  "short_name": "Harness V2",
+  "name": "Harness Designer V2.0.2 Stable Boot",
+  "short_name": "Harness V2.0.2",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#111216",

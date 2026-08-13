@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#111216">
-  <title>Harness Designer V2 Alpha</title>
+  <title>Harness Designer V2.0.2</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -76,6 +76,14 @@
   <div id="status">V2 Alpha</div>
 
   <div id="bootOverlay" style="position:fixed;inset:0;z-index:9999;background:#111216;color:#fff;display:flex;align-items:center;justify-content:center;font:600 16px system-ui;-webkit-font-smoothing:antialiased"><div style="width:min(82vw,420px)"><div style="font-size:22px;margin-bottom:14px">Harness Designer V2</div><div id="bootStatus" style="opacity:.72">Starte…</div><pre id="bootError" style="white-space:pre-wrap;font:12px ui-monospace,monospace;color:#ff9b9b;margin-top:16px"></pre></div></div>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"
+    }
+  }
+  </script>
   <script type="module" src="bootstrap.js"></script>
 </body>
 </html>

@@ -51,3 +51,10 @@ do not require ES-module hosting.
 
 The point of V2 Alpha is to validate the architecture and core workflows before
 adding those systems. Patches should stay isolated to the owning module.
+
+
+## V2.0.2 boot fix
+- adds a browser Import Map for the bare `three` specifier used internally by Three addons
+- loads `GLTFLoader` via `three/addons/loaders/GLTFLoader.js`
+- exposes a mutable global `THREE = {...module, GLTFLoader}` for the classic V2 modules
+- leaves the V2 application modules themselves unchanged
