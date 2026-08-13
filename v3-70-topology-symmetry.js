@@ -402,7 +402,43 @@ function blockedGenericRingSnapTarget(n){
   }
   return best;
 }
-function genericMergeRingIntoHost(guest,host){
+
+function mirrorMateForNode(n){
+  return n?.mirrorId&&nodes.has(n.mirrorId)?nodes.get(n.mirrorId):null;
+}
+function mirroredWorldPosition(node){
+  const p=nodeWorldPosition(node);
+  p.x*=-1;
+  return p;
+}
+function preferredGenericUnmergePosition(host,state){
+  // If this guest came from an active mirror pair, symmetry is the hard constraint.
+  if(state?.formerMirrorId&&nodes.has(state.formerMirrorId)){
+    return mirroredWorldPosition(nodes.get(state.formerMirrorId));
+  }
+  const hp=nodeWorldPosition(host);
+  const d=new THREE.Vector3(...(state?.entryDir||[1,0,0]));
+  if(d.lengthSq()<1e-8)d.set(1,0,0);
+  return hp.clone().add(d.normalize().multiplyScalar(genericRingSnapOut(host)*1.55));
+}
+function mergeMirrorPairTransaction(guest,host){
+  const guestMate=mirrorMateForNode(guest);
+  const hostMate=mirrorMateForNode(host);
+  if(!guestMate||!hostMate)return genericMergeRingIntoHost(guest,host);
+
+  const h1=genericMergeRingIntoHost(guest,host,{keepMirrorForTransaction:true});
+  const h2=genericMergeRingIntoHost(guestMate,hostMate,{keepMirrorForTransaction:true});
+
+  if(h1&&h2&&nodes.has(h1.id)&&nodes.has(h2.id)){
+    h1.mirrorId=h2.id;h2.mirrorId=h1.id;
+    h1.manualUnlinked=false;h2.manualUnlinked=false;
+    if(h1.snapMergeState)h1.snapMergeState.transactionPartnerHostId=h2.id;
+    if(h2.snapMergeState)h2.snapMergeState.transactionPartnerHostId=h1.id;
+  }
+  return h1;
+}
+
+function genericMergeRingIntoHost(guest,host,opts={}){
   if(!guest||!host||guest===host)return host;
 
   const gp=nodeWorldPosition(guest),hp=nodeWorldPosition(host);
@@ -416,7 +452,7 @@ function genericMergeRingIntoHost(guest,host){
   // A ring may come from a mirror pair. The generic merge consumes this physical
   // ring only; its old counterpart becomes an independent ring instead of blocking merge.
   const oldGuestPartner=pairOfNode(guest);
-  if(oldGuestPartner){
+  if(oldGuestPartner&&!opts.keepMirrorForTransaction){
     oldGuestPartner.mirrorId=null;
     oldGuestPartner.previousPartnerId=guest.id;
     oldGuestPartner.manualUnlinked=true;
@@ -431,7 +467,9 @@ function genericMergeRingIntoHost(guest,host){
     topology:captureMergeTopology(guest,host),
     panelState,
     entryDir:entryDir.toArray(),
-    formerMirrorId:oldGuestPartner?.id||null
+    formerMirrorId:oldGuestPartner?.id||null,
+    mirrorTransaction:!!opts.keepMirrorForTransaction,
+    transactionPartnerHostId:null
   };
   applyGenericPanelMerge(guest,host,panelState);
 
@@ -450,17 +488,36 @@ function genericMergeRingIntoHost(guest,host){
 function genericUnmergeRing(host,worldPoint=null){
   const state=host?.snapMergeState;
   if(!state)return host;
+
+  // A mirror-pair merge is one transaction. Splitting one side splits both.
+  if(state.mirrorTransaction&&state.transactionPartnerHostId&&nodes.has(state.transactionPartnerHostId)){
+    const other=nodes.get(state.transactionPartnerHostId);
+    const otherState=other.snapMergeState;
+    state.mirrorTransaction=false;state.transactionPartnerHostId=null;
+    if(otherState){otherState.mirrorTransaction=false;otherState.transactionPartnerHostId=null}
+
+    const g1=genericUnmergeRing(host,worldPoint);
+    const g2=otherState?genericUnmergeRing(other,null):null;
+    if(g1&&g2){
+      g1.mirrorId=g2.id;g2.mirrorId=g1.id;
+      g1.manualUnlinked=false;g2.manualUnlinked=false;
+      host.mirrorId=other.id;other.mirrorId=host.id;
+      host.manualUnlinked=false;other.manualUnlinked=false;
+      updateAttachedStraps(g1.id);updateAttachedStraps(g2.id);
+    }
+    return g1;
+  }
+
   const hp=nodeWorldPosition(host),hn=nodeWorldNormal(host);
 
   const savedDir=new THREE.Vector3(...(state.entryDir||[1,0,0]));
   if(savedDir.lengthSq()<1e-8)savedDir.set(1,0,0);
   savedDir.normalize();
 
-  let p=worldPoint?.clone?.()||hp.clone().add(savedDir.multiplyScalar(genericRingSnapOut(host)*1.55));
-  if(p.distanceTo(hp)<genericRingSnapOut(host)){
-    const d=new THREE.Vector3(...(state.entryDir||[1,0,0]));
-    if(d.lengthSq()<1e-8)d.set(1,0,0);
-    p=hp.clone().add(d.normalize().multiplyScalar(genericRingSnapOut(host)*1.55));
+  let p=worldPoint?.clone?.()||preferredGenericUnmergePosition(host,state);
+  // For mirrored guests, the mirrored target is authoritative even if it is close.
+  if(!state.formerMirrorId&&p.distanceTo(hp)<genericRingSnapOut(host)){
+    p=preferredGenericUnmergePosition(host,state);
   }
 
   const guest=makeNode({...state.guest,id:state.guest.id,position:p.toArray(),normal:hn.toArray(),snapMergeState:null});
@@ -474,6 +531,10 @@ function genericUnmergeRing(host,worldPoint=null){
       guest.mirrorId=former.id;
       former.manualUnlinked=false;
       guest.manualUnlinked=false;
+      // Mirror constraint wins: restored ring sits exactly opposite its mate.
+      const mp=mirroredWorldPosition(former);
+      setNodeWorldPosition(guest,mp);
+      const mn=nodeWorldNormal(former);mn.x*=-1;guest.normal=mn.toArray();syncNodeTransform(guest);
     }
   }
 
@@ -487,6 +548,12 @@ function genericUnmergeRing(host,worldPoint=null){
     const s=makeStrap({id:d.id,a,b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,controls:d.controls,surfaceLevel:d.surfaceLevel||0});
     s.mirrorId=d.mirrorId||null;
     rebuildAutoProjection(s);
+  }
+  // Physical node endpoints are authoritative after Entmerge.
+  updateAttachedStraps(guest.id);
+  updateAttachedStraps(host.id);
+  if(state.formerMirrorId&&nodes.has(state.formerMirrorId)){
+    updateAttachedStraps(state.formerMirrorId);
   }
 
   // Exact slot restoration — no branch inference.

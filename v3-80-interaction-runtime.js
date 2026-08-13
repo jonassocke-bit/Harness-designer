@@ -247,7 +247,8 @@ function requestNodeDrag(n,x,y){
       if(draggedPhysical?.ringVisible && nodes.has(draggedPhysical.id)){
         const targetRing=nearestGenericRingSnapTarget(draggedPhysical);
         if(targetRing){
-          const host=genericMergeRingIntoHost(draggedPhysical,targetRing);
+          const usePair=!!mirrorMateForNode(draggedPhysical)&&!!mirrorMateForNode(targetRing);
+          const host=usePair?mergeMirrorPairTransaction(draggedPhysical,targetRing):genericMergeRingIntoHost(draggedPhysical,targetRing);
           if(single){single.activeNodeId=host.id;single.genericMergeThisGesture=host.id}
           selected=host;refreshMaterials();showSelection();setGenericMergeHoverWarning(false);return;
         }
@@ -268,7 +269,8 @@ function requestNodeDrag(n,x,y){
       if(q.n.ringVisible){
         const target=nearestGenericRingSnapTarget(q.n);
         if(target){
-          const host=genericMergeRingIntoHost(q.n,target);
+          const usePair=!!mirrorMateForNode(q.n)&&!!mirrorMateForNode(target);
+          const host=usePair?mergeMirrorPairTransaction(q.n,target):genericMergeRingIntoHost(q.n,target);
           if(single){single.activeNodeId=host.id;single.genericMergeThisGesture=host.id}
           selected=host;refreshMaterials();showSelection();return;
         }

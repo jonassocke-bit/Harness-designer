@@ -348,11 +348,21 @@ nodeRingToggle.addEventListener('click',()=>{
   commitHistory();
 });
 finalizeMergeBtn.addEventListener('click',()=>{
-  if(selected?.kind!=='node'||!selected.snapMergeState)return;
-  if(finalizeGenericRingMerge(selected)){
-    showToast('Ringe endgültig verschmolzen');
-    showSelection();
-    commitHistory();
+  if(selected?.kind!=='node')return;
+  if(selected.snapMergeState){
+    if(finalizeGenericRingMerge(selected)){
+      showToast('Ringe endgültig verschmolzen');
+      showSelection();commitHistory();
+    }
+    return;
+  }
+  if(selected.mergedState){
+    selected.mergedState=null;
+    selected.mirrorId=null;
+    selected.previousPartnerId=null;
+    selected.manualUnlinked=true;
+    showToast('Mittelachsen-Ring endgültig verschmolzen');
+    showSelection();commitHistory();
   }
 });
 linkSelectedBtn.addEventListener('click',()=>{

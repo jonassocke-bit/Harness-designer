@@ -23,8 +23,50 @@ function panelCurrentIds(panel,{unique=true}={}){
   for(const id of out)if(!seen.has(id)){seen.add(id);uniqueIds.push(id)}
   return uniqueIds;
 }
+function panelOuterBoundaryIds(panel){
+  const ids=panelCurrentIds(panel,{unique:true});
+  if(ids.length<=3)return ids;
+
+  const pts=ids.map(id=>({id,p:nodeWorldPosition(nodes.get(id))}));
+  const origin=pts.reduce((a,q)=>a.add(q.p),new THREE.Vector3()).multiplyScalar(1/pts.length);
+
+  let normal=panelAverageNormal(panel);
+  if(normal.lengthSq()<1e-8)normal=new THREE.Vector3(0,0,1);
+
+  let u=pts[0].p.clone().sub(origin);
+  u.addScaledVector(normal,-u.dot(normal));
+  if(u.lengthSq()<1e-8){
+    u=Math.abs(normal.y)<.9
+      ?new THREE.Vector3(0,1,0).cross(normal)
+      :new THREE.Vector3(1,0,0).cross(normal);
+  }
+  u.normalize();
+  const v=new THREE.Vector3().crossVectors(normal,u).normalize();
+
+  const flat=pts.map(q=>{
+    const d=q.p.clone().sub(origin);
+    return {id:q.id,x:d.dot(u),y:d.dot(v)};
+  }).sort((a,b)=>a.x-b.x||a.y-b.y);
+
+  const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const lower=[];
+  for(const q of flat){
+    while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],q)<=1e-9)lower.pop();
+    lower.push(q);
+  }
+  const upper=[];
+  for(let i=flat.length-1;i>=0;i--){
+    const q=flat[i];
+    while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],q)<=1e-9)upper.pop();
+    upper.push(q);
+  }
+  const hull=lower.slice(0,-1).concat(upper.slice(0,-1));
+  return hull.length>=3?hull.map(q=>q.id):ids;
+}
 function syncPanelNodeIds(panel){
-  panel.nodeIds=panelCurrentIds(panel,{unique:true});
+  // boundarySlots remain the permanent membership list.
+  // nodeIds is the CURRENT geometric outer perimeter only.
+  panel.nodeIds=panelOuterBoundaryIds(panel);
 }
 function panelBoundaryWorld(panel){
   syncPanelNodeIds(panel);

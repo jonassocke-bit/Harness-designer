@@ -601,7 +601,7 @@ function showSelection(){
   selectionLabel.textContent=selected.kind==='node'?(selected.ringVisible?'RING':'PUNKT'):selected.kind==='strap'?'RIEMEN':'FLÄCHE';
   selectionTitle.textContent=selected.id;
   lockSelectedBtn.classList.toggle('active',!!selected.locked);
-  finalizeMergeBtn.classList.toggle('hidden',!(selected.kind==='node'&&!!selected.snapMergeState));
+  finalizeMergeBtn.classList.toggle('hidden',!(selected.kind==='node'&&(!!selected.snapMergeState||!!selected.mergedState)));
   updateLinkButton();
   if(selected.kind==='node'){
     nodeRingToggle.classList.toggle('active',selected.ringVisible);

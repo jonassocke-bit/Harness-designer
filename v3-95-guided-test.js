@@ -1,77 +1,24 @@
 // ============================================================================
-// V3.2.1 RING MERGE FIX
+// V3.2.2 TOPOLOGY INTEGRITY
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.2.1 RING MERGE FIX',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.2.2 TOPOLOGY INTEGRITY',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    build:{
-      title:'1 · Build / Patchnotes',
-      instruction:'Unten muss „V3.2.1 · Ring Merge Fix“ stehen. App und Mannequin müssen normal starten.',
-      golden:'pass'
-    },
-    snapThreshold:{
-      title:'2 · Snap-Schwelle – kleine Ringe',
-      instruction:'Nimm zwei kleine Ringe und nähere sie langsam an. Sie sollen spätestens dann soft-mergen, wenn sie optisch bereits deutlich ineinander liegen/nahezu deckungsgleich sind. Bitte Screenshot machen, falls du wieder einen Zustand erreichst, bei dem du sagst „spätestens hier“ und noch nichts passiert. Gleichzeitig prüfen: nebeneinanderliegende, aber klar getrennte Ringe dürfen NICHT mergen.',
-      golden:'known',known:'V3.2.0 war trotz größerer Hitbox beim eigentlichen Snap noch zu streng.'
-    },
-    unmergeDirection:{
-      title:'3 · Trennen merkt die Herkunftsrichtung',
-      instruction:'Ziehe Ring A von links/rechts/oben auf Ring B, lasse los und drücke danach „Trennen“. A soll auf ungefähr derselben Seite von B wieder auftauchen, aus der er beim Merge kam. Wiederhole das aus mindestens zwei deutlich verschiedenen Richtungen. Exakte alte Position ist nicht nötig – die Richtung soll plausibel sein.',
-      golden:'known',known:'V3.2.0 setzte den getrennten Ring ohne gespeicherte Eintrittsrichtung generisch ab.'
-    },
-    thirdHover:{
-      title:'4 · Dritter Ring – Hover-Meldung',
-      instruction:'Soft-merge A+B. Ziehe C über den gemergten Ring und HALTE den Finger dort: die Meldung muss dauerhaft sichtbar bleiben. Ziehe C weg: Meldung muss sofort verschwinden. Fahre wieder darüber: Meldung muss wieder erscheinen. Es darf weiterhin kein 3er-Soft-Merge entstehen.',
-      golden:'known',known:'V3.2.0 zeigte nur einen kurzen Toast pro Drag.'
-    },
-    panelUnmerge:{
-      title:'5 · Fläche – exakter Restore nach Soft-Merge/Trennen',
-      instruction:'Erzeuge eine Fläche mit mindestens vier Boundary-Ringen. Zwei davon sollen A und B sein. Soft-merge A auf B und trenne wieder. Danach muss die Fläche wieder GENAU an A und B sowie an allen unbeteiligten Boundary-Punkten hängen. Bewege nacheinander A, B und einen unbeteiligten Punkt deutlich: jeweils darf nur der erwartete Boundary-Punkt folgen. Bitte Screenshot + Kommentar bei jedem Springen/Verlust.',
-      golden:'known',known:'V3.2.0 konnte nach Entmerge einen Boundary-Slot verlieren oder auf einen falschen Ring umhängen.'
-    },
-    panelFinalize:{
-      title:'6 · Fläche – endgültiges Verschmelzen',
-      instruction:'Mit einer Fläche, die A und/oder B benutzt: soft-merge A+B und drücke „endgültig verschmelzen“. Danach soll die Fläche den verbleibenden Host sauber benutzen. Bewege den Host und danach andere Boundary-Punkte. Kein Punkt darf plötzlich zu einer alten/gelöschten Ring-ID zurückspringen.',
-      golden:'known'
-    },
-    mirrorToSingle:{
-      title:'7 · Spiegelring → einzelner Ring',
-      instruction:'Erzeuge ein Spiegelpaar A/A′ und einen einzelnen Ring B. Ziehe einen physischen Ring des Spiegelpaares auf B. Der Merge muss jetzt möglich sein. Erwartung: der gemergte physische Ring wird Teil von B; sein früherer Spiegelpartner bleibt als eigenständiger Ring erhalten statt den Merge zu blockieren. Trenne anschließend wieder und prüfe, ob das ursprüngliche Spiegelpaar sinnvoll wiederhergestellt wird.',
-      golden:'known',known:'V3.2.0 übersprang Generic Merge vollständig, sobald der bewegte Ring einen Mirror-Partner hatte.'
-    },
-    mirrorToMirror:{
-      title:'8 · Spiegelpaar ↔ Spiegelpaar',
-      instruction:'Erzeuge zwei Spiegelpaare. Ziehe einen Ring aus Paar 1 nahezu deckungsgleich auf einen Ring aus Paar 2. Der betreffende physische Ring muss soft-mergen können. Prüfe danach die drei übrigen sichtbaren/aktiven Ringzustände: nichts darf verschwinden oder unbedienbar werden. Teste anschließend Trennen.',
-      golden:'known'
-    },
-    strapAttachments:{
-      title:'9 · Riemen-Attachments unverändert',
-      instruction:'Wiederhole einen Soft-Merge/Trennen-Fall mit je einem Riemen an Gast und Host. Beide ursprünglichen Verbindungen müssen nach Trennen wieder korrekt sein. Danach finalisieren und prüfen, dass beide Riemen am verbleibenden Host hängen.',
-      golden:'pass'
-    },
-    finalMergeAgain:{
-      title:'10 · Finalisieren → erneut mergen',
-      instruction:'A+B endgültig verschmelzen und danach C darauf soft-mergen. Das muss weiterhin funktionieren. Versuche zusätzlich D als dritten Soft-Merge: D muss blockiert werden, bis C getrennt oder finalisiert wurde.',
-      golden:'pass'
-    },
-    axisMirrorRegression:{
-      title:'11 · Mittelachsen-Merge unverändert',
-      instruction:'Teste das klassische Spiegelpaar-Merge auf der Körpermittelachse und das Entmerge durch seitliches Wegziehen. Das ist eine getrennte Logik und darf durch die Generic-Merge-Fixes nicht schlechter geworden sein.',
-      golden:'pass'
-    },
-    undo:{
-      title:'12 · Undo / Redo',
-      instruction:'Undo/Redo nach Soft-Merge, Trennen und endgültigem Verschmelzen testen – jeweils bevorzugt einmal mit Fläche. Keine Geister-Ringe, verlorenen Boundary-Punkte oder kaputten Riemen.',
-      golden:'pass'
-    },
-    ui:{
-      title:'13 · Auswahl / Buttons',
-      instruction:'Bei normalem Ring darf kein Finalisieren-Button erscheinen. Bei Soft-Merge muss „endgültig verschmelzen“ sichtbar sein. Nach Trennen oder Finalisieren muss der Button wieder verschwinden.',
-      golden:'pass'
-    }
+    build:{title:'1 · Build / Patchnotes',instruction:'Unten muss V3.2.2 · Topology Integrity stehen. App und Mannequin müssen normal starten.',golden:'pass'},
+    panelMembers:{title:'2 · Fläche: Mitgliedschaft bleibt erhalten',instruction:'Erzeuge eine Fläche aus 4–5 Ringen. Ziehe einen Eckring durch die Mitte der anderen und danach wieder nach außen. Der Ring bleibt logisch Mitglied der Fläche. Innen darf er aus der sichtbaren Außenkante verschwinden; außen muss er automatisch wieder Teil der Kontur werden.',golden:'known'},
+    panelHull:{title:'3 · Fläche: immer Außenhülle',instruction:'Ziehe einen Eckring mitten zwischen/durch zwei andere Ringe. Es dürfen KEINE selbstkreuzenden, spitzen oder wilden Dreiecksflächen entstehen. Die sichtbare Fläche muss immer von den aktuell äußersten Mitgliedsringen begrenzt werden. Bitte mehrere Screenshots machen: vorher, Ring innen, Ring wieder außen.',golden:'known'},
+    mirrorPairMerge:{title:'4 · Spiegelpaar ↔ Spiegelpaar automatisch doppelt mergen',instruction:'Erzeuge A/A′ und B/B′. Ziehe A auf B. A′ muss automatisch gleichzeitig auf B′ mergen. Danach müssen die zwei verbleibenden Hosts weiterhin ein Spiegelpaar sein. Kein manuelles Nachmergen.',golden:'known'},
+    mirrorPairSplit:{title:'5 · Doppel-Merge gemeinsam trennen',instruction:'Trenne anschließend eine Seite. Die gesamte Paartransaktion soll sauber zurückgehen: beide Gast-Ringe wieder da, beide ursprünglichen Spiegelbeziehungen wieder sinnvoll hergestellt, keine Geister-/Rest-Ringe.',golden:'known'},
+    mirroredStrapSplit:{title:'6 · Entmerge mit Spiegelriemen',instruction:'Baue ein Spiegelriemenpaar. Merge einen beteiligten Ring und trenne wieder. Der Ring muss exakt an der gespiegelten Sollposition seines Spiegelpartners erscheinen. Herkunftsrichtung ist hier zweitrangig. Ringpaar UND Riemenpaar sollen sofort wieder symmetrisch sein.',golden:'known'},
+    strapEndpoint:{title:'7 · Riemen nach Entmerge wirklich am Ring',instruction:'Bewege den wiederhergestellten Ring. Der Riemen muss sichtbar am Ring enden und mitgehen. Er darf nicht nur „irgendwie synchron“ mit dem Spiegelriemen laufen, während sein eigener Endpunkt abgekoppelt ist.',golden:'known'},
+    normalSplit:{title:'8 · Nicht gespiegeltes Entmerge weiterhin richtungsgetreu',instruction:'Bei einem normalen Ring ohne Mirror-Verbund soll weiterhin die gespeicherte Herkunftsrichtung bestimmen, auf welcher Seite er nach Trennen erscheint.',golden:'pass'},
+    centerFinalize:{title:'9 · Mittelachsen-Merge endgültig verschmelzen',instruction:'Spiegelpaar auf Mittelachse mergen. „Ringe endgültig verschmelzen“ muss erscheinen. Danach darf seitliches Ziehen den Ring nicht mehr normal entmergen. Undo soll weiterhin möglich sein.',golden:'known'},
+    panelMerge:{title:'10 · Fläche + Ring-Merge + Außenhülle kombiniert',instruction:'Erzeuge eine 4–5-Punkt-Fläche, merge/trenne zwei Boundary-Ringe und ziehe danach einen anderen Ring durch die Mitte. Kein Mitglied darf verloren gehen und die Außenhülle muss weiterhin sauber bleiben.',golden:'known'},
+    undo:{title:'11 · Undo / Redo',instruction:'Undo/Redo nach Doppel-Mirror-Merge, Entmerge mit Spiegelriemen und endgültigem Mittelachsen-Merge. Keine verlorenen Riemen, Panel-Mitglieder oder Ringpartner.',golden:'known'},
+    screenshots:{title:'12 · Debug: Kommentar + mehrere Screenshots',instruction:'Schreibe einen Kommentar. Mache dann mindestens zwei Screenshots. Der Kommentar muss nach jeder Aufnahme erhalten bleiben. Die Anzeige soll die Anzahl gespeicherter Screenshots nennen. Im HTML-Report müssen alle Bilder dieser Frage auftauchen.',golden:'known'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -105,30 +52,40 @@
       req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
     });
   }
-  const shotKey=id=>RELEASE.build+':'+id;
+  const shotPrefix=id=>RELEASE.build+':'+id+':';
 
-  async function putShot(id,blob){
-    const db=await openDb();
-    return new Promise((resolve,reject)=>{
-      const tx=db.transaction(DB_STORE,'readwrite');
-      tx.objectStore(DB_STORE).put(blob,shotKey(id));
-      tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
-    });
-  }
-  async function getShot(id){
+  async function listShots(id){
     try{
       const db=await openDb();
       return await new Promise((resolve,reject)=>{
-        const req=db.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(shotKey(id));
-        req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);
+        const found=[];
+        const req=db.transaction(DB_STORE,'readonly').objectStore(DB_STORE).openCursor();
+        req.onsuccess=()=>{
+          const cur=req.result;
+          if(!cur){resolve(found.sort((a,b)=>a.key.localeCompare(b.key)));return}
+          if(String(cur.key).startsWith(shotPrefix(id)))found.push({key:String(cur.key),blob:cur.value});
+          cur.continue();
+        };
+        req.onerror=()=>reject(req.error);
       });
-    }catch(e){return null}
+    }catch(e){return []}
   }
-  async function deleteShot(id){
+  async function putShot(id,blob){
+    const db=await openDb();
+    const existing=await listShots(id);
+    const key=shotPrefix(id)+String(existing.length+1).padStart(3,'0');
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(DB_STORE,'readwrite');
+      tx.objectStore(DB_STORE).put(blob,key);
+      tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
+    });
+  }
+  async function deleteShotKey(key){
     try{
       const db=await openDb();
       await new Promise((resolve,reject)=>{
-        const tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).delete(shotKey(id));
+        const tx=db.transaction(DB_STORE,'readwrite');
+        tx.objectStore(DB_STORE).delete(key);
         tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
       });
     }catch(e){}
@@ -193,13 +150,17 @@
   async function exportReport(){
     let sections='';
     for(const id of QUEUE){
-      const t=TESTS[id],r=run.results[id],shot=await getShot(id),url=shot?await dataUrl(shot):null;
+      const t=TESTS[id],r=run.results[id],shots=await listShots(id);
+      let images='';
+      for(let i=0;i<shots.length;i++){
+        images+=`<img src="${await dataUrl(shots[i].blob)}" alt="Screenshot ${i+1} ${escapeHtml(t.title)}">`;
+      }
       sections+=`<section>
         <h2>${escapeHtml(t.title)}</h2>
         <p><b>Status:</b> ${escapeHtml(r?.status||'ungetestet')}${t.golden==='known'?' · KNOWN':''}</p>
         ${t.known?`<p><b>Golden:</b> ${escapeHtml(t.known)}</p>`:''}
         ${r?.note?`<p><b>Kommentar:</b> ${escapeHtml(r.note)}</p>`:''}
-        ${url?`<img src="${url}" alt="Screenshot ${escapeHtml(t.title)}">`:''}
+        ${images}
       </section>`;
     }
     const doc=`<!doctype html><meta charset="utf-8"><title>${RELEASE.build}</title>
@@ -232,14 +193,18 @@
       ['pass','fail','skip'].forEach(k=>$('.'+k).classList.toggle('activeAnswer',r.status===k));
 
       if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null}
-      const shot=await getShot(id);
-      if(shot){
-        previewUrl=URL.createObjectURL(shot);
+      const shots=await listShots(id);
+      if(shots.length){
+        const last=shots[shots.length-1];
+        previewUrl=URL.createObjectURL(last.blob);
         $('.shotPreview').src=previewUrl;
         $('#v3ShotWrap').style.display='block';
-        $('.shot').textContent='📷 Neu aufnehmen';
+        $('#v3ShotMeta span').textContent='📷 '+shots.length+' Screenshot'+(shots.length===1?'':'s')+' gespeichert';
+        $('.deleteShot').dataset.key=last.key;
+        $('.shot').textContent='📷 Weiteren Screenshot';
       }else{
         $('#v3ShotWrap').style.display='none';
+        $('.deleteShot').dataset.key='';
         $('.shot').textContent='📷 Screenshot';
       }
       g.style.display='block';
@@ -269,11 +234,19 @@
     $('.next').onclick=()=>{if(index<QUEUE.length-1){index++;render()}};
     $('.close').onclick=()=>g.style.display='none';
     $('.shot').onclick=async()=>{
-      const id=QUEUE[index];$('.shot').textContent='Aufnahme…';
+      const id=QUEUE[index];
+      const existing=run.results[id]||{};
+      run.results[id]={...existing,note:$('.note').value.trim()};
+      save();
+      $('.shot').textContent='Aufnahme…';
       try{await capture(id);await render()}
       catch(e){$('.shot').textContent='Screenshot fehlgeschlagen'}
     };
-    $('.deleteShot').onclick=async()=>{await deleteShot(QUEUE[index]);await render()};
+    $('.deleteShot').onclick=async()=>{
+      const key=$('.deleteShot').dataset.key;
+      if(key)await deleteShotKey(key);
+      await render();
+    };
 
     btn.onclick=()=>{
       summary.style.display='none';

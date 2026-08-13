@@ -49,3 +49,7 @@ Ring Snap/Merge Impact Patch. See PATCHNOTES.md. V3.1.0 remains the Modular Gold
 
 ## V3.2.1
 Targeted Ring/Topology fix. See PATCHNOTES.md (newest first).
+
+
+## V3.2.2
+Topology Integrity: panel outer hull, mirror pair transactions, mirror-priority Entmerge, multi-screenshot debug.
