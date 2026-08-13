@@ -1,0 +1,20 @@
+
+window.HD=window.HD||{};
+HD.CFG={
+  version:"2.0-alpha",
+  unitPerMM:.0037,
+  axisSnapIn:.014,
+  axisSnapOut:.026,
+  genericSnapRatio:.10,
+  genericSnapMin:.0045,
+  genericSnapOutRatio:.42,
+  genericSnapOutMin:.012,
+  ringHitTubeMin:.004,
+  strapSamplesPerMeter:100,
+  strapMinSamples:8,
+  strapMaxSamples:80,
+  strapThickness:.006,
+  panelDefaultOffsetMM:1,
+  storageKey:"harnessDesignerV2"
+};
+HD.mm=v=>v*HD.CFG.unitPerMM;

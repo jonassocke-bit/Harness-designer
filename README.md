@@ -1,22 +1,53 @@
-# V1.9z DUMPSTERFIRE
+# Harness Designer V2 Alpha
 
-Broad last-test build before a clean rewrite.
+This is a clean rebuild, not a patch of V1.
 
-Base: user-confirmed starting V1.9k3 / V1.9f2 family.
+## Architecture
+- `config.js` — immutable tuning constants
+- `state.js` — pure application data
+- `geometry.js` — math helpers only
+- `body.js` — body loading + surface access
+- `nodes.js` — rings / points / merge primitives
+- `straps.js` — auto Strip solver + renderer
+- `panels.js` — fast body-mesh extraction panels
+- `history.js` — serialized data-model undo/redo/persistence
+- `interaction.js` — pointer/camera/object interaction
+- `ui.js` — UI binding only
+- `app.js` — startup/render loop only
 
-Included:
-- proven Strip auto strap engine remains
-- classic/push method buttons hidden
-- Lockerheit hidden and internal slack forced to 0
-- panels returned to the minimal fast body-mesh extraction
-- center-axis snap zone narrowed substantially
-- generic ring-to-ring snap requires much closer overlap
-- existing dynamically scaled ring hitboxes retained
-- existing hitbox-debug retained
-- existing generic ring merge/unmerge/history retained
-- mannequin color diagnostic retained
-- cheap TEST priority: straps cut panels; older panels cut newer panels
-- panels refresh after final auto-strap rebuild
+All files use the global `HD` namespace so they work as ordinary scripts and
+do not require ES-module hosting.
 
-The strap/panel and panel/panel internal cuts are deliberately triangle-level.
-This is a final behavior-testing build, not production clipping.
+## Implemented in this Alpha
+- body loading (female / male)
+- body color diagnostic
+- global surface offset
+- ring / point nodes
+- dynamic ring hitboxes
+- ring parameter editing
+- mirror pairs
+- generic ring merge/unmerge foundation
+- auto Strip straps only
+- 3-line concept: center projection + independently projected left/right edges
+- cheap strap preview while moving a ring
+- strap width editing
+- strap debug lines
+- fast extracted-body panels
+- ring and strap panel cut approximation
+- panel creation tool
+- Undo / Redo from data snapshots
+- localStorage persistence
+- hitbox debug
+- iPhone camera orbit + pinch zoom
+
+## Deliberately deferred until Alpha is validated
+- polished generic merge topology restoration for every nested case
+- anchor-on-strap split/merge system
+- auto crossing nodes
+- exact strap-panel and panel-panel shared-edge clipping
+- material editor / mesh materials
+- Body Lab integration API beyond the current Body module seam
+- advanced model upload
+
+The point of V2 Alpha is to validate the architecture and core workflows before
+adding those systems. Patches should stay isolated to the owning module.
