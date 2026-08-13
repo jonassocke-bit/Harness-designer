@@ -57,3 +57,7 @@ Topology Integrity: panel outer hull, mirror pair transactions, mirror-priority 
 
 ## V3.3.0
 Edge-first strap solver + visual step debugger. V3.2.2 topology remains the reference base.
+
+
+## V3.3.1
+Continuity-aware Surface-Walker, live/mirrored width, endpoint blending, tester final-page fix.

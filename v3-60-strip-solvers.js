@@ -173,31 +173,31 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 }
 
 
-function projectEdgeCandidateToBody(candidate,preferredNormal){
-  let pref=preferredNormal.clone().normalize();
-  let best=null,bestScore=Infinity;
-
+function edgeSurfaceCandidates(candidate,preferredNormal){
+  const pref=preferredNormal.clone().normalize(),out=[];
   for(const sign of [1,-1]){
-    const origin=candidate.clone().addScaledVector(pref,sign*1.35);
-    const dir=pref.clone().multiplyScalar(-sign);
-    raycaster.set(origin,dir);
-
-    const hits=raycaster.intersectObjects(bodyMeshes,true);
-    for(const h of hits.slice(0,5)){
-      const n=worldNormal(h);
-      const alignment=n.dot(pref);
-      const dist=h.point.distanceTo(candidate);
-      const sidePenalty=alignment<-.15?.8:(1-Math.max(0,alignment))*.08;
-      const score=dist+sidePenalty;
-      if(score<bestScore){
-        bestScore=score;
-        best={point:h.point.clone(),normal:n.clone().normalize()};
-      }
+    const origin=candidate.clone().addScaledVector(pref,sign*1.35),dir=pref.clone().multiplyScalar(-sign);raycaster.set(origin,dir);
+    for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,8)){
+      const n=worldNormal(h).clone().normalize(),align=n.dot(pref),dist=h.point.distanceTo(candidate);
+      out.push({point:h.point.clone(),normal:n,baseScore:dist+(align<-.2?.9:(1-Math.max(0,align))*.08),raySign:sign});
     }
-  }
+  } out.sort((a,b)=>a.baseScore-b.baseScore);return out;
+}
+function segmentCutsBody(a,b){return bodyOccludesWorldPoint(a.clone().lerp(b,.5),.006)}
+function continuityScore(h,ctx,candidate){
+  let score=h.baseScore;if(!ctx)return score;
+  if(ctx.expected)score+=h.point.distanceTo(ctx.expected)*1.6;
+  if(ctx.prevPoint){score+=h.point.distanceTo(ctx.prevPoint)*.45;if(segmentCutsBody(ctx.prevPoint,h.point))score+=4}
+  if(ctx.prevNormal){const d=THREE.MathUtils.clamp(h.normal.dot(ctx.prevNormal),-1,1);score+=(1-d)*.22;if(d<-.1)score+=1.2}
+  return score;
+}
+function projectEdgeCandidateToBody(candidate,preferredNormal,ctx=null){
+  const c=edgeSurfaceCandidates(candidate,preferredNormal);if(!c.length)return null;if(!ctx)return c[0];
+  let best=c[0],bs=continuityScore(best,ctx,candidate);for(const h of c){const sc=continuityScore(h,ctx,candidate);if(sc<bs){best=h;bs=sc}}
+  const near=c[0],suspicious=(ctx.prevPoint&&segmentCutsBody(ctx.prevPoint,near.point))||(ctx.prevNormal&&near.normal.dot(ctx.prevNormal)<.15)||(ctx.expected&&near.point.distanceTo(ctx.expected)>.22);
+  if(suspicious)for(const h of c){if(h.raySign===near.raySign)continue;const sc=continuityScore(h,ctx,candidate);if(sc<bs){best=h;bs=sc}}
   return best;
 }
-
 function widthConstrainedProjectedRoute(s,samples,lift){
   if(!samples||samples.length<2)return samples||[];
 
@@ -325,7 +325,7 @@ function buildPushMethodRoute(s,samples,lift){
   const pushes=smoothMethodPush(raw,5,3);
   return measured.map((g,i)=>({...g,finalPoint:base.getPoint(g.t).addScaledVector(g.normal,pushes[i]),push:pushes[i]}));
 }
-function edgeFirstNominalSample(s,t,lift=0){
+function edgeFirstNominalSample(s,t,lift=0,ctxLeft=null,ctxRight=null){
   const a=nodes.get(s.a),b=nodes.get(s.b);
   if(!a||!b)return null;
   const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
@@ -349,8 +349,8 @@ function edgeFirstNominalSample(s,t,lift=0){
   const nominalLeft=center.clone().addScaledVector(side,-halfW);
   const nominalRight=center.clone().addScaledVector(side,halfW);
 
-  const lh=projectEdgeCandidateToBody(nominalLeft,normal);
-  const rh=projectEdgeCandidateToBody(nominalRight,normal);
+  const lh=projectEdgeCandidateToBody(nominalLeft,normal,ctxLeft);
+  const rh=projectEdgeCandidateToBody(nominalRight,normal,ctxRight);
   const left=(lh?.point||nominalLeft).clone().addScaledVector(lh?.normal||normal,lift);
   const right=(rh?.point||nominalRight).clone().addScaledVector(rh?.normal||normal,lift);
 
@@ -372,31 +372,15 @@ function edgeFirstSegmentNeedsRefine(a,b){
   return bodyOccludesWorldPoint(ml,.008)||bodyOccludesWorldPoint(mr,.008);
 }
 function projectedChordSamplesStrip(s,{lift=0}={}){
-  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];
-  const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
-  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.030),7,72);
-  const base=[];
+  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
+  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.030),7,72),base=[];let pL=null,pR=null,nL=null,nR=null;
   for(let i=0;i<=segments;i++){
-    const g=edgeFirstNominalSample(s,i/segments,lift);
-    if(g)base.push(g);
+    const t=i/segments,expected=A.clone().lerp(B,t),g=edgeFirstNominalSample(s,t,lift,pL?{prevPoint:pL,prevNormal:nL,expected}:null,pR?{prevPoint:pR,prevNormal:nR,expected}:null);if(!g)continue;
+    if(pL&&pR){const ps=pR.clone().sub(pL),cs=g.stripRight.clone().sub(g.stripLeft);if(ps.lengthSq()>1e-10&&cs.lengthSq()>1e-10&&ps.dot(cs)<0){const retry=edgeFirstNominalSample(s,t,lift,{prevPoint:pL,prevNormal:nL,expected:g.nominalLeft},{prevPoint:pR,prevNormal:nR,expected:g.nominalRight});if(retry)Object.assign(g,retry)}}
+    base.push(g);pL=g.stripLeft.clone();pR=g.stripRight.clone();nL=g.leftNormal.clone();nR=g.rightNormal.clone();
   }
-  if(base.length<2)return base;
-
-  const refine=(x,y,depth)=>{
-    if(depth>=2||!edgeFirstSegmentNeedsRefine(x,y))return [x,y];
-    const mid=edgeFirstNominalSample(s,(x.t+y.t)*.5,lift);
-    if(!mid)return [x,y];
-    const l=refine(x,mid,depth+1),r=refine(mid,y,depth+1);
-    return l.slice(0,-1).concat(r);
-  };
-
-  const out=[];
-  for(let i=0;i<base.length-1;i++){
-    const part=refine(base[i],base[i+1],0);
-    if(i)part.shift();
-    out.push(...part);
-  }
-  return out;
+  const refine=(x,y,d)=>{if(d>=3||!edgeFirstSegmentNeedsRefine(x,y))return[x,y];const t=(x.t+y.t)*.5,g=edgeFirstNominalSample(s,t,lift,{prevPoint:x.stripLeft,prevNormal:x.leftNormal,expected:x.stripLeft.clone().lerp(y.stripLeft,.5)},{prevPoint:x.stripRight,prevNormal:x.rightNormal,expected:x.stripRight.clone().lerp(y.stripRight,.5)});if(!g)return[x,y];const l=refine(x,g,d+1),r=refine(g,y,d+1);return l.slice(0,-1).concat(r)};
+  const out=[];for(let i=0;i<base.length-1;i++){const part=refine(base[i],base[i+1],0);if(i)part.shift();out.push(...part)}return out;
 }
 function buildStripMethodRoute(s,samples,lift){
   if(!samples?.length)return [];
@@ -429,6 +413,11 @@ function buildStripMethodRoute(s,samples,lift){
     n.normalize();
     return {...g,stripLeft:finalLeft[i],stripRight:finalRight[i],normal:n};
   });
+
+  if(out.length>=3){
+    const blend=(i0,i1,node)=>{const g0=out[i0],g1=out[i1],mid=g1.stripLeft.clone().lerp(g1.stripRight,.5),center=visibleEndpoint(node,mid),n=nodeWorldNormal(node),lift2=Math.max(lift,surfaceOffsetMM*.001);let side=g0.stripRight.clone().sub(g0.stripLeft);if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();side.normalize();const hw=Math.max(.0003,s.widthMM*.0037*.5),target=center.clone().addScaledVector(n,lift2),L=target.clone().addScaledVector(side,-hw),R=target.clone().addScaledVector(side,hw);g0.stripLeft=L;g0.stripRight=R;g1.stripLeft=g1.stripLeft.clone().lerp(L,.22);g1.stripRight=g1.stripRight.clone().lerp(R,.22)};
+    blend(0,1,nodes.get(s.a));blend(out.length-1,out.length-2,nodes.get(s.b));
+  }
 
   // Debug trace is the exact data produced by this solve.
   s.debugTrace={
@@ -580,20 +569,12 @@ function closeStrapDebugMode(s=selected){
   document.getElementById('strapDebugPanel')?.classList.add('hidden');
   strapDebugBtn.classList.remove('active');
 }
+function strapRouteLooksPlausible(route){if(!route||route.length<2)return false;for(let i=1;i<route.length;i++){const a=route[i-1],b=route[i],sa=a.stripRight.clone().sub(a.stripLeft),sb=b.stripRight.clone().sub(b.stripLeft);if(a.stripLeft.distanceTo(b.stripLeft)>.34||a.stripRight.distanceTo(b.stripRight)>.34)return false;if(segmentCutsBody(a.stripLeft,b.stripLeft)||segmentCutsBody(a.stripRight,b.stripRight))return false;if(sa.lengthSq()>1e-10&&sb.lengthSq()>1e-10&&sa.dot(sb)<0)return false}return true}
 function rebuildAutoProjection(s){
-  if(!s)return;
-  s.autoProject=true;s.autoMethod='strip';s.previewMode=false;
-  const lift=waypointBaseLiftForStrap(s);
-  let samples=projectedChordSamplesStrip(s,{lift});
-  if(samples.length<2){updateStrapGeometry(s);return}
-  let route=buildStripMethodRoute(s,samples,lift);
-
-  const deleted=s.deletedStripTs||[];
-  if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
-
-  s.methodRoute=route;s.controls=[];s.surfaceLevel=0;
-  updateStrapGeometry(s);
-  updateStrapMethodDebug(s,route);
+  if(!s)return;s.autoProject=true;s.autoMethod='strip';s.previewMode=false;const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
+  let samples=projectedChordSamplesStrip(s,{lift});if(samples.length<2){updateStrapGeometry(s);return}let route=buildStripMethodRoute(s,samples,lift);
+  if(!strapRouteLooksPlausible(route)){samples=projectedChordSamplesStrip(s,{lift});route=buildStripMethodRoute(s,samples,lift)}
+  const deleted=s.deletedStripTs||[];if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));s.methodRoute=route;s.controls=[];s.surfaceLevel=0;updateStrapGeometry(s);updateStrapMethodDebug(s,route);
 }
 function projectChordPointToBody(s,t,lift=0){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);

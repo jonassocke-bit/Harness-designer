@@ -125,6 +125,7 @@ function updateDirectStripGeometry(s){
   s.geometry.computeBoundingSphere();
   return true;
 }
+function reconcileMirrorStrapPair(s){const ps=pairOfStrap(s);if(!ps)return;const master=pairMasterStrap(s),mate=master===s?ps:s;mate.widthMM=master.widthMM;mate.slack=master.slack;mate.autoMethod=master.autoMethod;mate.autoProject=master.autoProject;mirrorStrapMeshFromMaster(master,mate)}
 function updateStrapGeometry(s,{skipPairMirror=false}={}){
   if(!skipPairMirror){
     const ps=pairOfStrap(s);
@@ -140,7 +141,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
 
   if(!s.previewMode&&s.autoMethod==='strip'&&s.methodRoute?.length){
-    if(updateDirectStripGeometry(s)){updateStrapMethodDebug(s,s.methodRoute);return}
+    if(updateDirectStripGeometry(s)){updateStrapMethodDebug(s,s.methodRoute);if(!skipPairMirror)reconcileMirrorStrapPair(s);return}
   }
 
   const surfaceMode=(s.surfaceLevel||0)>0;

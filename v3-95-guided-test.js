@@ -1,25 +1,25 @@
 // ============================================================================
-// V3.3.0 STRAP GEOMETRY
+// V3.3.1 STRAP STABILIZATION
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.3.0 STRAP GEOMETRY',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.3.1 STRAP STABILIZATION',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.0 · Strap Geometry stehen. App, Ringe und Flächen müssen normal laden.',golden:'pass'},
-    straight:{title:'2 · Gerader Riemen',instruction:'Verbinde zwei Ringe an einer relativ flachen Körperstelle. Der Riemen soll ohne Schlangenlinie möglichst direkt und ruhig zwischen den Ringen verlaufen. Screenshot falls er trotz einfacher Geometrie sichtbar knickt.',golden:'known'},
-    chest:{title:'3 · Brust / Schulter',instruction:'Lege einen Riemen über Brust oder Schulter. Prüfe ihn aus mehreren Winkeln. Leichte natürliche Verdrehung ist okay; spontane 90°-Kippung, S-Schlangen oder sichtbares Körper-Clipping sind Fehler.',golden:'known'},
-    edges:{title:'4 · Beide Außenkanten liegen auf',instruction:'Nimm einen breiten Riemen an komplexer Geometrie. Prüfe links und rechts getrennt: beide Außenkanten sollen der Körperoberfläche folgen. Keine Seite darf deutlich in den Körper schneiden, während die andere korrekt liegt.',golden:'known'},
-    endpoints:{title:'5 · Ring-Endpunkte',instruction:'Prüfe beide Riemenenden. Sie sollen am sichtbaren Ringrand enden und weder deutlich darüber hinauslaufen noch vor dem Ring abbrechen.',golden:'known'},
-    twist:{title:'6 · Natürliche Verdrehung',instruction:'Erzeuge einen Verlauf, bei dem sich die Körperoberfläche räumlich dreht. Der Riemen darf sich kontinuierlich mitdrehen. Es darf aber keinen sprunghaften 90°/180°-Flip zwischen zwei Segmenten geben.',golden:'known'},
-    debugOpen:{title:'7 · Riemen Debug öffnen',instruction:'Riemen auswählen → Debug. Das Mannequin muss halbtransparent werden. Du sollst durch die vordere Körperfläche in die Debuggeometrie schauen können, ohne dass die Rückseite als zweite transparente Körperhaut stört.',golden:'known'},
-    debugSteps:{title:'8 · Debug Schritte',instruction:'Gehe alle 7 Schritte durch: direkte Verbindung, nominelle Außenkanten, Abstände, projizierte Punkte, rohe Außenkanten, finale Außenkanten, Triangulation. Jeder Schritt muss sichtbar etwas anderes zeigen und exakt zum ausgewählten Riemen gehören.',golden:'known'},
-    debugAll:{title:'9 · Debug Alles',instruction:'Aktiviere „Alles“. Mehrere Debug-Ebenen sollen gleichzeitig sichtbar sein. Drehe das Modell und prüfe besonders problematische Stellen. Schließe Debug danach: Mannequin und Riemen müssen sofort wieder normal dargestellt werden.',golden:'known'},
-    triangle:{title:'10 · Triangulation',instruction:'Im Triangulationsschritt Drahtgitter ansehen. Es dürfen keine langen zufälligen Dreiecke quer über mehrere Segmente entstehen. Jede Zelle zwischen linker/rechter Kante soll lokal in zwei Dreiecke zerlegt sein.',golden:'known'},
-    performance:{title:'11 · Reaktionszeit',instruction:'Mehrere Riemen erzeugen sowie Ring bewegen/merge/entmerge. Bitte notieren, wie lange die endgültige Riemenberechnung nach Loslassen ungefähr dauert. Wichtig: UI darf während normalem Drag nicht dauerhaft einfrieren.',golden:'known'},
-    mirror:{title:'12 · Spiegelriemen',instruction:'Erzeuge einen gespiegelten Riemen. Master und Spiegelpartner müssen geometrisch symmetrisch bleiben. Debug brauchst du nur auf einer Seite; der normale sichtbare Spiegelriemen darf dadurch nicht beschädigt werden.',golden:'pass'},
-    tester:{title:'13 · Tester QoL',instruction:'Schreibe Kommentar + mache mindestens 3 Screenshots. Drei Vorschaubilder sollen nebeneinander passen. Debugtester schließen/öffnen → dieselbe Frage. Von Frage 1 führt Zurück zur letzten und von der letzten Weiter zu Frage 1.',golden:'known'}
+    build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.1 · Strap Stabilization stehen.',golden:'pass'},
+    width:{title:'2 · Live-Breite',instruction:'Breite langsam ändern: sofort sichtbare Skalierung; nach Loslassen sauberer finaler Solve.',golden:'known'},
+    mirrorWidth:{title:'3 · Spiegelriemen-Breite',instruction:'Breite einer Seite ändern: Partner muss sofort identisch skalieren und symmetrisch bleiben.',golden:'known'},
+    gap:{title:'4 · Körperabstand',instruction:'Riemen und Ringanschluss aus flachem Winkel prüfen: gleicher visueller Abstand, kein deutliches Schweben.',golden:'known'},
+    head:{title:'5 · Kopf-/Torso-Stresstest',instruction:'Direkte Verbindung bewusst durch Kopf/Torso legen. Außenkanten müssen kontinuierlich auf derselben Körperseite laufen; kein Sprung quer durch Volumen.',golden:'known'},
+    chest:{title:'6 · Brust / Schulter',instruction:'Mehrere schwierige Riemen: natürliche Verdrehung okay, keine Schlangen/90°-Flips/komplett falschen 5–10%-Pfade.',golden:'known'},
+    endpoints:{title:'7 · Ring-Enden',instruction:'Letzte Segmente sollen weich in Ringanschluss übergehen und nicht sichtbar abknicken.',golden:'known'},
+    mirrorAttach:{title:'8 · Mirror-Reconcile',instruction:'Spiegelriemen/Ringe mehrfach bewegen. Kein Ring darf sich temporär sichtbar vom Riemen lösen.',golden:'known'},
+    perf:{title:'9 · Merge / Entmerge Performance',instruction:'Mit mehreren Riemen mergen/entmergen; Dauer grob notieren: sofort, <1s, 1–3s, >3s.',golden:'known'},
+    debug:{title:'10 · Debug Surface-Walker',instruction:'Schritte 2–6 prüfen: Projektionslinien sollen fortlaufend dieselbe Körperseite wählen. Screenshot bei falschem Seitenwechsel.',golden:'known'},
+    triangles:{title:'11 · Triangulation',instruction:'Nur lokale Dreiecke zwischen benachbarten Außenkantenpunkten.',golden:'pass'},
+    shots:{title:'12 · Screenshot-Reihe / Scroll',instruction:'Mindestens 4 Screenshots: eine horizontale Reihe, horizontal scrollbar. Gesamtes Testmenü vertikal scrollbar und im Viewport.',golden:'known'},
+    final:{title:'13 · Abschlussseite',instruction:'Diese Frage beantworten: danach muss automatisch Abschluss/Export erscheinen. Nur manuelle Navigation darf loopen.',golden:'known'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -221,6 +221,8 @@
       const id=QUEUE[index];
       run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};
       save();
+      const allAnswered=QUEUE.every(q=>!!run.results[q]?.status);
+      if(index===QUEUE.length-1&&allAnswered){showSummary();return}
       index=(index+1)%QUEUE.length;saveIndex();
       render();
     }

@@ -1,6 +1,16 @@
 # Patchnotes
 
+## V3.3.1 – Strap Stabilization
+- Surface-Walker bewertet jeden neuen Außenkantenpunkt gegen vorherigen Punkt, Normale und erwarteten Fortschritt.
+- Segmente durch das Mannequin werden stark bestraft; bei Sprüngen wird die gegenüberliegende Trefferfamilie geprüft.
+- Links/rechts dürfen ihre Orientierung nicht spontan vertauschen; problematische Segmente werden lokal weiter unterteilt.
+- Live-Breite skaliert sofort; finaler Edge-first Solve erfolgt beim Loslassen.
+- Spiegelriemen übernehmen Breite gekoppelt vom Master und werden nach Rebuild zentral reconciled.
+- Riemen-Lift nutzt mindestens den globalen Harness-Abstand; Endsegmente werden zum Ringanschluss geblendet.
+- Guided Test: Abschlussseite nach letzter beantworteter Frage, horizontale Screenshot-Reihe, vertikal scrollbares Menü.
+
 ## V3.3.0 – Strap Geometry
+
 
 ### Neuer Edge-first Solver
 - Die Mittellinie ist nicht mehr die geometrische Wahrheit des Riemens.
