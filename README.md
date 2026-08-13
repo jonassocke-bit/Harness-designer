@@ -1,21 +1,16 @@
-# V1.9m PANEL SOLIDIFY
+# V1.9n SURFACE LAB
 
-Built directly from the user-confirmed starting V1.9k3.
+Built directly from user-confirmed V1.9k3.
 
-Only `buildPanelGeometry()` is changed.
+- Panels are back to the minimal fast body-triangle extraction.
+- Final auto straps are an experimental body-mesh extraction inside the
+  current Strip left/right footprint.
+- During ring dragging the old geometry is retained as the cheap preview.
+- Straps have priority over panels.
+- Older existing panels have priority over newer panels, so neighboring
+  surfaces do not simply render on top of each other.
+- The mannequin color diagnostic remains.
 
-Panel generation:
-- same mannequin triangle extraction
-- same exact boundary clipping
-- canonical indexed top surface
-- 0.8 mm closed thickness
-- reversed bottom surface
-- automatic side walls on every true topological boundary edge
-- no extra raycasts
-- no denser body sampling
-
-The mannequin color diagnostic from V1.9k3 remains available.
-
-Purpose:
-Test whether the remaining angle-dependent body-colored cracks disappear when
-the panel is rendered as a real closed solid instead of a single thin surface.
+The internal priority boundary is deliberately triangle-level in this lab
+build. The goal is to test the common surface approach and speed before an
+exact secondary boundary-cut pass.
