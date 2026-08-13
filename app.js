@@ -4584,12 +4584,12 @@ try{
 
 
 // ============================================================================
-// V3.0.0e TEST REPORT
+// V3.0.0f CAPTURE FIX
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.0.0e TEST REPORT',base:'V1.9f2 GOLDEN'};
+  const RELEASE={build:'V3.0.0f CAPTURE FIX',base:'V1.9f2 GOLDEN'};
 
   const TESTS={
     startup:{title:'App starten',instruction:'Mannequin und bekannte UI müssen vollständig sichtbar sein.',golden:'pass'},
@@ -4675,11 +4675,56 @@ try{
   const dataUrl=blob=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob)});
 
   async function capture(id){
-    const canvas=document.querySelector('canvas');if(!canvas)throw new Error('Kein Canvas');
+    const canvas=document.querySelector('canvas');
+    if(!canvas)throw new Error('Kein Canvas');
+
+    // Force a real WebGL render immediately before capture.
+    // We intentionally allow a short pause here for reliability.
+    try{
+      if(typeof renderer!=='undefined' && typeof scene!=='undefined' && typeof camera!=='undefined'){
+        renderer.render(scene,camera);
+      }else if(window.HD?.App?.renderer && window.HD?.App?.scene && window.HD?.App?.camera){
+        window.HD.App.renderer.render(window.HD.App.scene,window.HD.App.camera);
+      }
+    }catch(e){}
+
+    // Give Safari/WebGL time to present the freshly rendered frame.
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    await new Promise(r=>setTimeout(r,120));
+
+    // Render once more directly before reading the canvas.
+    try{
+      if(typeof renderer!=='undefined' && typeof scene!=='undefined' && typeof camera!=='undefined'){
+        renderer.render(scene,camera);
+      }else if(window.HD?.App?.renderer && window.HD?.App?.scene && window.HD?.App?.camera){
+        window.HD.App.renderer.render(window.HD.App.scene,window.HD.App.camera);
+      }
+    }catch(e){}
+
     const blob=await new Promise((resolve,reject)=>{
-      try{canvas.toBlob(b=>b?resolve(b):reject(new Error('Screenshot leer')),'image/jpeg',.88)}
-      catch(e){reject(e)}
+      try{
+        canvas.toBlob(
+          b=>b&&b.size>1000?resolve(b):reject(new Error('Screenshot leer oder zu klein')),
+          'image/jpeg',
+          .9
+        );
+      }catch(e){reject(e)}
     });
+
+    // Detect an all-black capture cheaply before saving.
+    try{
+      const probe=document.createElement('canvas');
+      probe.width=32;probe.height=32;
+      const ctx=probe.getContext('2d',{willReadFrequently:true});
+      ctx.drawImage(canvas,0,0,32,32);
+      const d=ctx.getImageData(0,0,32,32).data;
+      let sum=0;
+      for(let i=0;i<d.length;i+=4)sum+=d[i]+d[i+1]+d[i+2];
+      if(sum<32*32*3*2)throw new Error('Screenshot ist schwarz');
+    }catch(e){
+      if(String(e?.message||e).includes('schwarz'))throw e;
+    }
+
     await putShot(id,blob);
     return blob;
   }

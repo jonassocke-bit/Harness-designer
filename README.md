@@ -31,3 +31,13 @@ Adds:
 
 For this calibration build, Impact/Full intentionally run the Golden baseline suite once.
 Future modularization builds will declare only their changed modules and show a much shorter list.
+
+
+## V3.0.0f CAPTURE FIX
+- Screenshot capture renders the current WebGL frame explicitly before reading it.
+- Short deliberate capture delay added for Safari/WebGL reliability.
+- Second render immediately before canvas readback.
+- Black-frame detection added; a black capture now reports an error instead of silently saving.
+- Existing screenshot preview / delete / retake / HTML report export retained.
+- Visible build/patchnote version updated.
+- Harness design logic unchanged.
