@@ -1,5 +1,15 @@
 # Patchnotes
 
+## V3.3.2b – Duplicate Function Fix
+- Konkreter Runtime-Fehler gefunden: `projectedChordSamplesStrip()` war zweimal vorhanden.
+- Die spätere alte V3.3.1-Surface-Walker-Version überschieb die neue Projection-Continuity-Version.
+- Diese alte Funktion rief `edgeFirstNominalSample()` auf, die in V3.3.2 absichtlich entfernt wurde.
+- Folge: Riemen-Rebuild brach direkt nach der billigen Direktvorschau ab; `methodRoute` und `debugTrace` wurden nie erzeugt.
+- Alte Doppeldefinition vollständig entfernt.
+- Es existiert jetzt genau eine `projectedChordSamplesStrip()`-Definition.
+- Keine Referenz auf `edgeFirstNominalSample()` mehr.
+- Projection-Continuity-Logik selbst unverändert.
+
 ## V3.3.2a – Projection Hotfix
 - Reiner Runtime-Hotfix auf V3.3.2.
 - Die Glättungsstufe verwendete weiterhin `projectEdgeCandidateToBody()`, die beim Umbau auf Projection Continuity versehentlich entfernt worden war.

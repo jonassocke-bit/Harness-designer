@@ -271,17 +271,7 @@ function edgeFirstSegmentNeedsRefine(a,b){
   const mr=a.stripRight.clone().lerp(b.stripRight,.5);
   return bodyOccludesWorldPoint(ml,.008)||bodyOccludesWorldPoint(mr,.008);
 }
-function projectedChordSamplesStrip(s,{lift=0}={}){
-  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
-  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.030),7,72),base=[];let pL=null,pR=null,nL=null,nR=null;
-  for(let i=0;i<=segments;i++){
-    const t=i/segments,expected=A.clone().lerp(B,t),g=edgeFirstNominalSample(s,t,lift,pL?{prevPoint:pL,prevNormal:nL,expected}:null,pR?{prevPoint:pR,prevNormal:nR,expected}:null);if(!g)continue;
-    if(pL&&pR){const ps=pR.clone().sub(pL),cs=g.stripRight.clone().sub(g.stripLeft);if(ps.lengthSq()>1e-10&&cs.lengthSq()>1e-10&&ps.dot(cs)<0){const retry=edgeFirstNominalSample(s,t,lift,{prevPoint:pL,prevNormal:nL,expected:g.nominalLeft},{prevPoint:pR,prevNormal:nR,expected:g.nominalRight});if(retry)Object.assign(g,retry)}}
-    base.push(g);pL=g.stripLeft.clone();pR=g.stripRight.clone();nL=g.leftNormal.clone();nR=g.rightNormal.clone();
-  }
-  const refine=(x,y,d)=>{if(d>=3||!edgeFirstSegmentNeedsRefine(x,y))return[x,y];const t=(x.t+y.t)*.5,g=edgeFirstNominalSample(s,t,lift,{prevPoint:x.stripLeft,prevNormal:x.leftNormal,expected:x.stripLeft.clone().lerp(y.stripLeft,.5)},{prevPoint:x.stripRight,prevNormal:x.rightNormal,expected:x.stripRight.clone().lerp(y.stripRight,.5)});if(!g)return[x,y];const l=refine(x,g,d+1),r=refine(g,y,d+1);return l.slice(0,-1).concat(r)};
-  const out=[];for(let i=0;i<base.length-1;i++){const part=refine(base[i],base[i+1],0);if(i)part.shift();out.push(...part)}return out;
-}
+
 function buildStripMethodRoute(s,samples,lift){
   if(!samples?.length)return [];
   const rawLeft=samples.map(g=>g.stripLeft.clone());
