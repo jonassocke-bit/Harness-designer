@@ -61,3 +61,7 @@ Edge-first strap solver + visual step debugger. V3.2.2 topology remains the refe
 
 ## V3.3.1
 Continuity-aware Surface-Walker, live/mirrored width, endpoint blending, tester final-page fix.
+
+
+## V3.3.2
+Locked L/R frame plus projection-direction continuity; recursive surface walker removed.

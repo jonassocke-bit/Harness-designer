@@ -1,25 +1,25 @@
 // ============================================================================
-// V3.3.1 STRAP STABILIZATION
+// V3.3.2 PROJECTION CONTINUITY
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.3.1 STRAP STABILIZATION',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.3.2 PROJECTION CONTINUITY',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.1 · Strap Stabilization stehen.',golden:'pass'},
-    width:{title:'2 · Live-Breite',instruction:'Breite langsam ändern: sofort sichtbare Skalierung; nach Loslassen sauberer finaler Solve.',golden:'known'},
-    mirrorWidth:{title:'3 · Spiegelriemen-Breite',instruction:'Breite einer Seite ändern: Partner muss sofort identisch skalieren und symmetrisch bleiben.',golden:'known'},
-    gap:{title:'4 · Körperabstand',instruction:'Riemen und Ringanschluss aus flachem Winkel prüfen: gleicher visueller Abstand, kein deutliches Schweben.',golden:'known'},
-    head:{title:'5 · Kopf-/Torso-Stresstest',instruction:'Direkte Verbindung bewusst durch Kopf/Torso legen. Außenkanten müssen kontinuierlich auf derselben Körperseite laufen; kein Sprung quer durch Volumen.',golden:'known'},
-    chest:{title:'6 · Brust / Schulter',instruction:'Mehrere schwierige Riemen: natürliche Verdrehung okay, keine Schlangen/90°-Flips/komplett falschen 5–10%-Pfade.',golden:'known'},
-    endpoints:{title:'7 · Ring-Enden',instruction:'Letzte Segmente sollen weich in Ringanschluss übergehen und nicht sichtbar abknicken.',golden:'known'},
-    mirrorAttach:{title:'8 · Mirror-Reconcile',instruction:'Spiegelriemen/Ringe mehrfach bewegen. Kein Ring darf sich temporär sichtbar vom Riemen lösen.',golden:'known'},
-    perf:{title:'9 · Merge / Entmerge Performance',instruction:'Mit mehreren Riemen mergen/entmergen; Dauer grob notieren: sofort, <1s, 1–3s, >3s.',golden:'known'},
-    debug:{title:'10 · Debug Surface-Walker',instruction:'Schritte 2–6 prüfen: Projektionslinien sollen fortlaufend dieselbe Körperseite wählen. Screenshot bei falschem Seitenwechsel.',golden:'known'},
-    triangles:{title:'11 · Triangulation',instruction:'Nur lokale Dreiecke zwischen benachbarten Außenkantenpunkten.',golden:'pass'},
-    shots:{title:'12 · Screenshot-Reihe / Scroll',instruction:'Mindestens 4 Screenshots: eine horizontale Reihe, horizontal scrollbar. Gesamtes Testmenü vertikal scrollbar und im Viewport.',golden:'known'},
-    final:{title:'13 · Abschlussseite',instruction:'Diese Frage beantworten: danach muss automatisch Abschluss/Export erscheinen. Nur manuelle Navigation darf loopen.',golden:'known'}
+    build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.2 · Projection Continuity stehen.',golden:'pass'},
+    simple:{title:'2 · Einfacher Riemen',instruction:'Mehrere einfache Riemen setzen. Verlauf und Live-Breite mindestens so stabil wie V3.3.1.',golden:'pass'},
+    lr:{title:'3 · L/R Frame Lock',instruction:'Debug Schritt 2: linke und rechte nominelle Außenkante dürfen niemals die Seite tauschen oder sich kreuzen. Kopf/Schulter stressen.',golden:'known'},
+    proj:{title:'4 · Projektionsrichtungen',instruction:'Debug Schritt 3: Vektoren sollen sich nur langsam drehen. Gelb >25°, Rot >60°. Einzelne rote Sprünge mitten in gleichgerichteten Vektoren bitte screenshotten.',golden:'known'},
+    head:{title:'5 · Kopf-Stresstest',instruction:'Bisherigen Kopfproblemfall wiederholen. Keine L/R-Seitenvertauschung und kein Surface-Sprung quer durch den Kopf.',golden:'known'},
+    torso:{title:'6 · Torso-Stresstest',instruction:'Direkte Verbindung absichtlich durch Torso führen. Projektionsrichtungen müssen eine zusammenhängende Körperseite wählen.',golden:'known'},
+    chest:{title:'7 · Brust / Schulter',instruction:'Praxisnahe Riemen: natürliche Verdrehung okay; keine Schlangenlinien, 90°-Flips oder Zufallsausreißer.',golden:'known'},
+    ends:{title:'8 · Ring-Enden / Abstand',instruction:'Letzten Knick und Schweben mit V3.3.1 vergleichen.',golden:'known'},
+    mirror:{title:'9 · Mirror + Breite',instruction:'Spiegelbreite und Bewegung prüfen. Keine temporär abgelösten Ringe.',golden:'known'},
+    mid:{title:'10 · Mittiger Spiegelring',instruction:'Mittigen Spiegelring aus Achse ziehen. Bekannten Paarstatus-Bug nur beobachten und kommentieren.',golden:'known'},
+    perf:{title:'11 · Performance',instruction:'Kopf-Stress + Merge/Entmerge. Zeiten notieren. Ohne rekursiven Walker darf der Problemfall nicht extrem hängen.',golden:'known'},
+    debug:{title:'12 · Debug Lesbarkeit',instruction:'Prüfen, ob Frame Lock und farbige Projektionsrichtungen die Fehlerstufe klar zeigen.',golden:'known'},
+    finalPage:{title:'13 · Abschlussseite',instruction:'Nach Beantwortung muss die Abschluss-/Exportseite erscheinen.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

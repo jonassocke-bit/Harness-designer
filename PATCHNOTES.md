@@ -1,6 +1,18 @@
 # Patchnotes
 
+## V3.3.2 – Projection Continuity
+- Surface-Walker aus V3.3.1 entfernt; keine rekursive Pfadsuche mehr.
+- L/R-Außenkanten besitzen eine feste Identität und dürfen nicht mehr die Seiten tauschen.
+- Die nominelle Seitenrichtung darf sich kontinuierlich drehen; abrupte Frame-Flips werden verhindert.
+- Surface-Hits werden primär nach Kontinuität des Projektionsvektors bewertet, Distanz ist nur sekundär.
+- Referenz ist der gleitende Mittelwert der letzten bis zu vier Projektionsvektoren.
+- Debug Schritt 2 zeigt den L/R Frame Lock.
+- Debug Schritt 3 zeigt Winkelabweichungen: normal, >25° gelb, >60° rot; stark abweichende verworfene Kandidaten schwach rot.
+- Kein rekursiver Retry im Problemfall; der Kopf-Stresstest sollte dadurch erheblich günstiger werden.
+- Live-/Mirror-Breite, Triangulation, Screenshot-Reihe und Abschlussseite bleiben unverändert.
+
 ## V3.3.1 – Strap Stabilization
+
 - Surface-Walker bewertet jeden neuen Außenkantenpunkt gegen vorherigen Punkt, Normale und erwarteten Fortschritt.
 - Segmente durch das Mannequin werden stark bestraft; bei Sprüngen wird die gegenüberliegende Trefferfamilie geprüft.
 - Links/rechts dürfen ihre Orientierung nicht spontan vertauschen; problematische Segmente werden lokal weiter unterteilt.

@@ -1,6 +1,6 @@
 'use strict';
 window.HDV3=window.HDV3||{};
-window.HDV3.build='V3.3.1 STRAP STABILIZATION';
+window.HDV3.build='V3.3.2 PROJECTION CONTINUITY';
 window.HDV3.goldenBase='V1.9f2';
 window.HDV3.architecture={
   modes:{build:{status:'active'},accessories:{status:'reserved'},photo:{status:'reserved'}},
