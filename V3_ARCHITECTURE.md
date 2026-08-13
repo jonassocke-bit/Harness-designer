@@ -38,3 +38,20 @@ Solvers return data only. Renderers render data only.
 Body access occurs only through BodySurface after migration.
 Nodes never calculate straps/panels directly; the scheduler invalidates dependents.
 Legacy solvers are never overwritten by experimental solvers.
+
+
+## Regression harness contract
+
+Every patch declares `changedModules`.
+
+The test harness derives its manual Impact tests from an explicit dependency map.
+
+Test levels:
+- Smoke: 1–3 fast checks after nearly every patch.
+- Impact: only workflows that may be affected by the changed modules.
+- Full: milestone regression.
+
+Golden known issues are recorded separately from regressions.
+A failure is marked as a regression only if the Golden baseline expected that workflow to pass.
+
+Automatic state/invariant checks should replace manual testing wherever possible.

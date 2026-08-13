@@ -237,3 +237,48 @@ padding:6px 8px;background:#222d;color:#fff;font:600 10px system-ui}
 #v3DiagPanel{position:fixed;z-index:10000;left:8px;right:8px;top:8px;max-height:65vh;overflow:auto;
 padding:12px;border-radius:12px;background:#111f;color:#fff;font:11px/1.45 ui-monospace,SFMono-Regular,monospace;
 white-space:pre-wrap;display:none}
+
+/* --- V3 Regression Harness --- */
+#v3TestBtn{
+  position:fixed;right:8px;bottom:62px;z-index:10001;
+  border:0;border-radius:10px;padding:7px 9px;
+  background:#0a6f83;color:#fff;font:700 10px/1 system-ui,-apple-system,sans-serif;
+}
+#v3TestPanel{
+  position:fixed;z-index:10002;left:10px;right:10px;top:max(10px,env(safe-area-inset-top));
+  max-height:78vh;overflow:auto;padding:14px;border-radius:16px;
+  background:#111ee;color:#fff;backdrop-filter:blur(18px);
+  box-shadow:0 12px 40px #0009;font:12px/1.45 system-ui,-apple-system,sans-serif;
+  display:none;
+}
+#v3TestPanel h3{margin:0 0 7px;font-size:16px}
+#v3TestPanel .meta{opacity:.65;font-size:11px;margin-bottom:10px}
+#v3TestPanel .tabs{display:flex;gap:6px;margin:8px 0 12px}
+#v3TestPanel .tabs button{flex:1}
+#v3TestPanel button{
+  border:0;border-radius:10px;padding:9px 10px;background:#292d34;color:#fff;font:inherit
+}
+#v3TestPanel button.active{background:#00bddf;color:#051014}
+#v3TestTask{
+  padding:12px;border:1px solid #ffffff22;border-radius:12px;background:#ffffff08
+}
+#v3TestTask .counter{font:700 10px ui-monospace,monospace;opacity:.6}
+#v3TestTask .title{font-weight:800;font-size:15px;margin:4px 0}
+#v3TestTask .instruction{opacity:.8;margin:6px 0 12px}
+#v3TestTask .known{
+  padding:7px 9px;border-radius:9px;background:#6b4d001f;border:1px solid #f4be3b55;
+  color:#ffd978;margin:8px 0;font-size:11px
+}
+#v3TestTask .actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+#v3TestTask textarea{
+  width:100%;min-height:64px;margin-top:8px;padding:8px;border:1px solid #ffffff22;border-radius:9px;
+  background:#0b0d11;color:#fff;font:inherit;resize:vertical
+}
+#v3AutoChecks{
+  margin:10px 0;padding:10px;border-radius:11px;background:#ffffff08
+}
+#v3AutoChecks .pass{color:#78e3a4}
+#v3AutoChecks .fail{color:#ff8d8d}
+#v3AutoChecks .skip{color:#b8bac0}
+#v3TestSummary{white-space:pre-wrap;font:11px/1.5 ui-monospace,SFMono-Regular,monospace}
+#v3TestClose{float:right;padding:5px 8px!important}

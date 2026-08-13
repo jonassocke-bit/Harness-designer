@@ -15,3 +15,19 @@ Edge fix:
 - new edge vertices remain reconstructed from the original mannequin triangle.
 
 No dense panel raycast pass was added.
+
+
+# V3.0.0a REGRESSION HARNESS
+
+No design logic changes.
+
+Adds:
+- guided Smoke / Impact / Full regression testing
+- Golden known-issue classification
+- automatic invariant checks
+- per-build saved manual results
+- explicit module → affected workflow impact matrix
+- future build API: `HDV3Regression.setChangedModules([...])`
+
+For this calibration build, Impact/Full intentionally run the Golden baseline suite once.
+Future modularization builds will declare only their changed modules and show a much shorter list.
