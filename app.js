@@ -707,7 +707,6 @@ function mirrorStrapMeshFromMaster(master,slave){
     else if(n.source==='crossing'&&n.crossing&&(n.crossing.strapAId===slave.id||n.crossing.strapBId===slave.id))syncNodeTransform(n);
   }
   updateControlHandles(slave);
-  mirrorMeshStrapSurface(master,slave);
 }
 function enforcePairMasterVisuals(){
   const doneN=new Set();
@@ -1468,165 +1467,79 @@ function clippedPanelPieces(panel,extracted){
   return pieces;
 }
 
-function surfaceBasisFromBoundary(boundary,normalHint=null){
-  const origin=boundary.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/Math.max(1,boundary.length));
-  let normal=normalHint?.clone?.()||new THREE.Vector3(0,0,1);
-  if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();
-  let u=boundary.length>1?boundary[Math.floor(boundary.length/2)].clone().sub(boundary[0]):new THREE.Vector3(1,0,0);
-  u.addScaledVector(normal,-u.dot(normal));
-  if(u.lengthSq()<1e-8)u=new THREE.Vector3(1,0,0).addScaledVector(normal,-normal.x);
-  u.normalize();
-  const v=new THREE.Vector3().crossVectors(normal,u).normalize();
-  return {origin,normal,u,v};
-}
-function surfacePoint2D(world,basis){
-  const d=world.clone().sub(basis.origin);
-  return new THREE.Vector2(d.dot(basis.u),d.dot(basis.v));
-}
-function interpolateSurfaceTriPoint(tri,p2,basis){
-  const a2=surfacePoint2D(tri.p[0],basis),b2=surfacePoint2D(tri.p[1],basis),c2=surfacePoint2D(tri.p[2],basis);
-  const bc=barycentric2D(p2,a2,b2,c2);
-  const q=tri.p[0].clone().multiplyScalar(bc.u).addScaledVector(tri.p[1],bc.v).addScaledVector(tri.p[2],bc.w);
-  let n=tri.n[0].clone().multiplyScalar(bc.u).addScaledVector(tri.n[1],bc.v).addScaledVector(tri.n[2],bc.w);
-  if(n.lengthSq()<1e-10)n=tri.n[0].clone();n.normalize();
-  return {q,n};
-}
-function extractSurfacePatch(boundary,normalHint,lift,rejectCentroid=null){
-  if(!boundary||boundary.length<3)return new THREE.BufferGeometry();
-  const basis=surfaceBasisFromBoundary(boundary,normalHint);
-  const contour=boundary.map(p=>surfacePoint2D(p,basis));
-  const boundaryTris=THREE.ShapeUtils.triangulateShape(contour,[]);
-  if(!boundaryTris.length)return new THREE.BufferGeometry();
+function dumpsterPointUnderStrap(point,s){
+  const route=s?.methodRoute;
+  if(!route?.length)return false;
+  const halfW=Math.max(.002,s.widthMM*.0037*.52);
 
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  for(const p of contour){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}
-  let depth=0;
-  for(const p of boundary)depth=Math.max(depth,Math.abs(p.clone().sub(basis.origin).dot(basis.normal)));
-  const slab=Math.max(.10,depth+.24);
-
-  const va=new THREE.Vector3(),vb=new THREE.Vector3(),vc=new THREE.Vector3();
-  const na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
-  const positions=[],normals=[];
-
-  for(const mesh of bodyMeshes){
-    if(!mesh?.geometry?.attributes?.position)continue;
-    mesh.updateMatrixWorld(true);
-    const g=mesh.geometry,idx=g.index?.array||null;
-    const triCount=idx?Math.floor(idx.length/3):Math.floor(g.attributes.position.count/3);
-
-    for(let ti=0;ti<triCount;ti++){
-      const ia=idx?idx[ti*3]:ti*3,ib=idx?idx[ti*3+1]:ti*3+1,ic=idx?idx[ti*3+2]:ti*3+2;
-      bodyVertexWorld(mesh,ia,va);bodyVertexWorld(mesh,ib,vb);bodyVertexWorld(mesh,ic,vc);
-      const centroid=va.clone().add(vb).add(vc).multiplyScalar(1/3);
-      if(Math.abs(centroid.clone().sub(basis.origin).dot(basis.normal))>slab)continue;
-      if(rejectCentroid&&rejectCentroid(centroid))continue;
-
-      const subject=[surfacePoint2D(va,basis),surfacePoint2D(vb,basis),surfacePoint2D(vc,basis)];
-      let ax=Infinity,ay=Infinity,bx=-Infinity,by=-Infinity;
-      for(const p of subject){ax=Math.min(ax,p.x);ay=Math.min(ay,p.y);bx=Math.max(bx,p.x);by=Math.max(by,p.y)}
-      if(bx<minX||ax>maxX||by<minY||ay>maxY)continue;
-
-      bodyVertexNormalWorld(mesh,ia,na);bodyVertexNormalWorld(mesh,ib,nb);bodyVertexNormalWorld(mesh,ic,nc);
-      const tri={p:[va.clone(),vb.clone(),vc.clone()],n:[na.clone(),nb.clone(),nc.clone()]};
-
-      for(const bt of boundaryTris){
-        const clipTri=bt.map(i=>contour[i]);
-        const clipped=clipTriangleToTriangle(subject,clipTri);
-        if(clipped.length<3)continue;
-        for(let i=1;i<clipped.length-1;i++){
-          for(const p2 of [clipped[0],clipped[i],clipped[i+1]]){
-            const v=interpolateSurfaceTriPoint(tri,p2,basis),q=v.q.clone().addScaledVector(v.n,lift);
-            positions.push(q.x,q.y,q.z);normals.push(v.n.x,v.n.y,v.n.z);
-          }
-        }
-      }
-    }
-  }
-
-  const out=new THREE.BufferGeometry();
-  out.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  out.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
-  if(positions.length)out.computeBoundingSphere();
-  out.userData={surfacePatch:true,triangles:positions.length/9};
-  return out;
-}
-function strapRouteBoundary(s){
-  const route=s?.methodRoute;if(!route?.length)return null;
-  const left=[],right=[],normal=new THREE.Vector3();
-  for(const g of route){
-    if(!g.stripLeft||!g.stripRight)continue;
-    left.push(g.stripLeft.clone());right.push(g.stripRight.clone());if(g.normal)normal.add(g.normal);
-  }
-  if(left.length<2||right.length<2)return null;
-  if(normal.lengthSq()<1e-8)normal.copy(strapFrame(s).normal);normal.normalize();
-  return {boundary:left.concat(right.reverse()),normal};
-}
-function buildMeshStrapGeometry(s){
-  const d=strapRouteBoundary(s);if(!d)return new THREE.BufferGeometry();
-  return extractSurfacePatch(d.boundary,d.normal,surfaceOffsetScene()+.0012,null);
-}
-function applyMeshStrapSurface(s){
-  if(!s?.surfaceMesh)return false;
-  const g=buildMeshStrapGeometry(s);
-  if(!g.attributes?.position?.count){g.dispose?.();s.surfaceMesh.visible=false;s.mesh.visible=true;return false}
-  const old=s.surfaceMesh.geometry;s.surfaceMesh.geometry=g;old?.dispose?.();
-  s.surfaceMesh.visible=true;s.mesh.visible=false;return true;
-}
-function mirrorMeshStrapSurface(master,slave){
-  if(!master?.surfaceMesh||!slave?.surfaceMesh)return;
-  const src=master.surfaceMesh.geometry;
-  if(!src?.attributes?.position?.count){slave.surfaceMesh.visible=false;slave.mesh.visible=true;return}
-  const g=src.clone(),p=g.getAttribute('position');
-  for(let i=0;i<p.count;i++)p.setX(i,-p.getX(i));
-  p.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();
-  const old=slave.surfaceMesh.geometry;slave.surfaceMesh.geometry=g;old?.dispose?.();
-  slave.surfaceMesh.visible=master.surfaceMesh.visible;slave.mesh.visible=!slave.surfaceMesh.visible;
-}
-function pointUnderStrapSurface(point,s){
-  const route=s?.methodRoute;if(!route?.length)return false;
-  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
   for(let i=0;i<route.length-1;i++){
-    const a=route[i],b=route[i+1],A=a.finalPoint||a.displayPoint,B=b.finalPoint||b.displayPoint;
+    const a=route[i],b=route[i+1];
+    const A=a.finalPoint||a.displayPoint,B=b.finalPoint||b.displayPoint;
     if(!A||!B)continue;
-    const ab=B.clone().sub(A),len=ab.length();if(len<1e-6)continue;
-    const tangent=ab.clone().multiplyScalar(1/len);
-    const u=THREE.MathUtils.clamp(point.clone().sub(A).dot(tangent)/len,0,1);
-    const center=A.clone().lerp(B,u);
-    let side=(a.stripRight&&a.stripLeft)?a.stripRight.clone().sub(a.stripLeft):strapFrame(s).side.clone();
-    if(b.stripRight&&b.stripLeft)side.lerp(b.stripRight.clone().sub(b.stripLeft),u);
-    if(side.lengthSq()<1e-10)continue;side.normalize();
-    if(Math.abs(point.clone().sub(center).dot(side))<=halfW*1.02)return true;
+
+    const ab=B.clone().sub(A),len2=ab.lengthSq();
+    if(len2<1e-10)continue;
+
+    const t=THREE.MathUtils.clamp(point.clone().sub(A).dot(ab)/len2,0,1);
+    const center=A.clone().lerp(B,t);
+
+    let side;
+    if(a.stripLeft&&a.stripRight)side=a.stripRight.clone().sub(a.stripLeft);
+    else side=strapFrame(s).side.clone();
+
+    if(side.lengthSq()<1e-8)continue;
+    side.normalize();
+
+    if(Math.abs(point.clone().sub(center).dot(side))<=halfW)return true;
   }
   return false;
 }
-function pointInsideOlderPanel(point,panel){
+function dumpsterPointInsideOlderPanel(point,panel){
   const myNum=Number(panel.id.replace(/\D/g,''))||Infinity;
+
   for(const other of panels.values()){
     if(other===panel||!panelHasArea(other))continue;
-    const n=Number(other.id.replace(/\D/g,''))||Infinity;if(n>=myNum)continue;
-    const basis=panelBasis(other),poly=panelBoundaryWorld(other).map(p=>panel2D(other,p,basis));
-    if(Math.abs(point.clone().sub(basis.origin).dot(basis.normal))<.08&&pointInPoly2(panel2D(other,point,basis),poly))return true;
+    const otherNum=Number(other.id.replace(/\D/g,''))||Infinity;
+    if(otherNum>=myNum)continue;
+
+    const basis=panelBasis(other);
+    const poly=panelBoundaryWorld(other).map(p=>panel2D(other,p,basis));
+    const depth=Math.abs(point.clone().sub(basis.origin).dot(basis.normal));
+
+    if(depth<.07&&pointInPoly2(panel2D(other,point,basis),poly))return true;
   }
   return false;
 }
-function panelPriorityReject(panel,point){
-  for(const s of straps.values())if(pointUnderStrapSurface(point,s))return true;
-  return pointInsideOlderPanel(point,panel);
+function dumpsterPanelPriorityReject(panel,point){
+  for(const s of straps.values()){
+    if(dumpsterPointUnderStrap(point,s))return true;
+  }
+  return dumpsterPointInsideOlderPanel(point,panel);
 }
 
 function buildPanelGeometry(panel){
   if(!panelHasArea(panel))return new THREE.BufferGeometry();
-  const extracted=extractBodyTrianglesForPanel(panel);if(!extracted.length)return buildPanelPreviewGeometry(panel);
-  const pieces=clippedPanelPieces(panel,extracted);if(!pieces.length)return buildPanelPreviewGeometry(panel);
-  const positions=[],normals=[],lift=panelOffsetScene(panel),cutRings=panelCutRings(panel);
+
+  const extracted=extractBodyTrianglesForPanel(panel);
+  if(!extracted.length)return buildPanelPreviewGeometry(panel);
+
+  const pieces=clippedPanelPieces(panel,extracted);
+  if(!pieces.length)return buildPanelPreviewGeometry(panel);
+
+  const positions=[],normals=[];
+  const lift=panelOffsetScene(panel);
+  const cutRings=panelCutRings(panel);
 
   for(const tri of pieces){
     const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
+
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
-    if(panelPriorityReject(panel,centroid))continue;
+    if(dumpsterPanelPriorityReject(panel,centroid))continue;
+
     for(const v of tri){
       const q=v.q.clone().addScaledVector(v.n,lift);
-      positions.push(q.x,q.y,q.z);normals.push(v.n.x,v.n.y,v.n.z);
+      positions.push(q.x,q.y,q.z);
+      normals.push(v.n.x,v.n.y,v.n.z);
     }
   }
 
@@ -1634,7 +1547,14 @@ function buildPanelGeometry(panel){
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
   if(positions.length)g.computeBoundingSphere();
-  g.userData={extraction:true,minimal:true,priorityBoundaries:true,outputTriangles:positions.length/9};
+
+  g.userData={
+    extraction:true,
+    minimal:true,
+    dumpsterfire:true,
+    sourceTriangles:extracted.length,
+    outputTriangles:positions.length/9
+  };
   return g;
 }
 
@@ -1805,7 +1725,7 @@ function makeStrap(data={}){
   const id=data.id||`S${nextStrapId++}`;
   const num=Number(id.replace(/\D/g,''));if(Number.isFinite(num))nextStrapId=Math.max(nextStrapId,num+1);
   const s={
-    id,kind:'strap',a:data.a,b:data.b,widthMM:data.widthMM??strapDefaults.widthMM,slack:data.slack??strapDefaults.slack,
+    id,kind:'strap',a:data.a,b:data.b,widthMM:data.widthMM??strapDefaults.widthMM,slack:0,
     locked:!!data.locked,mirrorId:data.mirrorId||null,
     controls:historyClone(data.controls||[]),
     surfaceLevel:data.surfaceLevel??0,
@@ -1818,14 +1738,11 @@ function makeStrap(data={}){
     deletedStripTs:historyClone(data.deletedStripTs||[]),
     methodRoute:null,
     previewMode:false,
-    group:new THREE.Group(),mesh:null,surfaceMesh:null,geometry:initStrapGeometry(),
+    group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
   s.mesh=new THREE.Mesh(s.geometry,selected?.id===id?STRAP_SEL:STRAP_MAT);
-  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=5;
-  s.surfaceMesh=new THREE.Mesh(new THREE.BufferGeometry(),selected?.id===id?STRAP_SEL:STRAP_MAT);
-  s.surfaceMesh.userData={kind:'strapMesh',id};s.surfaceMesh.renderOrder=6;s.surfaceMesh.visible=false;
-  s.group.add(s.mesh,s.surfaceMesh,s.controlGroup);
+  s.mesh.userData={kind:'strapMesh',id};s.mesh.renderOrder=5;s.group.add(s.mesh,s.controlGroup);
   straps.set(id,s);strapRoot.add(s.group);
   updateStrapGeometry(s);updateControlHandles(s);
 
@@ -1852,6 +1769,7 @@ function updateDirectStripGeometry(s){
   pos.needsUpdate=true;s.geometry.computeVertexNormals();s.geometry.computeBoundingSphere();return true;
 }
 function updateStrapGeometry(s,{skipPairMirror=false}={}){
+  s.slack=0;
   if(!skipPairMirror){
     const ps=pairOfStrap(s);
     if(ps){
@@ -2004,9 +1922,7 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   }
 }
 function updateAttachedStraps(nodeId){
-  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){
-    s.previewMode=true;s.mesh.visible=true;if(s.surfaceMesh)s.surfaceMesh.visible=false;updateStrapGeometry(s);
-  }
+  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){s.previewMode=true;updateStrapGeometry(s)}
 }
 function updateControlHandles(s){
   // V1.1: generated curve points are internal only.
@@ -2036,7 +1952,7 @@ function strapSnapshot(s){
 }
 function removeStrapBare(id){
   const s=straps.get(id);if(!s)return;
-  s.geometry.dispose();s.surfaceMesh?.geometry?.dispose?.();strapRoot.remove(s.group);straps.delete(id);
+  s.geometry.dispose();strapRoot.remove(s.group);straps.delete(id);
 }
 function restoreStrapSnapshot(d){
   if(!d||!nodes.has(d.a)||!nodes.has(d.b)||d.a===d.b)return null;
@@ -2305,7 +2221,7 @@ function convertRingBackToPoint(n){
 }
 function removeStrap(id){
   const s=straps.get(id);if(!s)return;
-  s.geometry.dispose();s.surfaceMesh?.geometry?.dispose?.();strapRoot.remove(s.group);straps.delete(id);
+  s.geometry.dispose();strapRoot.remove(s.group);straps.delete(id);
   for(const n of [...nodes.values()]){
     if(n.source==='strap'&&n.parentStrapId===id)removeNode(n.id,false);
     else if(n.source==='crossing'&&n.autoCrossing&&n.crossing&&(n.crossing.strapAId===id||n.crossing.strapBId===id))removeNode(n.id,false);
@@ -2378,7 +2294,6 @@ function refreshMaterials(){
   for(const s of straps.values()){
     const on=selected?.kind==='strap'&&(s.id===selected.id||s.id===selectedStrapPair?.id);
     s.mesh.material=on?STRAP_SEL:STRAP_MAT;
-    if(s.surfaceMesh)s.surfaceMesh.material=on?STRAP_SEL:STRAP_MAT;
   }
   const selectedPanelPair=selected?.kind==='panel'?pairOfPanel(selected):null;
   for(const p of panels.values()){
@@ -3259,8 +3174,6 @@ function rebuildAutoProjection(s){
   if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
   s.methodRoute=route;s.controls=[];s.surfaceLevel=0;
   updateStrapGeometry(s);updateStrapMethodDebug(s,route);
-  applyMeshStrapSurface(s);
-  const ps=pairOfStrap(s);if(ps&&pairMasterStrap(s)===s)mirrorMeshStrapSurface(s,ps);
   updateAllPanels();
 }
 
@@ -3656,8 +3569,8 @@ function refreshAutomaticCrossings(){
   }
 }
 
-const AXIS_SNAP_IN=.032;
-const AXIS_SNAP_OUT=.050;
+const AXIS_SNAP_IN=.014;
+const AXIS_SNAP_OUT=.026;
 
 const DYN_SYM_POS_TOL=.035;
 let dynSymEditClock=1;
@@ -4028,8 +3941,8 @@ function entmergeRing(merged,p){
 }
 
 
-function genericRingSnapIn(a,b){return Math.max(.006,Math.min(ringMajor(a),ringMajor(b))*.16)}
-function genericRingSnapOut(a){return Math.max(.016,ringMajor(a)*.55)}
+function genericRingSnapIn(a,b){return Math.max(.0045,Math.min(ringMajor(a),ringMajor(b))*.10)}
+function genericRingSnapOut(a){return Math.max(.012,ringMajor(a)*.42)}
 function nearestGenericRingSnapTarget(n){
   if(!n?.ringVisible||n.mergedState||n.snapMergeState)return null;
   const p=nodeWorldPosition(n);let best=null,bd=Infinity;
@@ -4342,7 +4255,7 @@ function interactiveHit(x,y){
   // Strap ray hits use the same restored touch ray. No visibility helper is
   // called between this point and the strap intersection.
   setPointer(x,y);
-  const meshes=[...straps.values()].map(s=>s.surfaceMesh?.visible?s.surfaceMesh:s.mesh);
+  const meshes=[...straps.values()].map(s=>s.mesh);
   const shits=raycaster.intersectObjects(meshes,false);
   for(const sh of shits){
     if(sh.distance<=bodyDistance+.055)return {kind:'strap',id:sh.object.userData.id};
@@ -4728,4 +4641,17 @@ try{
   }catch(err){
     console.warn('Body color diagnostic disabled:',err);
   }
+})();
+
+(function initDumpsterfireBadge(){
+  try{
+    const b=document.createElement('div');
+    b.textContent='V1.9z · DUMPSTERFIRE';
+    Object.assign(b.style,{
+      position:'fixed',right:'8px',bottom:'88px',zIndex:'20',
+      font:'600 9px system-ui',letterSpacing:'.08em',
+      opacity:'.45',pointerEvents:'none'
+    });
+    document.body.appendChild(b);
+  }catch{}
 })();

@@ -1,16 +1,22 @@
-# V1.9n SURFACE LAB
+# V1.9z DUMPSTERFIRE
 
-Built directly from user-confirmed V1.9k3.
+Broad last-test build before a clean rewrite.
 
-- Panels are back to the minimal fast body-triangle extraction.
-- Final auto straps are an experimental body-mesh extraction inside the
-  current Strip left/right footprint.
-- During ring dragging the old geometry is retained as the cheap preview.
-- Straps have priority over panels.
-- Older existing panels have priority over newer panels, so neighboring
-  surfaces do not simply render on top of each other.
-- The mannequin color diagnostic remains.
+Base: user-confirmed starting V1.9k3 / V1.9f2 family.
 
-The internal priority boundary is deliberately triangle-level in this lab
-build. The goal is to test the common surface approach and speed before an
-exact secondary boundary-cut pass.
+Included:
+- proven Strip auto strap engine remains
+- classic/push method buttons hidden
+- Lockerheit hidden and internal slack forced to 0
+- panels returned to the minimal fast body-mesh extraction
+- center-axis snap zone narrowed substantially
+- generic ring-to-ring snap requires much closer overlap
+- existing dynamically scaled ring hitboxes retained
+- existing hitbox-debug retained
+- existing generic ring merge/unmerge/history retained
+- mannequin color diagnostic retained
+- cheap TEST priority: straps cut panels; older panels cut newer panels
+- panels refresh after final auto-strap rebuild
+
+The strap/panel and panel/panel internal cuts are deliberately triangle-level.
+This is a final behavior-testing build, not production clipping.
