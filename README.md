@@ -1,9 +1,21 @@
-# V1.9k3 BODY COLOR MINIMAL
+# V1.9l PANEL EDGE WELD
 
-Built directly from the user-confirmed working V1.9f2.
+Built directly from user-confirmed starting V1.9k3.
 
-The original V1.9f2 app.js is preserved byte-for-byte and the mannequin
-color diagnostic is appended only at the very end of the module.
+Only `buildPanelGeometry()` was replaced.
 
-The diagnostic is wrapped in try/catch so it cannot prevent startup.
-No existing panel, strap, ring, snap, body initialization, or UI logic was changed.
+Change:
+- final clipped panel vertices are canonicalized into one indexed vertex pool
+- coincident vertices use the exact same vertex index
+- their normals are averaged once
+- panel offset is applied once per shared vertex
+- adjacent triangles therefore cannot separate again because of independent offsets
+
+Unchanged:
+- startup/init
+- panel extraction
+- clipping
+- ring-hole selection
+- straps/rings/snapping
+- body system
+- V1.9k3 mannequin color diagnostic

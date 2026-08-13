@@ -1472,43 +1472,83 @@ function buildPanelGeometry(panel){
   const extracted=extractBodyTrianglesForPanel(panel);
   if(!extracted.length)return buildPanelPreviewGeometry(panel);
 
-  // Only boundary triangles are cut. Interior body triangles pass through
-  // unchanged in practice; all resulting vertices still lie exactly on the
-  // original mannequin triangles via barycentric interpolation.
   const pieces=clippedPanelPieces(panel,extracted);
   if(!pieces.length)return buildPanelPreviewGeometry(panel);
 
-  const positions=[],normals=[];
   const lift=panelOffsetScene(panel);
+  const cutRings=panelCutRings(panel);
+
+  // Canonical vertex pool for the FINAL clipped surface.
+  // Adjacent clipped triangles that produce the same point now reference the
+  // exact same indexed vertex instead of carrying separate float copies.
+  const EPS=.00002; // 0.02 mm in scene metres
+  const buckets=new Map();
+  const positions=[],normalSums=[],normalCounts=[],indices=[];
+
+  const keyFor=q=>
+    Math.round(q.x/EPS)+","+
+    Math.round(q.y/EPS)+","+
+    Math.round(q.z/EPS);
+
+  function canonicalVertex(v){
+    const k=keyFor(v.q);
+    let idx=buckets.get(k);
+
+    if(idx===undefined){
+      idx=positions.length/3;
+      buckets.set(k,idx);
+      positions.push(v.q.x,v.q.y,v.q.z);
+      normalSums.push(v.n.clone());
+      normalCounts.push(1);
+    }else{
+      normalSums[idx].add(v.n);
+      normalCounts[idx]++;
+    }
+
+    return idx;
+  }
 
   for(const tri of pieces){
     const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
-
-    // Keep the existing simple ring opening behaviour for this test.
-    // Outer panel boundary is now exact; ring-hole clipping can be the next
-    // isolated refinement if needed.
-    const cutRings=panelCutRings(panel);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
 
-    for(const v of tri){
-      const q=v.q.clone().addScaledVector(v.n,lift);
-      positions.push(q.x,q.y,q.z);
-      normals.push(v.n.x,v.n.y,v.n.z);
-    }
+    const ia=canonicalVertex(tri[0]);
+    const ib=canonicalVertex(tri[1]);
+    const ic=canonicalVertex(tri[2]);
+
+    // Ignore only truly collapsed triangles after canonicalization.
+    if(ia===ib||ib===ic||ic===ia)continue;
+    indices.push(ia,ib,ic);
+  }
+
+  // One shared averaged normal per canonical vertex, then one identical lift
+  // for every triangle that touches that vertex. This prevents neighboring
+  // triangles from separating again during the panel offset.
+  const normals=[];
+  for(let i=0;i<positions.length/3;i++){
+    const n=normalSums[i].multiplyScalar(1/normalCounts[i]).normalize();
+    positions[i*3]+=n.x*lift;
+    positions[i*3+1]+=n.y*lift;
+    positions[i*3+2]+=n.z*lift;
+    normals.push(n.x,n.y,n.z);
   }
 
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  g.setIndex(indices);
   g.computeBoundingSphere();
   g.userData={
     extraction:true,
     cleanBoundary:true,
+    canonicalIndexedSurface:true,
     sourceTriangles:extracted.length,
-    outputTriangles:positions.length/9
+    outputTriangles:indices.length/3,
+    uniqueVertices:positions.length/3
   };
   return g;
 }
+
 function makePanel(data={}){
   const id=data.id||`P${nextPanelId++}`;
   const num=Number(id.replace(/\D/g,''));if(Number.isFinite(num))nextPanelId=Math.max(nextPanelId,num+1);
