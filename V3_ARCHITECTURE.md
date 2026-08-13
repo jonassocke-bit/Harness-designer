@@ -1,57 +1,38 @@
-# Harness Designer V3 architecture contract
+# V3.1 Modular Architecture
 
-Golden baseline: V1.9f2. Do not replace working behavior while modularizing it.
+## Migration bridge
+Der alte V1.9f2-Code hing an einem gemeinsamen Top-Level-Scope. Eine direkte Umwandlung in ES-Module
+würde hunderte Referenzen gleichzeitig verändern.
 
-## Frozen reference modules
-- Ring/UI behavior: legacy V1.9c → V1.9f2 lineage
-- Strap reference: V1.9c Strip; V1.8n 3-line kept as comparison target
-- Panel reference: V1.9f2 fast body-triangle extraction + filled boundary
+Deshalb arbeitet V3.1.0 als sichere Zwischenstufe:
+1. app.js importiert THREE + GLTFLoader.
+2. alle V3-Blöcke werden zuerst vollständig geladen.
+3. erst danach werden sie in Originalreihenfolge gemeinsam ausgeführt.
+4. die Legacy-Quellen rekonstruieren – abgesehen von Buildtext im Tester – bytegenau den Golden-Code.
 
-## Migration rule
-One subsystem is extracted at a time. Before and after extraction, visible behavior must match.
-No feature work during migration.
+Damit sind die Quellblöcke bereits einzeln austauschbar, ohne gleichzeitig das Laufzeitverhalten neu zu schreiben.
 
-## Planned stable modules
-core/AppKernel
-core/EventBus
-core/DirtyScheduler
-core/ProjectState
-core/History
-core/Persistence
-body/BodySurface + BodyProvider
-nodes/NodeModel + NodeRenderer + NodeHitbox
-topology/SnapMergeService
-straps/StrapModel + StrapPreviewSolver + StripSolverLegacy + StripSolverNext + StrapRenderer
-panels/PanelModel + PanelPreviewSolver + PanelExtractSolverLegacy + PanelBoundaryResolver + PanelRenderer
-modes/BuildMode + AccessoryMode + PhotoMode
-tools/RingTool + ConnectTool + PanelTool + StrapPaintTool
-accessories/AccessoryModel + AccessoryLibrary + AccessoryAttachment + AccessoryRenderer
-photo/PoseController + CameraPreset + LightingRig + Background + PhotoRenderer
-materials/MaterialRegistry
-anchors/AnchorService
-crossings/CrossingService
-export/ExportService
-generators/GeneratorRegistry
+## Aktuelle Blöcke
+- coreBody
+- nodesRouting
+- panels
+- strapsRuntime
+- historyUI
+- stripSolvers
+- topologySymmetry
+- interactionRuntime
+- diagnostics
+- guidedTest
 
-## Compatibility contract
-Solvers return data only. Renderers render data only.
-Body access occurs only through BodySurface after migration.
-Nodes never calculate straps/panels directly; the scheduler invalidates dependents.
-Legacy solvers are never overwritten by experimental solvers.
+## Zielarchitektur
+Core/State/Scheduler
+→ BodySurface/BodyProvider
+→ Nodes/SnapMerge
+→ StrapModel + PreviewSolver + StripSolver + Renderer
+→ PanelModel + ExtractSolver + BoundaryResolver + Renderer
+→ Build/Accessory/Photo modes
+→ UI
 
-
-## Regression harness contract
-
-Every patch declares `changedModules`.
-
-The test harness derives its manual Impact tests from an explicit dependency map.
-
-Test levels:
-- Smoke: 1–3 fast checks after nearly every patch.
-- Impact: only workflows that may be affected by the changed modules.
-- Full: milestone regression.
-
-Golden known issues are recorded separately from regressions.
-A failure is marked as a regression only if the Golden baseline expected that workflow to pass.
-
-Automatic state/invariant checks should replace manual testing wherever possible.
+## Reserviert
+Body Lab Provider, AccessoryMode, PhotoMode, StrapPaint, PoseController,
+MaterialRegistry, ExportService, GeneratorRegistry.

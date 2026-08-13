@@ -1,0 +1,10 @@
+HDV3.registerModule("coreBody",{file:"v3-10-core-body.js",owns:["bodySurface", "bootstrap"],legacy:true});
+HDV3.registerModule("nodesRouting",{file:"v3-20-nodes-routing.js",owns:["nodeModel", "nodeRenderer", "strapSurfacePrimitives"],legacy:true});
+HDV3.registerModule("panels",{file:"v3-30-panels.js",owns:["panelModel", "panelExtractLegacy", "panelRenderer"],legacy:true});
+HDV3.registerModule("strapsRuntime",{file:"v3-40-straps-runtime.js",owns:["strapModel", "strapRenderer", "selection"],legacy:true});
+HDV3.registerModule("historyUI",{file:"v3-50-history-ui.js",owns:["history", "persistence", "ui"],legacy:true});
+HDV3.registerModule("stripSolvers",{file:"v3-60-strip-solvers.js",owns:["strapPreview", "stripSolverLegacy", "anchors", "crossings"],legacy:true});
+HDV3.registerModule("topologySymmetry",{file:"v3-70-topology-symmetry.js",owns:["snapMerge", "mirror", "topology"],legacy:true});
+HDV3.registerModule("interactionRuntime",{file:"v3-80-interaction-runtime.js",owns:["interaction", "camera", "picking", "runtime"],legacy:true});
+HDV3.registerModule("diagnostics",{file:"v3-90-diagnostics.js",owns:["diagnostics"],legacy:true});
+HDV3.registerModule("guidedTest",{file:"v3-95-guided-test.js",owns:["testHarness"],legacy:true});
