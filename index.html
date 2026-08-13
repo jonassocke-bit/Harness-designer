@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Harness Designer">
-  <title>Harness Designer V3.2.2 TOPOLOGY INTEGRITY</title>
+  <title>Harness Designer V3.3.0 STRAP GEOMETRY</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
   <script type="importmap">
@@ -221,9 +221,28 @@
   </div>
 </div>
 
-<script type="module" src="./app.js?build=322"></script>
-<div id="v3BuildBadge">V3.2.2 TOPOLOGY INTEGRITY · V3.1.0 MODULAR GOLDEN</div>
+<script type="module" src="./app.js?build=330"></script>
+<div id="v3BuildBadge">V3.3.0 STRAP GEOMETRY · V3.2.2 TOPOLOGY GOLDEN</div>
 
-<div id="v3PatchNotes">V3.2.2 · Topology Integrity · Panel-Außenhülle · Mirror-Paarmerge · Mirror-Entmerge · Multi-Screenshot Debug</div>
+<div id="v3PatchNotes">V3.3.0 · Strap Geometry · Edge-first Solver · adaptive Triangulation · visueller Riemen-Debug</div>
+
+<div id="strapDebugPanel" class="strap-debug-panel hidden">
+  <div class="strap-debug-head">
+    <div>
+      <strong>RIEMEN DEBUG</strong>
+      <span id="strapDebugStepLabel">1/7 · Direkte Verbindung</span>
+    </div>
+    <button id="strapDebugCloseBtn" type="button">×</button>
+  </div>
+  <div class="strap-debug-body">
+    <div id="strapDebugDescription">Direkte Verbindung zwischen den sichtbaren Anschlussstellen der beiden Ringe.</div>
+    <div class="strap-debug-nav">
+      <button id="strapDebugPrevBtn" type="button">←</button>
+      <button id="strapDebugAllBtn" type="button">Alles</button>
+      <button id="strapDebugNextBtn" type="button">→</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

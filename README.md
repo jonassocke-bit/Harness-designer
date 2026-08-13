@@ -53,3 +53,7 @@ Targeted Ring/Topology fix. See PATCHNOTES.md (newest first).
 
 ## V3.2.2
 Topology Integrity: panel outer hull, mirror pair transactions, mirror-priority Entmerge, multi-screenshot debug.
+
+
+## V3.3.0
+Edge-first strap solver + visual step debugger. V3.2.2 topology remains the reference base.

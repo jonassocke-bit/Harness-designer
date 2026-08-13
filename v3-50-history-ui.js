@@ -431,7 +431,29 @@ function nearestStripPointScreen(s,x,y){
   return best;
 }
 curveMinusBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;stripDeleteMode=!stripDeleteMode;selected.debugRoute=true;curveMinusBtn.classList.toggle('active',stripDeleteMode);updateStrapMethodDebug(selected,selected.methodRoute||[]);showToast(stripDeleteMode?'Cyanen Zwischenpunkt antippen':'Punkt löschen beendet')});
-strapDebugBtn.addEventListener('click',()=>{if(selected?.kind!=='strap')return;selected.debugRoute=!selected.debugRoute;updateStrapMethodDebug(selected,selected.methodRoute||[]);strapDebugBtn.classList.toggle('active',selected.debugRoute)});
+strapDebugBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='strap')return;
+  if(selected.debugRoute)closeStrapDebugMode(selected);
+  else openStrapDebugMode(selected);
+});
+document.getElementById('strapDebugCloseBtn')?.addEventListener('click',()=>closeStrapDebugMode(selected));
+document.getElementById('strapDebugPrevBtn')?.addEventListener('click',()=>{
+  if(selected?.kind!=='strap')return;
+  selected.debugAll=false;
+  selected.debugStep=(selected.debugStep-1+STRAP_DEBUG_STEPS.length)%STRAP_DEBUG_STEPS.length;
+  updateStrapMethodDebug(selected,selected.methodRoute||[]);refreshStrapDebugPanel(selected);
+});
+document.getElementById('strapDebugNextBtn')?.addEventListener('click',()=>{
+  if(selected?.kind!=='strap')return;
+  selected.debugAll=false;
+  selected.debugStep=(selected.debugStep+1)%STRAP_DEBUG_STEPS.length;
+  updateStrapMethodDebug(selected,selected.methodRoute||[]);refreshStrapDebugPanel(selected);
+});
+document.getElementById('strapDebugAllBtn')?.addEventListener('click',()=>{
+  if(selected?.kind!=='strap')return;
+  selected.debugAll=!selected.debugAll;
+  updateStrapMethodDebug(selected,selected.methodRoute||[]);refreshStrapDebugPanel(selected);
+});
 strapWidthSlider.addEventListener('change',()=>{if(selected?.kind==='strap'){rebuildAutoProjection(selected);const p=pairOfStrap(selected);if(p)rebuildAutoProjection(p)}});
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 

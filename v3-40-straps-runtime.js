@@ -24,6 +24,9 @@ function makeStrap(data={}){
     autoProject:true,
     autoMethod:'strip',
     debugRoute:!!data.debugRoute,
+    debugStep:Number.isFinite(data.debugStep)?data.debugStep:0,
+    debugAll:!!data.debugAll,
+    debugTrace:null,
     deletedStripTs:historyClone(data.deletedStripTs||[]),
     methodRoute:null,
     previewMode:false,
@@ -48,14 +51,79 @@ function stripRouteAt(route,t){
   let n=a.normal.clone().lerp(b.normal,u);if(n.lengthSq()<1e-8)n=a.normal.clone();n.normalize();
   return {stripLeft:a.stripLeft.clone().lerp(b.stripLeft,u),stripRight:a.stripRight.clone().lerp(b.stripRight,u),normal:n};
 }
-function updateDirectStripGeometry(s){
-  if(!s.methodRoute?.length)return false;const pos=s.geometry.getAttribute('position'),halfT=.0045;let prevN=null;
-  for(let i=0;i<=STRAP_SAMPLES;i++){
-    const g=stripRouteAt(s.methodRoute,i/STRAP_SAMPLES);let n=g.normal.clone();if(prevN&&n.dot(prevN)<0)n.negate();prevN=n.clone();
-    const lb=g.stripLeft,rb=g.stripRight,lt=lb.clone().addScaledVector(n,halfT*2),rt=rb.clone().addScaledVector(n,halfT*2);
-    [lb,rb,lt,rt].forEach((p,k)=>pos.setXYZ(i*4+k,p.x,p.y,p.z));
+function stripQuadScore(a,b,c,d,diag=0){
+  const triN=(p0,p1,p2)=>{
+    const n=new THREE.Vector3().crossVectors(p1.clone().sub(p0),p2.clone().sub(p0));
+    return n.lengthSq()<1e-12?new THREE.Vector3(0,0,1):n.normalize();
+  };
+  if(diag===0){
+    const n1=triN(a,b,c),n2=triN(b,d,c);
+    return n1.dot(n2);
   }
-  pos.needsUpdate=true;s.geometry.computeVertexNormals();s.geometry.computeBoundingSphere();return true;
+  const n1=triN(a,b,d),n2=triN(a,d,c);
+  return n1.dot(n2);
+}
+function setAdaptiveStripIndices(s,sections){
+  const idx=[];
+  for(let i=0;i<STRAP_SAMPLES;i++){
+    const a=i*4,b=(i+1)*4;
+    const s0=sections[i],s1=sections[i+1];
+    const useAlt=stripQuadScore(s0.lb,s0.rb,s1.lb,s1.rb,1)>stripQuadScore(s0.lb,s0.rb,s1.lb,s1.rb,0);
+
+    // bottom
+    if(useAlt)idx.push(a,a+1,b+1, a,b+1,b);
+    else idx.push(a,a+1,b, a+1,b+1,b);
+
+    // top, opposite winding
+    if(useAlt)idx.push(a+2,b+3,a+3, a+2,b+2,b+3);
+    else idx.push(a+2,b+2,a+3, a+3,b+2,b+3);
+
+    // left + right thickness walls
+    idx.push(a+2,a,b+2, a,b,b+2);
+    idx.push(a+1,a+3,b+1, a+3,b+3,b+1);
+  }
+  s.geometry.setIndex(idx);
+}
+function updateDirectStripGeometry(s){
+  if(!s.methodRoute?.length)return false;
+  const pos=s.geometry.getAttribute('position'),halfT=.0045;
+  const sections=[];
+
+  for(let i=0;i<=STRAP_SAMPLES;i++){
+    const t=i/STRAP_SAMPLES;
+    const g=stripRouteAt(s.methodRoute,t);
+    const prev=stripRouteAt(s.methodRoute,Math.max(0,t-1/STRAP_SAMPLES));
+    const next=stripRouteAt(s.methodRoute,Math.min(1,t+1/STRAP_SAMPLES));
+
+    const lb=g.stripLeft.clone(),rb=g.stripRight.clone();
+    let side=rb.clone().sub(lb);
+    if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
+    side.normalize();
+
+    let tangent=next.stripLeft.clone().lerp(next.stripRight,.5).sub(
+      prev.stripLeft.clone().lerp(prev.stripRight,.5)
+    );
+    if(tangent.lengthSq()<1e-10)tangent=strapFrame(s).tangent.clone();
+    tangent.normalize();
+
+    // Edge geometry defines the band orientation. Body normal is only a hemisphere hint.
+    let normal=new THREE.Vector3().crossVectors(tangent,side);
+    if(normal.lengthSq()<1e-10)normal=g.normal?.clone?.()||strapFrame(s).normal.clone();
+    normal.normalize();
+    if(g.normal&&normal.dot(g.normal)<0)normal.negate();
+
+    const lt=lb.clone().addScaledVector(normal,halfT*2);
+    const rt=rb.clone().addScaledVector(normal,halfT*2);
+    const verts=[lb,rb,lt,rt];
+    for(let k=0;k<4;k++)pos.setXYZ(i*4+k,verts[k].x,verts[k].y,verts[k].z);
+    sections.push({lb,rb,lt,rt});
+  }
+
+  setAdaptiveStripIndices(s,sections);
+  pos.needsUpdate=true;
+  s.geometry.computeVertexNormals();
+  s.geometry.computeBoundingSphere();
+  return true;
 }
 function updateStrapGeometry(s,{skipPairMirror=false}={}){
   if(!skipPairMirror){
@@ -634,6 +702,6 @@ function showSelection(){
     syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
   }
 }
-function hideSelection(){selectionPanel.classList.add('hidden');finalizeMergeBtn.classList.add('hidden');updateLinkButton()}
+function hideSelection(){if(selected?.kind==='strap'&&selected.debugRoute)closeStrapDebugMode(selected);selectionPanel.classList.add('hidden');finalizeMergeBtn.classList.add('hidden');updateLinkButton()}
 
 

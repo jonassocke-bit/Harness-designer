@@ -1,24 +1,25 @@
 // ============================================================================
-// V3.2.2 TOPOLOGY INTEGRITY
+// V3.3.0 STRAP GEOMETRY
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.2.2 TOPOLOGY INTEGRITY',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.3.0 STRAP GEOMETRY',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    build:{title:'1 · Build / Patchnotes',instruction:'Unten muss V3.2.2 · Topology Integrity stehen. App und Mannequin müssen normal starten.',golden:'pass'},
-    panelMembers:{title:'2 · Fläche: Mitgliedschaft bleibt erhalten',instruction:'Erzeuge eine Fläche aus 4–5 Ringen. Ziehe einen Eckring durch die Mitte der anderen und danach wieder nach außen. Der Ring bleibt logisch Mitglied der Fläche. Innen darf er aus der sichtbaren Außenkante verschwinden; außen muss er automatisch wieder Teil der Kontur werden.',golden:'known'},
-    panelHull:{title:'3 · Fläche: immer Außenhülle',instruction:'Ziehe einen Eckring mitten zwischen/durch zwei andere Ringe. Es dürfen KEINE selbstkreuzenden, spitzen oder wilden Dreiecksflächen entstehen. Die sichtbare Fläche muss immer von den aktuell äußersten Mitgliedsringen begrenzt werden. Bitte mehrere Screenshots machen: vorher, Ring innen, Ring wieder außen.',golden:'known'},
-    mirrorPairMerge:{title:'4 · Spiegelpaar ↔ Spiegelpaar automatisch doppelt mergen',instruction:'Erzeuge A/A′ und B/B′. Ziehe A auf B. A′ muss automatisch gleichzeitig auf B′ mergen. Danach müssen die zwei verbleibenden Hosts weiterhin ein Spiegelpaar sein. Kein manuelles Nachmergen.',golden:'known'},
-    mirrorPairSplit:{title:'5 · Doppel-Merge gemeinsam trennen',instruction:'Trenne anschließend eine Seite. Die gesamte Paartransaktion soll sauber zurückgehen: beide Gast-Ringe wieder da, beide ursprünglichen Spiegelbeziehungen wieder sinnvoll hergestellt, keine Geister-/Rest-Ringe.',golden:'known'},
-    mirroredStrapSplit:{title:'6 · Entmerge mit Spiegelriemen',instruction:'Baue ein Spiegelriemenpaar. Merge einen beteiligten Ring und trenne wieder. Der Ring muss exakt an der gespiegelten Sollposition seines Spiegelpartners erscheinen. Herkunftsrichtung ist hier zweitrangig. Ringpaar UND Riemenpaar sollen sofort wieder symmetrisch sein.',golden:'known'},
-    strapEndpoint:{title:'7 · Riemen nach Entmerge wirklich am Ring',instruction:'Bewege den wiederhergestellten Ring. Der Riemen muss sichtbar am Ring enden und mitgehen. Er darf nicht nur „irgendwie synchron“ mit dem Spiegelriemen laufen, während sein eigener Endpunkt abgekoppelt ist.',golden:'known'},
-    normalSplit:{title:'8 · Nicht gespiegeltes Entmerge weiterhin richtungsgetreu',instruction:'Bei einem normalen Ring ohne Mirror-Verbund soll weiterhin die gespeicherte Herkunftsrichtung bestimmen, auf welcher Seite er nach Trennen erscheint.',golden:'pass'},
-    centerFinalize:{title:'9 · Mittelachsen-Merge endgültig verschmelzen',instruction:'Spiegelpaar auf Mittelachse mergen. „Ringe endgültig verschmelzen“ muss erscheinen. Danach darf seitliches Ziehen den Ring nicht mehr normal entmergen. Undo soll weiterhin möglich sein.',golden:'known'},
-    panelMerge:{title:'10 · Fläche + Ring-Merge + Außenhülle kombiniert',instruction:'Erzeuge eine 4–5-Punkt-Fläche, merge/trenne zwei Boundary-Ringe und ziehe danach einen anderen Ring durch die Mitte. Kein Mitglied darf verloren gehen und die Außenhülle muss weiterhin sauber bleiben.',golden:'known'},
-    undo:{title:'11 · Undo / Redo',instruction:'Undo/Redo nach Doppel-Mirror-Merge, Entmerge mit Spiegelriemen und endgültigem Mittelachsen-Merge. Keine verlorenen Riemen, Panel-Mitglieder oder Ringpartner.',golden:'known'},
-    screenshots:{title:'12 · Debug: Kommentar + mehrere Screenshots',instruction:'Schreibe einen Kommentar. Mache dann mindestens zwei Screenshots. Der Kommentar muss nach jeder Aufnahme erhalten bleiben. Die Anzeige soll die Anzahl gespeicherter Screenshots nennen. Im HTML-Report müssen alle Bilder dieser Frage auftauchen.',golden:'known'}
+    build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.0 · Strap Geometry stehen. App, Ringe und Flächen müssen normal laden.',golden:'pass'},
+    straight:{title:'2 · Gerader Riemen',instruction:'Verbinde zwei Ringe an einer relativ flachen Körperstelle. Der Riemen soll ohne Schlangenlinie möglichst direkt und ruhig zwischen den Ringen verlaufen. Screenshot falls er trotz einfacher Geometrie sichtbar knickt.',golden:'known'},
+    chest:{title:'3 · Brust / Schulter',instruction:'Lege einen Riemen über Brust oder Schulter. Prüfe ihn aus mehreren Winkeln. Leichte natürliche Verdrehung ist okay; spontane 90°-Kippung, S-Schlangen oder sichtbares Körper-Clipping sind Fehler.',golden:'known'},
+    edges:{title:'4 · Beide Außenkanten liegen auf',instruction:'Nimm einen breiten Riemen an komplexer Geometrie. Prüfe links und rechts getrennt: beide Außenkanten sollen der Körperoberfläche folgen. Keine Seite darf deutlich in den Körper schneiden, während die andere korrekt liegt.',golden:'known'},
+    endpoints:{title:'5 · Ring-Endpunkte',instruction:'Prüfe beide Riemenenden. Sie sollen am sichtbaren Ringrand enden und weder deutlich darüber hinauslaufen noch vor dem Ring abbrechen.',golden:'known'},
+    twist:{title:'6 · Natürliche Verdrehung',instruction:'Erzeuge einen Verlauf, bei dem sich die Körperoberfläche räumlich dreht. Der Riemen darf sich kontinuierlich mitdrehen. Es darf aber keinen sprunghaften 90°/180°-Flip zwischen zwei Segmenten geben.',golden:'known'},
+    debugOpen:{title:'7 · Riemen Debug öffnen',instruction:'Riemen auswählen → Debug. Das Mannequin muss halbtransparent werden. Du sollst durch die vordere Körperfläche in die Debuggeometrie schauen können, ohne dass die Rückseite als zweite transparente Körperhaut stört.',golden:'known'},
+    debugSteps:{title:'8 · Debug Schritte',instruction:'Gehe alle 7 Schritte durch: direkte Verbindung, nominelle Außenkanten, Abstände, projizierte Punkte, rohe Außenkanten, finale Außenkanten, Triangulation. Jeder Schritt muss sichtbar etwas anderes zeigen und exakt zum ausgewählten Riemen gehören.',golden:'known'},
+    debugAll:{title:'9 · Debug Alles',instruction:'Aktiviere „Alles“. Mehrere Debug-Ebenen sollen gleichzeitig sichtbar sein. Drehe das Modell und prüfe besonders problematische Stellen. Schließe Debug danach: Mannequin und Riemen müssen sofort wieder normal dargestellt werden.',golden:'known'},
+    triangle:{title:'10 · Triangulation',instruction:'Im Triangulationsschritt Drahtgitter ansehen. Es dürfen keine langen zufälligen Dreiecke quer über mehrere Segmente entstehen. Jede Zelle zwischen linker/rechter Kante soll lokal in zwei Dreiecke zerlegt sein.',golden:'known'},
+    performance:{title:'11 · Reaktionszeit',instruction:'Mehrere Riemen erzeugen sowie Ring bewegen/merge/entmerge. Bitte notieren, wie lange die endgültige Riemenberechnung nach Loslassen ungefähr dauert. Wichtig: UI darf während normalem Drag nicht dauerhaft einfrieren.',golden:'known'},
+    mirror:{title:'12 · Spiegelriemen',instruction:'Erzeuge einen gespiegelten Riemen. Master und Spiegelpartner müssen geometrisch symmetrisch bleiben. Debug brauchst du nur auf einer Seite; der normale sichtbare Spiegelriemen darf dadurch nicht beschädigt werden.',golden:'pass'},
+    tester:{title:'13 · Tester QoL',instruction:'Schreibe Kommentar + mache mindestens 3 Screenshots. Drei Vorschaubilder sollen nebeneinander passen. Debugtester schließen/öffnen → dieselbe Frage. Von Frage 1 führt Zurück zur letzten und von der letzten Weiter zu Frage 1.',golden:'known'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -26,7 +27,10 @@
   const HISTORY_KEY='hd:v3:testHistory';
   const DB_NAME='HarnessDesignerV3Tests',DB_STORE='screenshots';
 
-  let run={results:{},startedAt:null,complete:false},index=0;
+  let run={results:{},startedAt:null,complete:false};
+  const INDEX_KEY=RELEASE.build+':guided-index';
+  let index=Math.max(0,Math.min(QUEUE.length-1,Number(localStorage.getItem(INDEX_KEY)||0)));
+  const saveIndex=()=>{try{localStorage.setItem(INDEX_KEY,String(index))}catch(e){}};
   try{const x=JSON.parse(localStorage.getItem(RUN_KEY)||'null');if(x&&x.results)run=x}catch(e){}
   const save=()=>{try{localStorage.setItem(RUN_KEY,JSON.stringify(run))}catch(e){}};
   const saveHistory=()=>{try{const h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'{}');h[RELEASE.build]={...run,build:RELEASE.build,base:RELEASE.base};localStorage.setItem(HISTORY_KEY,JSON.stringify(h))}catch(e){}};
@@ -177,11 +181,11 @@
   function mount(){
     const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
     const g=document.createElement('div');g.id='v3Guide';
-    g.innerHTML='<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kommentar / Fehlerbeschreibung…"><div id="v3ShotWrap"><img class="shotPreview"><div id="v3ShotMeta"><span>📷 Screenshot gespeichert</span><button class="deleteShot">Löschen</button></div></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>';
+    g.innerHTML='<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kommentar / Fehlerbeschreibung…"><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>';
     const summary=document.createElement('div');summary.id='v3GuideSummary';
     document.body.append(btn,g,summary);
     const $=q=>g.querySelector(q);
-    let previewUrl=null;
+    let previewUrls=[];
 
     async function render(){
       summary.style.display='none';
@@ -192,19 +196,22 @@
       $('.note').value=r.note||'';$('.prev').disabled=index===0;$('.next').disabled=index===QUEUE.length-1;
       ['pass','fail','skip'].forEach(k=>$('.'+k).classList.toggle('activeAnswer',r.status===k));
 
-      if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null}
+      for(const u of previewUrls)URL.revokeObjectURL(u);previewUrls=[];
       const shots=await listShots(id);
+      const gallery=$('.shotGallery');gallery.innerHTML='';
       if(shots.length){
-        const last=shots[shots.length-1];
-        previewUrl=URL.createObjectURL(last.blob);
-        $('.shotPreview').src=previewUrl;
         $('#v3ShotWrap').style.display='block';
         $('#v3ShotMeta span').textContent='📷 '+shots.length+' Screenshot'+(shots.length===1?'':'s')+' gespeichert';
-        $('.deleteShot').dataset.key=last.key;
+        for(const sh of shots){
+          const tile=document.createElement('div');tile.className='shotTile';
+          const img=document.createElement('img');const url=URL.createObjectURL(sh.blob);previewUrls.push(url);img.src=url;
+          const del=document.createElement('button');del.type='button';del.textContent='×';
+          del.onclick=async()=>{await deleteShotKey(sh.key);await render()};
+          tile.append(img,del);gallery.append(tile);
+        }
         $('.shot').textContent='📷 Weiteren Screenshot';
       }else{
         $('#v3ShotWrap').style.display='none';
-        $('.deleteShot').dataset.key='';
         $('.shot').textContent='📷 Screenshot';
       }
       g.style.display='block';
@@ -214,7 +221,7 @@
       const id=QUEUE[index];
       run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};
       save();
-      if(index<QUEUE.length-1)index++;else index=QUEUE.length;
+      index=(index+1)%QUEUE.length;saveIndex();
       render();
     }
 
@@ -230,9 +237,12 @@
 
     $('.pass').onclick=()=>record('pass');$('.fail').onclick=()=>record('fail');$('.skip').onclick=()=>record('skip');
     $('.note').onchange=()=>{const id=QUEUE[index],r=run.results[id]||{};run.results[id]={...r,note:$('.note').value.trim()};save()};
-    $('.prev').onclick=()=>{if(index>0){index--;render()}};
-    $('.next').onclick=()=>{if(index<QUEUE.length-1){index++;render()}};
-    $('.close').onclick=()=>g.style.display='none';
+    $('.prev').onclick=()=>{index=(index-1+QUEUE.length)%QUEUE.length;saveIndex();render()};
+    $('.next').onclick=()=>{index=(index+1)%QUEUE.length;saveIndex();render()};
+    $('.close').onclick=()=>{
+      const id=QUEUE[index],r=run.results[id]||{};
+      run.results[id]={...r,note:$('.note').value.trim()};save();saveIndex();g.style.display='none';
+    };
     $('.shot').onclick=async()=>{
       const id=QUEUE[index];
       const existing=run.results[id]||{};
@@ -242,18 +252,12 @@
       try{await capture(id);await render()}
       catch(e){$('.shot').textContent='Screenshot fehlgeschlagen'}
     };
-    $('.deleteShot').onclick=async()=>{
-      const key=$('.deleteShot').dataset.key;
-      if(key)await deleteShotKey(key);
-      await render();
-    };
 
     btn.onclick=()=>{
       summary.style.display='none';
       if(!run.startedAt){run.startedAt=new Date().toISOString();save()}
-      const first=QUEUE.findIndex(id=>!run.results[id]);
-      index=first<0?0:first;
-      render();
+      if(index<0||index>=QUEUE.length)index=0;
+      saveIndex();render();
     };
 
     window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport};

@@ -325,46 +325,126 @@ function buildPushMethodRoute(s,samples,lift){
   const pushes=smoothMethodPush(raw,5,3);
   return measured.map((g,i)=>({...g,finalPoint:base.getPoint(g.t).addScaledVector(g.normal,pushes[i]),push:pushes[i]}));
 }
+function edgeFirstNominalSample(s,t,lift=0){
+  const a=nodes.get(s.a),b=nodes.get(s.b);
+  if(!a||!b)return null;
+  const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
+  const A=visibleEndpoint(a,B0),B=visibleEndpoint(b,A0);
+  let tangent=B.clone().sub(A);
+  if(tangent.lengthSq()<1e-10)tangent=strapFrame(s).tangent.clone();
+  tangent.normalize();
+
+  const nA=nodeWorldNormal(a),nB=nodeWorldNormal(b);
+  let normal=nA.clone().lerp(nB,t);
+  normal.addScaledVector(tangent,-normal.dot(tangent));
+  if(normal.lengthSq()<1e-10)normal=strapFrame(s).normal.clone();
+  normal.normalize();
+
+  let side=new THREE.Vector3().crossVectors(normal,tangent);
+  if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
+  side.normalize();
+
+  const center=A.clone().lerp(B,t);
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
+  const nominalLeft=center.clone().addScaledVector(side,-halfW);
+  const nominalRight=center.clone().addScaledVector(side,halfW);
+
+  const lh=projectEdgeCandidateToBody(nominalLeft,normal);
+  const rh=projectEdgeCandidateToBody(nominalRight,normal);
+  const left=(lh?.point||nominalLeft).clone().addScaledVector(lh?.normal||normal,lift);
+  const right=(rh?.point||nominalRight).clone().addScaledVector(rh?.normal||normal,lift);
+
+  let outN=(lh?.normal||normal).clone().lerp(rh?.normal||normal,.5);
+  if(outN.lengthSq()<1e-10)outN=normal.clone();
+  outN.normalize();
+
+  return {
+    t,center,normal:outN,
+    nominalLeft,nominalRight,
+    leftHit:lh?lh.point.clone():null,rightHit:rh?rh.point.clone():null,
+    leftNormal:(lh?.normal||normal).clone(),rightNormal:(rh?.normal||normal).clone(),
+    stripLeft:left,stripRight:right
+  };
+}
+function edgeFirstSegmentNeedsRefine(a,b){
+  const ml=a.stripLeft.clone().lerp(b.stripLeft,.5);
+  const mr=a.stripRight.clone().lerp(b.stripRight,.5);
+  return bodyOccludesWorldPoint(ml,.008)||bodyOccludesWorldPoint(mr,.008);
+}
 function projectedChordSamplesStrip(s,{lift=0}={}){
   const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];
   const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
-  const ha=nearestBodySurface(A),hb=nearestBodySurface(B);
-  const nA=ha?.normal||nodeWorldNormal(a),nB=hb?.normal||nodeWorldNormal(b);
-  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.037),7,96),out=[];
+  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.030),7,72);
+  const base=[];
   for(let i=0;i<=segments;i++){
-    const t=i/segments,c=A.clone().lerp(B,t);
-    let n=nA.clone().lerp(nB,t);if(n.lengthSq()<1e-8)n=strapFrame(s).normal.clone();n.normalize();
-    const h=nearestBodySurfacePreferred(c,n)||nearestBodySurface(c);if(!h)continue;
-    out.push({t,point:h.point.clone(),normal:h.normal.clone().normalize(),displayPoint:h.point.clone().addScaledVector(h.normal,lift)});
+    const g=edgeFirstNominalSample(s,i/segments,lift);
+    if(g)base.push(g);
+  }
+  if(base.length<2)return base;
+
+  const refine=(x,y,depth)=>{
+    if(depth>=2||!edgeFirstSegmentNeedsRefine(x,y))return [x,y];
+    const mid=edgeFirstNominalSample(s,(x.t+y.t)*.5,lift);
+    if(!mid)return [x,y];
+    const l=refine(x,mid,depth+1),r=refine(mid,y,depth+1);
+    return l.slice(0,-1).concat(r);
+  };
+
+  const out=[];
+  for(let i=0;i<base.length-1;i++){
+    const part=refine(base[i],base[i+1],0);
+    if(i)part.shift();
+    out.push(...part);
   }
   return out;
 }
 function buildStripMethodRoute(s,samples,lift){
-  const measured=widthConstrainedProjectedRoute(s,samples,lift);
-  const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];let prevSide=null;
-  for(let i=0;i<measured.length;i++){
-    const g=measured[i],pp=measured[Math.max(0,i-1)].point,pn=measured[Math.min(measured.length-1,i+1)].point;
-    let tan=pn.clone().sub(pp);if(tan.lengthSq()<1e-8)tan=strapFrame(s).tangent.clone();tan.normalize();
-    let n=g.normal.clone();n.addScaledVector(tan,-n.dot(tan));if(n.lengthSq()<1e-8)n=strapFrame(s).normal.clone();n.normalize();
-    let side=new THREE.Vector3().crossVectors(n,tan);if(side.lengthSq()<1e-8)side=prevSide?prevSide.clone():strapFrame(s).side.clone();side.normalize();
-    if(prevSide&&side.dot(prevSide)<0)side.negate();prevSide=side.clone();
-    const lh=projectEdgeCandidateToBody(g.point.clone().addScaledVector(side,-halfW),n);
-    const rh=projectEdgeCandidateToBody(g.point.clone().addScaledVector(side,halfW),n);
-    const left=(lh?lh.point:g.point.clone().addScaledVector(side,-halfW)).clone().addScaledVector(lh?lh.normal:n,lift);
-    const right=(rh?rh.point:g.point.clone().addScaledVector(side,halfW)).clone().addScaledVector(rh?rh.normal:n,lift);
-    const mid=left.clone().lerp(right,.5);
-    let nn=(lh?.normal||n).clone().lerp(rh?.normal||n,.5);if(nn.lengthSq()<1e-8)nn=n.clone();nn.normalize();
-    out.push({...g,finalPoint:mid,normal:nn,stripLeft:left,stripRight:right});
-  }
-  if(out.length>=2){
-    const fix=(g,next,node)=>{
-      const center=visibleEndpoint(node,next.finalPoint),halfW=Math.max(.0003,s.widthMM*.0037*.5);
-      let side=g.stripRight.clone().sub(g.stripLeft);if(side.lengthSq()<1e-8)side=strapFrame(s).side.clone();side.normalize();
-      g.finalPoint=center;g.stripLeft=center.clone().addScaledVector(side,-halfW);g.stripRight=center.clone().addScaledVector(side,halfW);
-    };
-    fix(out[0],out[1],nodes.get(s.a));
-    fix(out[out.length-1],out[out.length-2],nodes.get(s.b));
-  }
+  if(!samples?.length)return [];
+  const rawLeft=samples.map(g=>g.stripLeft.clone());
+  const rawRight=samples.map(g=>g.stripRight.clone());
+
+  // One conservative relaxation pass. We only reproject if smoothing would
+  // put an edge back inside the mannequin.
+  const smoothEdge=(key)=>{
+    const out=[];
+    for(let i=0;i<samples.length;i++){
+      const g=samples[i];
+      if(i===0||i===samples.length-1){out.push(g[key].clone());continue}
+      const prev=samples[i-1][key],cur=g[key],next=samples[i+1][key];
+      const candidate=prev.clone().multiplyScalar(.18).add(cur.clone().multiplyScalar(.64)).add(next.clone().multiplyScalar(.18));
+      if(bodyOccludesWorldPoint(candidate,.006)){
+        const nkey=key==='stripLeft'?'leftNormal':'rightNormal';
+        const h=projectEdgeCandidateToBody(candidate,g[nkey]||g.normal);
+        out.push((h?.point||cur).clone().addScaledVector(h?.normal||g.normal,lift));
+      }else out.push(candidate);
+    }
+    return out;
+  };
+
+  const finalLeft=smoothEdge('stripLeft');
+  const finalRight=smoothEdge('stripRight');
+  const out=samples.map((g,i)=>{
+    let n=(g.leftNormal||g.normal).clone().lerp(g.rightNormal||g.normal,.5);
+    if(n.lengthSq()<1e-10)n=g.normal.clone();
+    n.normalize();
+    return {...g,stripLeft:finalLeft[i],stripRight:finalRight[i],normal:n};
+  });
+
+  // Debug trace is the exact data produced by this solve.
+  s.debugTrace={
+    endpoints:[
+      visibleEndpoint(nodes.get(s.a),nodeWorldPosition(nodes.get(s.b))),
+      visibleEndpoint(nodes.get(s.b),nodeWorldPosition(nodes.get(s.a)))
+    ],
+    nominalLeft:samples.map(g=>g.nominalLeft.clone()),
+    nominalRight:samples.map(g=>g.nominalRight.clone()),
+    probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
+    probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
+    projectedLeft:rawLeft,
+    projectedRight:rawRight,
+    finalLeft:finalLeft.map(p=>p.clone()),
+    finalRight:finalRight.map(p=>p.clone())
+  };
   return out;
 }
 function methodRouteToControls(s,route,maxControls){
@@ -377,35 +457,144 @@ function methodRouteToControls(s,route,maxControls){
   }
   keep.push(route[route.length-1]);return keep;
 }
+const STRAP_DEBUG_STEPS=[
+  ['Direkte Verbindung','Direkte Verbindung zwischen den sichtbaren Anschlussstellen der Ringe.'],
+  ['Nominelle Außenkanten','Gerade Verbindung, um ± halbe Riemenbreite nach links/rechts versetzt. Noch ohne Körperkontakt.'],
+  ['Abstände zum Körper','Messlinien von den nominellen Außenkanten zu den gefundenen Oberflächenpunkten.'],
+  ['Projizierte Punkte','Unabhängig berechnete Körperkontaktpunkte der linken und rechten Außenkante.'],
+  ['Rohe Außenkanten','Projizierte Punkte direkt miteinander verbunden – vor der leichten Glättung.'],
+  ['Finale Außenkanten','Tatsächlich für den Riemen verwendete linke und rechte Außenkante.'],
+  ['Triangulation','Dreiecksnetz zwischen den beiden finalen Außenkanten.']
+];
 function clearStrapMethodDebug(s){
   if(!s?.controlGroup)return;
-  while(s.controlGroup.children.length){const o=s.controlGroup.children.pop();o.geometry?.dispose?.();o.material?.dispose?.()}
+  while(s.controlGroup.children.length){
+    const o=s.controlGroup.children.pop();
+    o.geometry?.dispose?.();o.material?.dispose?.();
+  }
+}
+function strapDebugLine(s,points,color=0x00d8ff,opacity=.9,segments=false){
+  if(!points?.length)return;
+  const pos=[];
+  if(segments){
+    for(const pair of points)for(const p of pair)pos.push(p.x,p.y,p.z);
+  }else for(const p of points)pos.push(p.x,p.y,p.z);
+  if(pos.length<6)return;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.LineBasicMaterial({color,transparent:true,opacity,depthTest:true,depthWrite:false});
+  const obj=segments?new THREE.LineSegments(geo,mat):new THREE.Line(geo,mat);
+  obj.renderOrder=40;s.controlGroup.add(obj);
+}
+function strapDebugPoints(s,points,color=0x00d8ff,size=5){
+  if(!points?.length)return;
+  const pos=[];for(const p of points)pos.push(p.x,p.y,p.z);
+  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const mat=new THREE.PointsMaterial({color,size,sizeAttenuation:false,depthTest:true,depthWrite:false});
+  const obj=new THREE.Points(geo,mat);obj.renderOrder=41;s.controlGroup.add(obj);
+}
+function strapDebugTriangles(s,left,right){
+  const seg=[];
+  for(let i=0;i<Math.min(left.length,right.length)-1;i++){
+    const l0=left[i],r0=right[i],l1=left[i+1],r1=right[i+1];
+    seg.push([l0,r0],[l1,r1],[l0,l1],[r0,r1]);
+    const alt=stripQuadScore(l0,r0,l1,r1,1)>stripQuadScore(l0,r0,l1,r1,0);
+    seg.push(alt?[l0,r1]:[r0,l1]);
+  }
+  strapDebugLine(s,seg,0xffd54a,.78,true);
 }
 function updateStrapMethodDebug(s,route){
-  clearStrapMethodDebug(s);if(!s?.debugRoute||!route?.length)return;
-  const line=(getter,opacity)=>{
-    const pos=[];for(const g of route){const p=getter(g);if(p)pos.push(p.x,p.y,p.z)}
-    if(pos.length<6)return;const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-    const mat=new THREE.LineBasicMaterial({color:0x00d8ff,transparent:true,opacity,depthWrite:false});const l=new THREE.Line(geo,mat);l.renderOrder=20;s.controlGroup.add(l);
-  };
-  line(g=>g.finalPoint||g.displayPoint,.95);line(g=>g.stripLeft||g.leftDisplay,.40);line(g=>g.stripRight||g.rightDisplay,.40);
-  const pts=[],every=Math.max(1,Math.ceil(route.length/14));for(let i=0;i<route.length;i+=every){const p=route[i].finalPoint||route[i].displayPoint;pts.push(p.x,p.y,p.z)}
-  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
-  const mat=new THREE.PointsMaterial({color:0x00d8ff,size:4,sizeAttenuation:false,depthWrite:false});s.controlGroup.add(new THREE.Points(geo,mat));
+  clearStrapMethodDebug(s);
+  if(!s?.debugRoute||!s.debugTrace)return;
+  const d=s.debugTrace;
+  const show=(step)=>s.debugAll||s.debugStep===step;
+
+  if(show(0))strapDebugLine(s,d.endpoints,0xffffff,.95);
+  if(show(1)){
+    strapDebugLine(s,d.nominalLeft,0xff6b6b,.95);
+    strapDebugLine(s,d.nominalRight,0x6ba8ff,.95);
+  }
+  if(show(2)){
+    strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
+    strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
+  }
+  if(show(3)){
+    strapDebugPoints(s,d.projectedLeft,0xff6b6b,5);
+    strapDebugPoints(s,d.projectedRight,0x6ba8ff,5);
+  }
+  if(show(4)){
+    strapDebugLine(s,d.projectedLeft,0xff6b6b,.95);
+    strapDebugLine(s,d.projectedRight,0x6ba8ff,.95);
+  }
+  if(show(5)){
+    strapDebugLine(s,d.finalLeft,0x00f0b5,1);
+    strapDebugLine(s,d.finalRight,0x00f0b5,1);
+  }
+  if(show(6))strapDebugTriangles(s,d.finalLeft,d.finalRight);
+
+  if(s.mesh)s.mesh.visible=s.debugAll||s.debugStep===6;
+}
+let strapDebugBodyBackup=null;
+function setStrapDebugBodyMode(active){
+  if(active){
+    if(strapDebugBodyBackup)return;
+    strapDebugBodyBackup=bodyMeshes.map(m=>({mesh:m,material:m.material}));
+    for(const {mesh,material} of strapDebugBodyBackup){
+      const mat=material.clone();
+      mat.transparent=true;mat.opacity=.23;mat.side=THREE.FrontSide;mat.depthWrite=false;
+      mesh.material=mat;
+    }
+  }else{
+    if(!strapDebugBodyBackup)return;
+    for(const {mesh,material} of strapDebugBodyBackup){
+      mesh.material?.dispose?.();
+      mesh.material=material;
+    }
+    strapDebugBodyBackup=null;
+  }
+}
+function refreshStrapDebugPanel(s){
+  const panel=document.getElementById('strapDebugPanel');
+  if(!panel)return;
+  const step=THREE.MathUtils.clamp(s?.debugStep||0,0,STRAP_DEBUG_STEPS.length-1);
+  document.getElementById('strapDebugStepLabel').textContent=`${step+1}/${STRAP_DEBUG_STEPS.length} · ${STRAP_DEBUG_STEPS[step][0]}`;
+  document.getElementById('strapDebugDescription').textContent=STRAP_DEBUG_STEPS[step][1];
+  document.getElementById('strapDebugAllBtn').classList.toggle('active',!!s?.debugAll);
+}
+function openStrapDebugMode(s){
+  if(!s?.debugTrace)rebuildAutoProjection(s);
+  s.debugRoute=true;s.debugStep=THREE.MathUtils.clamp(s.debugStep||0,0,STRAP_DEBUG_STEPS.length-1);
+  document.getElementById('strapDebugPanel')?.classList.remove('hidden');
+  setStrapDebugBodyMode(true);
+  updateStrapMethodDebug(s,s.methodRoute||[]);
+  refreshStrapDebugPanel(s);
+  strapDebugBtn.classList.add('active');
+}
+function closeStrapDebugMode(s=selected){
+  if(s?.kind==='strap'){
+    s.debugRoute=false;s.debugAll=false;
+    clearStrapMethodDebug(s);
+    if(s.mesh)s.mesh.visible=true;
+  }
+  setStrapDebugBodyMode(false);
+  document.getElementById('strapDebugPanel')?.classList.add('hidden');
+  strapDebugBtn.classList.remove('active');
 }
 function rebuildAutoProjection(s){
-  if(!s)return;s.autoProject=true;s.autoMethod='strip';s.previewMode=false;
-  const lift=waypointBaseLiftForStrap(s);let samples=projectedChordSamplesStrip(s,{lift});
-  if(samples.length<3){updateStrapGeometry(s);return}
-  samples=refineProjectedGuide(s,samples,lift,2);
+  if(!s)return;
+  s.autoProject=true;s.autoMethod='strip';s.previewMode=false;
+  const lift=waypointBaseLiftForStrap(s);
+  let samples=projectedChordSamplesStrip(s,{lift});
+  if(samples.length<2){updateStrapGeometry(s);return}
   let route=buildStripMethodRoute(s,samples,lift);
+
   const deleted=s.deletedStripTs||[];
   if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
+
   s.methodRoute=route;s.controls=[];s.surfaceLevel=0;
-  updateStrapGeometry(s);updateStrapMethodDebug(s,route);
+  updateStrapGeometry(s);
+  updateStrapMethodDebug(s,route);
 }
-
-
 function projectChordPointToBody(s,t,lift=0){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return null;
