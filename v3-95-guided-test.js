@@ -1,31 +1,87 @@
 // ============================================================================
-// V3.1.0 MODULAR BASE
+// V3.2.0 RING MERGE
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.1.0 MODULAR BASE',base:'V1.9f2 GOLDEN'};
+  const RELEASE={build:'V3.2.0 RING MERGE',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    startup:{title:'App starten',instruction:'Mannequin und bekannte UI müssen vollständig sichtbar sein.',golden:'pass'},
-    camera:{title:'Kamera testen',instruction:'Ein Finger drehen, zwei Finger zoomen.',golden:'pass'},
-    ringCreate:{title:'Ring platzieren',instruction:'Setze irgendwo einen neuen Ring auf den Körper.',golden:'pass'},
-    ringMove:{title:'Ring verschieben',instruction:'Ziehe den Ring über den Körper und lasse ihn los.',golden:'pass'},
-    ringEdit:{title:'Ring bearbeiten',instruction:'Ändere Durchmesser und Ringstärke.',golden:'pass'},
-    mirror:{title:'Ring spiegeln',instruction:'Erzeuge ein Spiegelpaar und bewege den Master.',golden:'pass'},
-    axisSnap:{title:'Mittelachsen-Snap',instruction:'Ziehe ein Spiegelpaar zur Körpermitte.',golden:'pass'},
-    genericSnap:{title:'Ring ↔ Ring Snap',instruction:'Ziehe zwei beliebige Ringe fast exakt übereinander.',golden:'known',known:'Golden: grundsätzlich möglich, aber kleine Ringe schwer zu treffen. Mehrfach-Merge/Finalisieren noch ungeklärt.'},
-    connect:{title:'Riemen verbinden',instruction:'Verbinde zwei Ringe über „Verbinden“.',golden:'known',known:'Golden: funktioniert, aber Geometrie kann kantig und nicht gerade sein.'},
-    strapPreview:{title:'Riemen-Preview',instruction:'Bewege einen Endring eines vorhandenen Riemens. Der Drag soll flüssig bleiben.',golden:'pass'},
-    strapBasic:{title:'Einfacher Riemen',instruction:'Prüfe einen Riemen an einer relativ flachen Körperstelle.',golden:'known',known:'Golden: funktional, aber unnötig lange Ladezeit für einfache Geometrie.'},
-    strapComplex:{title:'Riemen Brust / Schulter',instruction:'Prüfe einen Riemen über Brust oder Schulter aus mehreren Winkeln.',golden:'known',known:'Golden: Schlangenlinien, abgehackte Linienführung und teils Körperdurchdringung möglich.'},
-    strapEndpoints:{title:'Riemen-Endpunkte',instruction:'Prüfe, ob der Riemen plausibel am sichtbaren Ring endet.',golden:'known',known:'Golden: Endpunkt kann teilweise über den Ring hinauslaufen.'},
-    panelCreate:{title:'Fläche erstellen',instruction:'Erstelle aus mindestens drei Ringen eine Fläche.',golden:'known',known:'Golden: funktioniert schnell, an Ringen aber noch fransige Kante.'},
-    panelComplex:{title:'Große Fläche',instruction:'Erzeuge eine größere Fläche über komplexer Körpergeometrie.',golden:'known',known:'Golden: kleine schmale winkelabhängige Dreiecksspalten bleiben, akzeptiert.'},
-    panelSpeed:{title:'Flächen-Speed',instruction:'Erzeuge eine mittelgroße Fläche. Sie sollte praktisch sofort erscheinen.',golden:'pass'},
-    undoRedo:{title:'Undo / Redo',instruction:'Mache eine Änderung rückgängig und stelle sie wieder her.',golden:'known',known:'Golden: funktional, bei viel Geometrie aber lange Ladezeiten.'},
-    reload:{title:'Reload',instruction:'Lade die Seite neu. Die App muss erneut zuverlässig starten.',golden:'pass'},
-    ui:{title:'UI bedienen',instruction:'Panel scrollen/ziehen und alle wichtigen Buttons erreichen.',golden:'pass'}
+    startup:{
+      title:'1 · Start / Build prüfen',
+      instruction:'Prüfe zuerst unten die Patchnotes: dort muss V3.2.0 stehen. Mannequin, UI und vorhandene Golden-Funktionen müssen normal geladen sein.',
+      golden:'pass'
+    },
+    smallRingSelect:{
+      title:'2 · Kleinen Ring treffen',
+      instruction:'Stelle den Ringdurchmesser deutlich kleiner als Standard ein (z. B. etwa 15–20 mm). Tippe den sichtbaren Ringrand anschließend mehrfach aus verschiedenen Zoomstufen an. Ziel: der Ring soll auf dem iPhone zuverlässig auswählbar sein, ohne dass du pixelgenau treffen musst. Bitte Fehler notieren, falls die Hitbox zu groß wirkt und du stattdessen benachbarte Objekte erwischst.',
+      golden:'known',known:'V3.1: kleine Ringe waren unnötig schwer zu treffen.'
+    },
+    hitboxDebug:{
+      title:'3 · Hitbox-Debug',
+      instruction:'Aktiviere „Hitboxen“. Prüfe einen kleinen und einen großen Ring. Die cyanfarbene Auswahl-Hitbox soll mit dem Ring mitskalieren, aber sichtbar toleranter als der Metallrand sein. Sie darf nicht riesig über den Ring hinausragen.',
+      golden:'known',known:'V3.2 verändert nur die unsichtbare/Debug-Hitbox, nicht die sichtbare Ringgeometrie.'
+    },
+    softMergeSmall:{
+      title:'4 · Soft-Merge mit kleinen Ringen',
+      instruction:'Setze zwei eher kleine Ringe dicht nebeneinander und ziehe Ring A nahezu deckungsgleich auf Ring B. Das Merge soll deutlich leichter auslösen als in V3.1, aber erst bei echter Beinahe-Überlappung. Prüfe auch, ob der Host-Ring nach dem Loslassen exakt an seiner Position bleibt.',
+      golden:'known',known:'V3.1: Merge grundsätzlich möglich, bei kleinen Ringen schwer auszulösen.'
+    },
+    softMergePersistence:{
+      title:'5 · Soft-Merge bleibt bestehen',
+      instruction:'Nach dem Merge Finger vollständig loslassen, Kamera drehen und den gemergten Ring erneut auswählen. Es darf kein zweiter Ring wieder herausspringen. Der ⇄-Button soll nun „Trennen“ repräsentieren und zusätzlich muss „Ringe endgültig verschmelzen“ erscheinen.',
+      golden:'pass'
+    },
+    sameGesturePullout:{
+      title:'6 · Sofort wieder wegziehen',
+      instruction:'Erzeuge erneut einen Soft-Merge und ziehe im selben Drag-Gesture direkt wieder deutlich vom Host weg. Der bewegte Ring soll sich wieder lösen, inklusive seiner ursprünglichen Attachments. Prüfe, dass kein doppelter oder verlorener Ring entsteht.',
+      golden:'pass'
+    },
+    unmergeButton:{
+      title:'7 · Trennen-Button',
+      instruction:'Erzeuge einen Soft-Merge, lasse los und drücke anschließend ⇄ / Trennen. Der bewegte Gast-Ring soll wieder separat neben dem Host erscheinen. Falls vorher ein Riemen am Gast hing, prüfe bitte besonders, ob er wieder am richtigen Ring hängt.',
+      golden:'pass'
+    },
+    thirdRingBlock:{
+      title:'8 · Dritten Ring blockieren',
+      instruction:'Merge Ring A weich auf Ring B. Setze dann Ring C und versuche C ebenfalls exakt auf den bereits gemergten Host zu ziehen. Es darf KEIN 3er-Soft-Merge entstehen. Stattdessen soll einmalig die Meldung „Bereits gemerged · erst trennen oder endgültig verschmelzen“ erscheinen. Prüfe, dass C beweglich bleibt und nichts verschwindet.',
+      golden:'known',known:'Neu in V3.2: Soft-Merge ist bewusst auf genau zwei Ringe begrenzt.'
+    },
+    permanentMerge:{
+      title:'9 · Endgültig verschmelzen',
+      instruction:'Merge A weich auf B und drücke „Ringe endgültig verschmelzen“. Danach darf der Trennen-Zustand verschwinden: es existiert logisch nur noch ein Ring. Versuche den Ring erneut anzutippen und zu bewegen. Er soll sich wie ein normaler einzelner Ring verhalten.',
+      golden:'known',known:'Neu in V3.2. Undo darf den Vorgang weiterhin rückgängig machen; nur der normale Trennen-Button soll ihn nicht mehr lösen.'
+    },
+    mergeAgainAfterFinalize:{
+      title:'10 · Nach Finalisierung erneut mergen',
+      instruction:'Nachdem A+B endgültig verschmolzen wurden, ziehe einen neuen Ring C darauf. Jetzt muss wieder ein normaler Soft-Merge möglich sein. Das ist der vorgesehene Weg, um nacheinander mehr als zwei ursprüngliche Ringe zusammenzuführen.',
+      golden:'known',known:'Soll zeigen, dass wir keine komplexen 3er-Soft-Merge-Gruppen brauchen.'
+    },
+    strapAttachment:{
+      title:'11 · Attachment-Remap: Riemen',
+      instruction:'Baue zwei Ringe A/B, hänge an A einen Riemen zu Ring X und an B einen anderen Riemen zu Ring Y. Merge A auf B und finalisiere. Danach müssen BEIDE Riemen weiterhin am verbleibenden Ring hängen. Bewege ihn: beide Riemen müssen mitgehen. Bitte Screenshot machen, falls einer verschwindet, doppelt wird oder am falschen Punkt endet.',
+      golden:'pass'
+    },
+    panelAttachment:{
+      title:'12 · Attachment-Remap: Fläche',
+      instruction:'Erzeuge eine Fläche, deren Boundary einen der später zu mergenden Ringe benutzt. Merge/finalisiere diesen Ring mit einem zweiten. Die Fläche muss bestehen bleiben und beim Verschieben des verbleibenden Rings weiter reagieren. Achte besonders darauf, ob am Rand plötzlich ein Loch oder ein zurückspringender Boundary-Punkt entsteht.',
+      golden:'pass'
+    },
+    mirrorIsolation:{
+      title:'13 · Spiegel-Logik nicht beschädigt',
+      instruction:'Teste anschließend ein normales Spiegelpaar inklusive Mittelachsen-Merge und Entmerge. Diese Funktion wurde NICHT absichtlich verändert und muss sich wie V3.1 verhalten. Falls hier etwas anders ist, ist das eine echte Regression.',
+      golden:'pass'
+    },
+    undoRedo:{
+      title:'14 · Undo / Redo der neuen Merge-Schritte',
+      instruction:'Teste Undo/Redo einmal nach Soft-Merge und einmal nach „endgültig verschmelzen“. Es dürfen keine Geister-Ringe, verlorene Riemen oder ungültigen Flächen entstehen. Die bekannte längere Ladezeit bei viel Geometrie ist weiterhin erlaubt.',
+      golden:'known',known:'V3.1: Undo/Redo funktionierte, konnte bei viel Geometrie aber langsam sein.'
+    },
+    reload:{
+      title:'15 · Reload nach Finalisierung',
+      instruction:'Finalisiere einen Merge, lade die Seite neu und prüfe, ob der gespeicherte Zustand weiterhin genau einen Ring an dieser Stelle enthält und die App normal startet.',
+      golden:'pass'
+    }
   };
 
   const QUEUE=Object.keys(TESTS);

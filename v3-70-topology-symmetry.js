@@ -370,14 +370,31 @@ function entmergeRing(merged,p){
 }
 
 
-function genericRingSnapIn(a,b){return Math.max(.006,Math.min(ringMajor(a),ringMajor(b))*.16)}
-function genericRingSnapOut(a){return Math.max(.016,ringMajor(a)*.55)}
+function genericRingSnapIn(a,b){
+  // Still requires near-overlap, but no longer becomes impractically tiny on small rings.
+  const r=Math.min(ringMajor(a),ringMajor(b));
+  return Math.max(.0105,Math.min(.020,r*.28));
+}
+function genericRingSnapOut(a){return Math.max(.018,ringMajor(a)*.55)}
 function nearestGenericRingSnapTarget(n){
   if(!n?.ringVisible||n.mergedState||n.snapMergeState)return null;
   const p=nodeWorldPosition(n);let best=null,bd=Infinity;
   for(const o of nodes.values()){
     if(o===n||!o.ringVisible||o.mergedState||o.snapMergeState)continue;
     if(pairOfNode(n)?.id===o.id)continue;
+    const d=p.distanceTo(nodeWorldPosition(o));
+    if(d<genericRingSnapIn(n,o)&&d<bd){best=o;bd=d}
+  }
+  return best;
+}
+function blockedGenericRingSnapTarget(n){
+  if(!n?.ringVisible)return null;
+  const p=nodeWorldPosition(n);let best=null,bd=Infinity;
+  for(const o of nodes.values()){
+    if(o===n||!o.ringVisible)continue;
+    if(pairOfNode(n)?.id===o.id)continue;
+    const blocked=!!n.snapMergeState||!!o.snapMergeState;
+    if(!blocked)continue;
     const d=p.distanceTo(nodeWorldPosition(o));
     if(d<genericRingSnapIn(n,o)&&d<bd){best=o;bd=d}
   }
@@ -408,6 +425,41 @@ function genericUnmergeRing(host,worldPoint=null){
   }
   panelHandleNodeEntmerge(host,guest,host);host.snapMergeState=null;selected=guest;rebuildAllWraps();return guest;
 }
+
+function finalizeGenericRingMerge(host){
+  const state=host?.snapMergeState;
+  if(!state)return false;
+  const guestId=state.guest?.id;
+
+  // Straps are already remapped during the soft merge. Finalization removes
+  // only the reversible bookkeeping, not the resulting topology.
+  for(const panel of panels.values()){
+    for(const slot of panel.boundarySlots||[]){
+      const stack=slot.mergeStack||[];
+      const rec=stack[stack.length-1];
+      if(rec?.mergedId===host.id)stack.pop();
+    }
+  }
+
+  // Remove stale partner references to the node that is now permanently gone.
+  for(const n of nodes.values()){
+    if(n===host)continue;
+    if(n.mirrorId===guestId)n.mirrorId=null;
+    if(n.previousPartnerId===guestId)n.previousPartnerId=null;
+  }
+  for(const s of straps.values()){
+    if(s.previousPartnerId===guestId)s.previousPartnerId=null;
+  }
+  if(host.previousPartnerId===guestId)host.previousPartnerId=null;
+
+  host.snapMergeState=null;
+  host.manualUnlinked=false;
+  rebuildAllWraps();
+  refreshAutomaticCrossings();
+  refreshMaterials();
+  return true;
+}
+
 function maybeAxisMergeOrEntmerge(n){
   const p=nodeWorldPosition(n);
   if(n.mergedState){

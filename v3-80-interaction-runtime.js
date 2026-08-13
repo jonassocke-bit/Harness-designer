@@ -238,7 +238,16 @@ function requestNodeDrag(n,x,y){
       updateAttachedStraps(q.n.id);
       if(q.n.ringVisible){
         const target=nearestGenericRingSnapTarget(q.n);
-        if(target){const host=genericMergeRingIntoHost(q.n,target);if(single){single.activeNodeId=host.id;single.genericMergeThisGesture=host.id}selected=host;refreshMaterials();showSelection();return}
+        if(target){
+          const host=genericMergeRingIntoHost(q.n,target);
+          if(single){single.activeNodeId=host.id;single.genericMergeThisGesture=host.id}
+          selected=host;refreshMaterials();showSelection();return;
+        }
+        const blocked=blockedGenericRingSnapTarget(q.n);
+        if(blocked&&single&&!single.genericMergeBlockedToast){
+          single.genericMergeBlockedToast=true;
+          showToast('Bereits gemerged · erst trennen oder endgültig verschmelzen');
+        }
       }
     }
 

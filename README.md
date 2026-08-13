@@ -41,3 +41,7 @@ Future modularization builds will declare only their changed modules and show a 
 - Existing screenshot preview / delete / retake / HTML report export retained.
 - Visible build/patchnote version updated.
 - Harness design logic unchanged.
+
+
+## V3.2.0
+Ring Snap/Merge Impact Patch. See PATCHNOTES.md. V3.1.0 remains the Modular Golden reference.

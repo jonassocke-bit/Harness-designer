@@ -4,7 +4,7 @@ const canvas=$('scene'),viewport=$('viewport');
 const selectionPanel=$('selectionPanel'),modelPanel=$('modelPanel');
 const nodeControls=$('nodeControls'),strapControls=$('strapControls');
 const selectionLabel=$('selectionLabel'),selectionTitle=$('selectionTitle');
-const linkSelectedBtn=$('linkSelectedBtn'),lockSelectedBtn=$('lockSelectedBtn'),deleteSelectedBtn=$('deleteSelectedBtn');
+const linkSelectedBtn=$('linkSelectedBtn'),lockSelectedBtn=$('lockSelectedBtn'),deleteSelectedBtn=$('deleteSelectedBtn'),finalizeMergeBtn=$('finalizeMergeBtn');
 const undoBtn=$('undoBtn'),redoBtn=$('redoBtn');
 const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),rotateModelBtn=$('rotateModelBtn');
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');

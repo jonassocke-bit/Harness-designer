@@ -601,6 +601,7 @@ function showSelection(){
   selectionLabel.textContent=selected.kind==='node'?(selected.ringVisible?'RING':'PUNKT'):selected.kind==='strap'?'RIEMEN':'FLÄCHE';
   selectionTitle.textContent=selected.id;
   lockSelectedBtn.classList.toggle('active',!!selected.locked);
+  finalizeMergeBtn.classList.toggle('hidden',!(selected.kind==='node'&&!!selected.snapMergeState));
   updateLinkButton();
   if(selected.kind==='node'){
     nodeRingToggle.classList.toggle('active',selected.ringVisible);
@@ -633,6 +634,6 @@ function showSelection(){
     syncParamUI('panelOffset',selected.offsetMM??panelDefaults.offsetMM);
   }
 }
-function hideSelection(){selectionPanel.classList.add('hidden');updateLinkButton()}
+function hideSelection(){selectionPanel.classList.add('hidden');finalizeMergeBtn.classList.add('hidden');updateLinkButton()}
 
 

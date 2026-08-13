@@ -347,6 +347,14 @@ nodeRingToggle.addEventListener('click',()=>{
   dynReconcileSymmetry({syncProps:true});
   commitHistory();
 });
+finalizeMergeBtn.addEventListener('click',()=>{
+  if(selected?.kind!=='node'||!selected.snapMergeState)return;
+  if(finalizeGenericRingMerge(selected)){
+    showToast('Ringe endgültig verschmolzen');
+    showSelection();
+    commitHistory();
+  }
+});
 linkSelectedBtn.addEventListener('click',()=>{
   if(!selected)return;
   if(selected.kind==='node'&&selected.snapMergeState){

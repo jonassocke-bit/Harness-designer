@@ -36,7 +36,8 @@ function refreshHitboxDebug(){
   while(hitboxDebugRoot.children.length){const o=hitboxDebugRoot.children.pop();o.geometry?.dispose?.();o.material?.dispose?.()}
   hitboxDebugBtn.classList.toggle('active',hitboxDebug);if(!hitboxDebug)return;
   for(const n of nodes.values()){if(!n.ringVisible)continue;
-    const tg=new THREE.TorusGeometry(ringMajor(n),Math.max(ringTube(n)*1.15,.004),8,30),eg=new THREE.EdgesGeometry(tg);tg.dispose();
+    const debugHitTube=Math.max(ringTube(n)*1.45,.0075,Math.min(ringMajor(n)*.34,.012));
+    const tg=new THREE.TorusGeometry(ringMajor(n),debugHitTube,8,30),eg=new THREE.EdgesGeometry(tg);tg.dispose();
     const l=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x00d8ff,depthTest:false}));l.position.copy(n.group.position);l.quaternion.copy(n.group.quaternion);l.renderOrder=99;hitboxDebugRoot.add(l);
     const s=new THREE.Mesh(new THREE.SphereGeometry(genericRingSnapOut(n),12,8),new THREE.MeshBasicMaterial({color:0xffcc55,wireframe:true,transparent:true,opacity:.2,depthTest:false}));s.position.copy(nodeWorldPosition(n));s.renderOrder=98;hitboxDebugRoot.add(s);
   }
@@ -46,7 +47,10 @@ function rebuildNodeVisual(n){
   let visual,hit;
   if(n.ringVisible){
     visual=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),ringTube(n),12,40),selected?.id===n.id?METAL_SEL:METAL_MAT);
-    hit=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),Math.max(ringTube(n)*1.15,.004),10,36),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
+    // V3.2: visual ring stays unchanged; only the invisible touch tube grows.
+    // Small rings previously had a nearly needle-thin hit target on iPhone.
+    const hitTube=Math.max(ringTube(n)*1.45,.0075,Math.min(ringMajor(n)*.34,.012));
+    hit=new THREE.Mesh(new THREE.TorusGeometry(ringMajor(n),hitTube,10,36),new THREE.MeshBasicMaterial({transparent:true,opacity:.001}));
   }else{
     const r=Math.max(.008,n.sizeMM*.0037*.5);
     visual=new THREE.Mesh(new THREE.SphereGeometry(r,16,12),selected?.id===n.id?POINT_SEL:POINT_MAT);
