@@ -6,8 +6,6 @@
   <meta name="theme-color" content="#111216">
   <title>Harness Designer V2 Alpha</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.179.1/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
   <canvas id="viewport"></canvas>
@@ -77,16 +75,7 @@
 
   <div id="status">V2 Alpha</div>
 
-  <script src="config.js"></script>
-  <script src="state.js"></script>
-  <script src="geometry.js"></script>
-  <script src="body.js"></script>
-  <script src="nodes.js"></script>
-  <script src="straps.js"></script>
-  <script src="panels.js"></script>
-  <script src="history.js"></script>
-  <script src="interaction.js"></script>
-  <script src="ui.js"></script>
-  <script src="app.js"></script>
+  <div id="bootOverlay" style="position:fixed;inset:0;z-index:9999;background:#111216;color:#fff;display:flex;align-items:center;justify-content:center;font:600 16px system-ui;-webkit-font-smoothing:antialiased"><div style="width:min(82vw,420px)"><div style="font-size:22px;margin-bottom:14px">Harness Designer V2</div><div id="bootStatus" style="opacity:.72">Starte…</div><pre id="bootError" style="white-space:pre-wrap;font:12px ui-monospace,monospace;color:#ff9b9b;margin-top:16px"></pre></div></div>
+  <script type="module" src="bootstrap.js"></script>
 </body>
 </html>

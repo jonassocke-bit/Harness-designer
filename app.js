@@ -36,4 +36,4 @@ HD.App={
     HD.UI.refresh();
   }
 };
-window.addEventListener("DOMContentLoaded",async()=>{HD.App.init();await HD.App.start()});
+
