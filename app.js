@@ -4583,10 +4583,12 @@ try{
 
 
 // ============================================================================
-// V3.0.0c GUIDED+ REGRESSION
+// V3.0.0d SAFE GUIDED TEST
+// Test-only layer. No legacy app logic is modified.
 // ============================================================================
 (function(){
-  const RELEASE={build:'V3.0.0c GUIDED+',base:'V1.9f2 GOLDEN',changedModules:['testHarness'],recommendedLevel:'full'};
+  'use strict';
+  const RELEASE={build:'V3.0.0d SAFE TEST',base:'V1.9f2 GOLDEN'};
   const TESTS={
     startup:{title:'App starten',instruction:'Mannequin und bekannte UI müssen vollständig sichtbar sein.',golden:'pass'},
     camera:{title:'Kamera testen',instruction:'Ein Finger drehen, zwei Finger zoomen.',golden:'pass'},
@@ -4608,54 +4610,106 @@ try{
     reload:{title:'Reload',instruction:'Lade die Seite neu. Die App muss erneut zuverlässig starten.',golden:'pass'},
     ui:{title:'UI bedienen',instruction:'Panel scrollen/ziehen und alle wichtigen Buttons erreichen.',golden:'pass'}
   };
-  const FULL=Object.keys(TESTS);
-  const RUN_KEY='hd:v3:testRun:'+RELEASE.build,HISTORY_KEY='hd:v3:testHistory',DB_NAME='HarnessDesignerV3Tests',DB_STORE='screenshots';
-  let queue=FULL.slice(),index=0,run={results:{},startedAt:null,complete:false};
-  try{const x=JSON.parse(localStorage.getItem(RUN_KEY)||'null');if(x&&x.results)run=x}catch{}
-  const save=()=>{try{localStorage.setItem(RUN_KEY,JSON.stringify(run))}catch{}};
-  const saveHistory=()=>{try{const h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'{}');h[RELEASE.build]={...run,build:RELEASE.build,base:RELEASE.base};localStorage.setItem(HISTORY_KEY,JSON.stringify(h))}catch{}};
-  function db(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(DB_STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
-  async function putShot(id,blob){const d=await db();return new Promise((res,rej)=>{const tx=d.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).put(blob,RELEASE.build+':'+id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}
-  async function getShot(id){const d=await db();return new Promise((res,rej)=>{const r=d.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(RELEASE.build+':'+id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
-  const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const QUEUE=Object.keys(TESTS);
+  const RUN_KEY='hd:v3:testRun:'+RELEASE.build;
+  let run={results:{},startedAt:null,complete:false},index=0;
+  try{const x=JSON.parse(localStorage.getItem(RUN_KEY)||'null');if(x&&x.results)run=x}catch(e){}
+  function save(){try{localStorage.setItem(RUN_KEY,JSON.stringify(run))}catch(e){}}
   function logText(){
-    return `${RELEASE.build}\nBase: ${RELEASE.base}\n\n`+queue.map(id=>{const t=TESTS[id],r=run.results[id],i=r?.status==='pass'?'✓':r?.status==='fail'?'✕':r?.status==='skip'?'→':'?';return `${i} ${t.title}${t.golden==='known'?' [KNOWN]':''}${r?.note?' — '+r.note:''}`}).join('\n');
+    return RELEASE.build+'\nBase: '+RELEASE.base+'\n\n'+QUEUE.map(id=>{
+      const t=TESTS[id],r=run.results[id];
+      const icon=r?.status==='pass'?'✓':r?.status==='fail'?'✕':r?.status==='skip'?'→':'?';
+      return icon+' '+t.title+(t.golden==='known'?' [KNOWN]':'')+(r?.note?' — '+r.note:'');
+    }).join('\n');
   }
-  const blobData=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
-  async function exportReport(){
-    let sections='';
-    for(const id of queue){const t=TESTS[id],r=run.results[id],shot=await getShot(id),data=shot?await blobData(shot):null;sections+=`<section><h2>${escapeHtml(t.title)}</h2><p>Status: ${escapeHtml(r?.status||'ungetestet')}${t.golden==='known'?' · KNOWN':''}</p>${r?.note?`<p>Kommentar: ${escapeHtml(r.note)}</p>`:''}${data?`<img src="${data}" style="max-width:100%">`:''}</section>`}
-    const doc=`<!doctype html><meta charset="utf-8"><title>${RELEASE.build}</title><style>body{font:14px system-ui;max-width:900px;margin:auto;padding:24px}section{padding:14px 0;border-bottom:1px solid #ccc}</style><h1>${RELEASE.build}</h1><pre>${escapeHtml(logText())}</pre>${sections}`;
-    const a=document.createElement('a'),u=URL.createObjectURL(new Blob([doc],{type:'text/html'}));a.href=u;a.download='Harness-'+RELEASE.build.replace(/\s+/g,'-')+'-report.html';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
+  async function copyText(text){
+    try{
+      if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);return true}
+    }catch(e){}
+    try{
+      const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+      const ok=document.execCommand('copy');ta.remove();return ok;
+    }catch(e){return false}
   }
-  async function capture(id){
-    const c=document.querySelector('canvas');if(!c)throw new Error('Kein Canvas');
-    const blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Screenshot leer')),'image/png'));
-    await putShot(id,blob);
+
+  // Lazy screenshot path: none of this executes during app/test startup.
+  async function screenshot(taskId){
+    const canvas=document.querySelector('canvas');
+    if(!canvas)throw new Error('Kein Canvas gefunden');
+    const blob=await new Promise((resolve,reject)=>{
+      try{canvas.toBlob(b=>b?resolve(b):reject(new Error('Canvas lieferte kein Bild')),'image/png')}
+      catch(e){reject(e)}
+    });
+    // Prefer IndexedDB, but failure must be harmless.
+    try{
+      const db=await new Promise((resolve,reject)=>{
+        const req=indexedDB.open('HarnessDesignerV3Tests',1);
+        req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('screenshots'))req.result.createObjectStore('screenshots')};
+        req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+      });
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction('screenshots','readwrite');
+        tx.objectStore('screenshots').put(blob,RELEASE.build+':'+taskId);
+        tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+      });
+      return 'gespeichert';
+    }catch(e){
+      // Fallback: download immediately, still no impact on app.
+      const u=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=u;a.download='HD-'+taskId+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(u),1500);
+      return 'heruntergeladen';
+    }
   }
 
   function mount(){
     const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
-    const g=document.createElement('div');g.id='v3Guide';g.innerHTML=`<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kommentar / Fehlerbeschreibung…"><div class="shotState"></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>`;
-    const s=document.createElement('div');s.id='v3GuideSummary';document.body.append(btn,g,s);const $=q=>g.querySelector(q);
+    const g=document.createElement('div');g.id='v3Guide';
+    g.innerHTML='<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kommentar / Fehlerbeschreibung…"><div class="shotState"></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>';
+    const summary=document.createElement('div');summary.id='v3GuideSummary';
+    document.body.append(btn,g,summary);
+    const $=q=>g.querySelector(q);
 
-    async function render(){
-      s.style.display='none';
-      if(index>=queue.length)return summary();
-      const id=queue[index],t=TESTS[id],r=run.results[id]||{};
-      $('.count').textContent=`${index+1}/${queue.length}`;$('.title').textContent=t.title;$('.instruction').textContent=t.instruction;$('.known').textContent=t.known||'';$('.known').style.display=t.known?'block':'none';$('.note').value=r.note||'';$('.prev').disabled=index===0;$('.next').disabled=index===queue.length-1;
-      for(const k of ['pass','fail','skip'])$('.'+k).classList.toggle('activeAnswer',r.status===k);
-      $('.shotState').textContent=(await getShot(id))?'📷 Screenshot gespeichert':'';
+    function render(){
+      summary.style.display='none';
+      if(index>=QUEUE.length){showSummary();return}
+      const id=QUEUE[index],t=TESTS[id],r=run.results[id]||{};
+      $('.count').textContent=(index+1)+'/'+QUEUE.length;$('.title').textContent=t.title;$('.instruction').textContent=t.instruction;
+      $('.known').textContent=t.known||'';$('.known').style.display=t.known?'block':'none';$('.note').value=r.note||'';
+      $('.prev').disabled=index===0;$('.next').disabled=index===QUEUE.length-1;
+      ['pass','fail','skip'].forEach(k=>$('.'+k).classList.toggle('activeAnswer',r.status===k));
+      $('.shotState').textContent='';
       g.style.display='block';
     }
-    function record(status){const id=queue[index];run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};save();if(index<queue.length-1)index++;else index=queue.length;render()}
-    function summary(){g.style.display='none';run.complete=true;save();saveHistory();s.innerHTML=`<div>${escapeHtml(logText())}</div><div class="summaryActions"><button class="copy">Log kopieren</button><button class="export">Report exportieren</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>`;s.style.display='block';s.querySelector('.copy').onclick=async()=>{await navigator.clipboard.writeText(logText());s.querySelector('.copy').textContent='✓ Kopiert'};s.querySelector('.export').onclick=exportReport;s.querySelector('.back').onclick=()=>{index=queue.length-1;render()};s.querySelector('.closeSum').onclick=()=>s.style.display='none'}
+    function record(status){
+      const id=QUEUE[index];run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};save();
+      if(index<QUEUE.length-1)index++;else index=QUEUE.length;render();
+    }
+    function showSummary(){
+      g.style.display='none';run.complete=true;save();
+      summary.innerHTML='<div class="log"></div><div class="summaryActions"><button class="copy">Log kopieren</button><button class="back">← Letzte Frage</button><button class="restart">Von vorn</button><button class="closeSum">Schließen</button></div>';
+      summary.querySelector('.log').textContent=logText();summary.style.display='block';
+      summary.querySelector('.copy').onclick=async()=>{const ok=await copyText(logText());summary.querySelector('.copy').textContent=ok?'✓ Kopiert':'Kopieren fehlgeschlagen'};
+      summary.querySelector('.back').onclick=()=>{index=QUEUE.length-1;render()};
+      summary.querySelector('.restart').onclick=()=>{index=0;render()};
+      summary.querySelector('.closeSum').onclick=()=>summary.style.display='none';
+    }
+
     $('.pass').onclick=()=>record('pass');$('.fail').onclick=()=>record('fail');$('.skip').onclick=()=>record('skip');
-    $('.note').onchange=()=>{const id=queue[index],r=run.results[id]||{};run.results[id]={...r,note:$('.note').value.trim()};save()};
-    $('.prev').onclick=()=>{if(index>0){index--;render()}};$('.next').onclick=()=>{if(index<queue.length-1){index++;render()}};
-    $('.close').onclick=()=>g.style.display='none';$('.shot').onclick=async()=>{const id=queue[index];$('.shotState').textContent='Screenshot…';try{await capture(id);$('.shotState').textContent='📷 Screenshot gespeichert'}catch(e){$('.shotState').textContent='Screenshot fehlgeschlagen'}};
-    btn.onclick=()=>{s.style.display='none';if(!run.startedAt)run.startedAt=new Date().toISOString();save();const i=queue.findIndex(id=>!run.results[id]);index=i<0?0:i;render()};
-    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport};
+    $('.note').onchange=()=>{const id=QUEUE[index],r=run.results[id]||{};run.results[id]={...r,note:$('.note').value.trim()};save()};
+    $('.prev').onclick=()=>{if(index>0){index--;render()}};
+    $('.next').onclick=()=>{if(index<QUEUE.length-1){index++;render()}};
+    $('.close').onclick=()=>g.style.display='none';
+    $('.shot').onclick=async()=>{
+      const id=QUEUE[index];$('.shotState').textContent='Screenshot…';
+      try{$('.shotState').textContent='📷 '+await screenshot(id)}
+      catch(e){$('.shotState').textContent='Screenshot nicht verfügbar'}
+    };
+    btn.onclick=()=>{
+      summary.style.display='none';
+      if(!run.startedAt){run.startedAt=new Date().toISOString();save()}
+      const first=QUEUE.findIndex(id=>!run.results[id]);index=first<0?0:first;render();
+    };
+    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText};
   }
-  if(document.readyState==='loading')addEventListener('DOMContentLoaded',mount);else mount();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })();
