@@ -1,85 +1,75 @@
 // ============================================================================
-// V3.2.0 RING MERGE
+// V3.2.1 RING MERGE FIX
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.2.0 RING MERGE',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.2.1 RING MERGE FIX',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    startup:{
-      title:'1 · Start / Build prüfen',
-      instruction:'Prüfe zuerst unten die Patchnotes: dort muss V3.2.0 stehen. Mannequin, UI und vorhandene Golden-Funktionen müssen normal geladen sein.',
+    build:{
+      title:'1 · Build / Patchnotes',
+      instruction:'Unten muss „V3.2.1 · Ring Merge Fix“ stehen. App und Mannequin müssen normal starten.',
       golden:'pass'
     },
-    smallRingSelect:{
-      title:'2 · Kleinen Ring treffen',
-      instruction:'Stelle den Ringdurchmesser deutlich kleiner als Standard ein (z. B. etwa 15–20 mm). Tippe den sichtbaren Ringrand anschließend mehrfach aus verschiedenen Zoomstufen an. Ziel: der Ring soll auf dem iPhone zuverlässig auswählbar sein, ohne dass du pixelgenau treffen musst. Bitte Fehler notieren, falls die Hitbox zu groß wirkt und du stattdessen benachbarte Objekte erwischst.',
-      golden:'known',known:'V3.1: kleine Ringe waren unnötig schwer zu treffen.'
+    snapThreshold:{
+      title:'2 · Snap-Schwelle – kleine Ringe',
+      instruction:'Nimm zwei kleine Ringe und nähere sie langsam an. Sie sollen spätestens dann soft-mergen, wenn sie optisch bereits deutlich ineinander liegen/nahezu deckungsgleich sind. Bitte Screenshot machen, falls du wieder einen Zustand erreichst, bei dem du sagst „spätestens hier“ und noch nichts passiert. Gleichzeitig prüfen: nebeneinanderliegende, aber klar getrennte Ringe dürfen NICHT mergen.',
+      golden:'known',known:'V3.2.0 war trotz größerer Hitbox beim eigentlichen Snap noch zu streng.'
     },
-    hitboxDebug:{
-      title:'3 · Hitbox-Debug',
-      instruction:'Aktiviere „Hitboxen“. Prüfe einen kleinen und einen großen Ring. Die cyanfarbene Auswahl-Hitbox soll mit dem Ring mitskalieren, aber sichtbar toleranter als der Metallrand sein. Sie darf nicht riesig über den Ring hinausragen.',
-      golden:'known',known:'V3.2 verändert nur die unsichtbare/Debug-Hitbox, nicht die sichtbare Ringgeometrie.'
+    unmergeDirection:{
+      title:'3 · Trennen merkt die Herkunftsrichtung',
+      instruction:'Ziehe Ring A von links/rechts/oben auf Ring B, lasse los und drücke danach „Trennen“. A soll auf ungefähr derselben Seite von B wieder auftauchen, aus der er beim Merge kam. Wiederhole das aus mindestens zwei deutlich verschiedenen Richtungen. Exakte alte Position ist nicht nötig – die Richtung soll plausibel sein.',
+      golden:'known',known:'V3.2.0 setzte den getrennten Ring ohne gespeicherte Eintrittsrichtung generisch ab.'
     },
-    softMergeSmall:{
-      title:'4 · Soft-Merge mit kleinen Ringen',
-      instruction:'Setze zwei eher kleine Ringe dicht nebeneinander und ziehe Ring A nahezu deckungsgleich auf Ring B. Das Merge soll deutlich leichter auslösen als in V3.1, aber erst bei echter Beinahe-Überlappung. Prüfe auch, ob der Host-Ring nach dem Loslassen exakt an seiner Position bleibt.',
-      golden:'known',known:'V3.1: Merge grundsätzlich möglich, bei kleinen Ringen schwer auszulösen.'
+    thirdHover:{
+      title:'4 · Dritter Ring – Hover-Meldung',
+      instruction:'Soft-merge A+B. Ziehe C über den gemergten Ring und HALTE den Finger dort: die Meldung muss dauerhaft sichtbar bleiben. Ziehe C weg: Meldung muss sofort verschwinden. Fahre wieder darüber: Meldung muss wieder erscheinen. Es darf weiterhin kein 3er-Soft-Merge entstehen.',
+      golden:'known',known:'V3.2.0 zeigte nur einen kurzen Toast pro Drag.'
     },
-    softMergePersistence:{
-      title:'5 · Soft-Merge bleibt bestehen',
-      instruction:'Nach dem Merge Finger vollständig loslassen, Kamera drehen und den gemergten Ring erneut auswählen. Es darf kein zweiter Ring wieder herausspringen. Der ⇄-Button soll nun „Trennen“ repräsentieren und zusätzlich muss „Ringe endgültig verschmelzen“ erscheinen.',
+    panelUnmerge:{
+      title:'5 · Fläche – exakter Restore nach Soft-Merge/Trennen',
+      instruction:'Erzeuge eine Fläche mit mindestens vier Boundary-Ringen. Zwei davon sollen A und B sein. Soft-merge A auf B und trenne wieder. Danach muss die Fläche wieder GENAU an A und B sowie an allen unbeteiligten Boundary-Punkten hängen. Bewege nacheinander A, B und einen unbeteiligten Punkt deutlich: jeweils darf nur der erwartete Boundary-Punkt folgen. Bitte Screenshot + Kommentar bei jedem Springen/Verlust.',
+      golden:'known',known:'V3.2.0 konnte nach Entmerge einen Boundary-Slot verlieren oder auf einen falschen Ring umhängen.'
+    },
+    panelFinalize:{
+      title:'6 · Fläche – endgültiges Verschmelzen',
+      instruction:'Mit einer Fläche, die A und/oder B benutzt: soft-merge A+B und drücke „endgültig verschmelzen“. Danach soll die Fläche den verbleibenden Host sauber benutzen. Bewege den Host und danach andere Boundary-Punkte. Kein Punkt darf plötzlich zu einer alten/gelöschten Ring-ID zurückspringen.',
+      golden:'known'
+    },
+    mirrorToSingle:{
+      title:'7 · Spiegelring → einzelner Ring',
+      instruction:'Erzeuge ein Spiegelpaar A/A′ und einen einzelnen Ring B. Ziehe einen physischen Ring des Spiegelpaares auf B. Der Merge muss jetzt möglich sein. Erwartung: der gemergte physische Ring wird Teil von B; sein früherer Spiegelpartner bleibt als eigenständiger Ring erhalten statt den Merge zu blockieren. Trenne anschließend wieder und prüfe, ob das ursprüngliche Spiegelpaar sinnvoll wiederhergestellt wird.',
+      golden:'known',known:'V3.2.0 übersprang Generic Merge vollständig, sobald der bewegte Ring einen Mirror-Partner hatte.'
+    },
+    mirrorToMirror:{
+      title:'8 · Spiegelpaar ↔ Spiegelpaar',
+      instruction:'Erzeuge zwei Spiegelpaare. Ziehe einen Ring aus Paar 1 nahezu deckungsgleich auf einen Ring aus Paar 2. Der betreffende physische Ring muss soft-mergen können. Prüfe danach die drei übrigen sichtbaren/aktiven Ringzustände: nichts darf verschwinden oder unbedienbar werden. Teste anschließend Trennen.',
+      golden:'known'
+    },
+    strapAttachments:{
+      title:'9 · Riemen-Attachments unverändert',
+      instruction:'Wiederhole einen Soft-Merge/Trennen-Fall mit je einem Riemen an Gast und Host. Beide ursprünglichen Verbindungen müssen nach Trennen wieder korrekt sein. Danach finalisieren und prüfen, dass beide Riemen am verbleibenden Host hängen.',
       golden:'pass'
     },
-    sameGesturePullout:{
-      title:'6 · Sofort wieder wegziehen',
-      instruction:'Erzeuge erneut einen Soft-Merge und ziehe im selben Drag-Gesture direkt wieder deutlich vom Host weg. Der bewegte Ring soll sich wieder lösen, inklusive seiner ursprünglichen Attachments. Prüfe, dass kein doppelter oder verlorener Ring entsteht.',
+    finalMergeAgain:{
+      title:'10 · Finalisieren → erneut mergen',
+      instruction:'A+B endgültig verschmelzen und danach C darauf soft-mergen. Das muss weiterhin funktionieren. Versuche zusätzlich D als dritten Soft-Merge: D muss blockiert werden, bis C getrennt oder finalisiert wurde.',
       golden:'pass'
     },
-    unmergeButton:{
-      title:'7 · Trennen-Button',
-      instruction:'Erzeuge einen Soft-Merge, lasse los und drücke anschließend ⇄ / Trennen. Der bewegte Gast-Ring soll wieder separat neben dem Host erscheinen. Falls vorher ein Riemen am Gast hing, prüfe bitte besonders, ob er wieder am richtigen Ring hängt.',
+    axisMirrorRegression:{
+      title:'11 · Mittelachsen-Merge unverändert',
+      instruction:'Teste das klassische Spiegelpaar-Merge auf der Körpermittelachse und das Entmerge durch seitliches Wegziehen. Das ist eine getrennte Logik und darf durch die Generic-Merge-Fixes nicht schlechter geworden sein.',
       golden:'pass'
     },
-    thirdRingBlock:{
-      title:'8 · Dritten Ring blockieren',
-      instruction:'Merge Ring A weich auf Ring B. Setze dann Ring C und versuche C ebenfalls exakt auf den bereits gemergten Host zu ziehen. Es darf KEIN 3er-Soft-Merge entstehen. Stattdessen soll einmalig die Meldung „Bereits gemerged · erst trennen oder endgültig verschmelzen“ erscheinen. Prüfe, dass C beweglich bleibt und nichts verschwindet.',
-      golden:'known',known:'Neu in V3.2: Soft-Merge ist bewusst auf genau zwei Ringe begrenzt.'
-    },
-    permanentMerge:{
-      title:'9 · Endgültig verschmelzen',
-      instruction:'Merge A weich auf B und drücke „Ringe endgültig verschmelzen“. Danach darf der Trennen-Zustand verschwinden: es existiert logisch nur noch ein Ring. Versuche den Ring erneut anzutippen und zu bewegen. Er soll sich wie ein normaler einzelner Ring verhalten.',
-      golden:'known',known:'Neu in V3.2. Undo darf den Vorgang weiterhin rückgängig machen; nur der normale Trennen-Button soll ihn nicht mehr lösen.'
-    },
-    mergeAgainAfterFinalize:{
-      title:'10 · Nach Finalisierung erneut mergen',
-      instruction:'Nachdem A+B endgültig verschmolzen wurden, ziehe einen neuen Ring C darauf. Jetzt muss wieder ein normaler Soft-Merge möglich sein. Das ist der vorgesehene Weg, um nacheinander mehr als zwei ursprüngliche Ringe zusammenzuführen.',
-      golden:'known',known:'Soll zeigen, dass wir keine komplexen 3er-Soft-Merge-Gruppen brauchen.'
-    },
-    strapAttachment:{
-      title:'11 · Attachment-Remap: Riemen',
-      instruction:'Baue zwei Ringe A/B, hänge an A einen Riemen zu Ring X und an B einen anderen Riemen zu Ring Y. Merge A auf B und finalisiere. Danach müssen BEIDE Riemen weiterhin am verbleibenden Ring hängen. Bewege ihn: beide Riemen müssen mitgehen. Bitte Screenshot machen, falls einer verschwindet, doppelt wird oder am falschen Punkt endet.',
+    undo:{
+      title:'12 · Undo / Redo',
+      instruction:'Undo/Redo nach Soft-Merge, Trennen und endgültigem Verschmelzen testen – jeweils bevorzugt einmal mit Fläche. Keine Geister-Ringe, verlorenen Boundary-Punkte oder kaputten Riemen.',
       golden:'pass'
     },
-    panelAttachment:{
-      title:'12 · Attachment-Remap: Fläche',
-      instruction:'Erzeuge eine Fläche, deren Boundary einen der später zu mergenden Ringe benutzt. Merge/finalisiere diesen Ring mit einem zweiten. Die Fläche muss bestehen bleiben und beim Verschieben des verbleibenden Rings weiter reagieren. Achte besonders darauf, ob am Rand plötzlich ein Loch oder ein zurückspringender Boundary-Punkt entsteht.',
-      golden:'pass'
-    },
-    mirrorIsolation:{
-      title:'13 · Spiegel-Logik nicht beschädigt',
-      instruction:'Teste anschließend ein normales Spiegelpaar inklusive Mittelachsen-Merge und Entmerge. Diese Funktion wurde NICHT absichtlich verändert und muss sich wie V3.1 verhalten. Falls hier etwas anders ist, ist das eine echte Regression.',
-      golden:'pass'
-    },
-    undoRedo:{
-      title:'14 · Undo / Redo der neuen Merge-Schritte',
-      instruction:'Teste Undo/Redo einmal nach Soft-Merge und einmal nach „endgültig verschmelzen“. Es dürfen keine Geister-Ringe, verlorene Riemen oder ungültigen Flächen entstehen. Die bekannte längere Ladezeit bei viel Geometrie ist weiterhin erlaubt.',
-      golden:'known',known:'V3.1: Undo/Redo funktionierte, konnte bei viel Geometrie aber langsam sein.'
-    },
-    reload:{
-      title:'15 · Reload nach Finalisierung',
-      instruction:'Finalisiere einen Merge, lade die Seite neu und prüfe, ob der gespeicherte Zustand weiterhin genau einen Ring an dieser Stelle enthält und die App normal startet.',
+    ui:{
+      title:'13 · Auswahl / Buttons',
+      instruction:'Bei normalem Ring darf kein Finalisieren-Button erscheinen. Bei Soft-Merge muss „endgültig verschmelzen“ sichtbar sein. Nach Trennen oder Finalisieren muss der Button wieder verschwinden.',
       golden:'pass'
     }
   };

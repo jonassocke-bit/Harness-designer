@@ -142,6 +142,20 @@ function interactiveHit(x,y){
 function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
 
 let pointers=new Map(),gesture=null,single=null,dragRaf=0,pendingDrag=null;
+
+let genericMergeHoverVisible=false;
+function setGenericMergeHoverWarning(active){
+  if(active){
+    clearTimeout(toastTimer);
+    toast.textContent='Bereits gemerged · erst trennen oder endgültig verschmelzen';
+    toast.classList.remove('hidden');
+    genericMergeHoverVisible=true;
+  }else if(genericMergeHoverVisible){
+    genericMergeHoverVisible=false;
+    if(toast.textContent.startsWith('Bereits gemerged'))toast.classList.add('hidden');
+  }
+}
+
 function requestNodeDrag(n,x,y){
   pendingDrag={n,x,y};
   if(dragRaf)return;
@@ -227,7 +241,22 @@ function requestNodeDrag(n,x,y){
         }
       }
 
-      const active=maybeAxisMergeOrEntmerge(master);
+      // Generic ring merge is also allowed for a physical member of a mirror pair.
+      // If it merges, only that member is consumed; its old counterpart becomes independent.
+      const draggedPhysical=q.n===master?master:slave;
+      if(draggedPhysical?.ringVisible && nodes.has(draggedPhysical.id)){
+        const targetRing=nearestGenericRingSnapTarget(draggedPhysical);
+        if(targetRing){
+          const host=genericMergeRingIntoHost(draggedPhysical,targetRing);
+          if(single){single.activeNodeId=host.id;single.genericMergeThisGesture=host.id}
+          selected=host;refreshMaterials();showSelection();setGenericMergeHoverWarning(false);return;
+        }
+        setGenericMergeHoverWarning(!!blockedGenericRingSnapTarget(draggedPhysical));
+      }else{
+        setGenericMergeHoverWarning(false);
+      }
+
+      const active=nodes.has(master.id)?maybeAxisMergeOrEntmerge(master):master;
       if(active!==master){
         if(single)single.activeNodeId=active.id;
         selected=active;
@@ -244,10 +273,9 @@ function requestNodeDrag(n,x,y){
           selected=host;refreshMaterials();showSelection();return;
         }
         const blocked=blockedGenericRingSnapTarget(q.n);
-        if(blocked&&single&&!single.genericMergeBlockedToast){
-          single.genericMergeBlockedToast=true;
-          showToast('Bereits gemerged · erst trennen oder endgültig verschmelzen');
-        }
+        setGenericMergeHoverWarning(!!blocked);
+      }else{
+        setGenericMergeHoverWarning(false);
       }
     }
 
@@ -282,6 +310,7 @@ canvas.addEventListener('pointerdown',e=>{
       mx:(a[0].x+a[1].x)/2,my:(a[0].y+a[1].y)/2,
       camDist,target:target.clone(),camAz,camEl
     };
+    setGenericMergeHoverWarning(false);
     single=null;
     return;
   }
@@ -338,7 +367,7 @@ canvas.addEventListener('pointerup',e=>{
   pointers.delete(e.pointerId);
   if(pointers.size<2)gesture=null;
   if(!single){return}
-  const was=single;single=null;
+  const was=single;single=null;setGenericMergeHoverWarning(false);
 
   if(was.waypointPlacement){
     const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
@@ -438,7 +467,7 @@ canvas.addEventListener('pointerup',e=>{
     selectObject(n);commitHistory();
   }
 });
-canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);single=null;gesture=null});
+canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);single=null;gesture=null;setGenericMergeHoverWarning(false)});
 
 function installSheetResize(sheet){
   const grab=sheet.querySelector('.grabber');if(!grab)return;

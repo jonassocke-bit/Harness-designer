@@ -371,9 +371,11 @@ function entmergeRing(merged,p){
 
 
 function genericRingSnapIn(a,b){
-  // Still requires near-overlap, but no longer becomes impractically tiny on small rings.
+  // V3.2.1: centers may still only be close, but the threshold now follows the
+  // actual visual ring scale. This matches the "these are visibly overlapping" case.
   const r=Math.min(ringMajor(a),ringMajor(b));
-  return Math.max(.0105,Math.min(.020,r*.28));
+  const tube=Math.min(ringTube(a),ringTube(b));
+  return Math.max(.016,Math.min(.030,r*.45+tube*.35));
 }
 function genericRingSnapOut(a){return Math.max(.018,ringMajor(a)*.55)}
 function nearestGenericRingSnapTarget(n){
@@ -402,28 +404,97 @@ function blockedGenericRingSnapTarget(n){
 }
 function genericMergeRingIntoHost(guest,host){
   if(!guest||!host||guest===host)return host;
-  host.snapMergeState={guest:serializeNodeForMerge(guest),topology:captureMergeTopology(guest,host)};
-  panelHandleNodeMerge(guest,host,host);
-  for(const s of [...straps.values()]){
-    if(s.a===guest.id)s.a=host.id;if(s.b===guest.id)s.b=host.id;
-    if(s.a===s.b)removeStrap(s.id);else if(s.a===host.id||s.b===host.id)rebuildAutoProjection(s);
+
+  const gp=nodeWorldPosition(guest),hp=nodeWorldPosition(host);
+  let entryDir=gp.clone().sub(hp);
+  if(entryDir.lengthSq()<1e-8){
+    const stored=new THREE.Vector3(...(guest.position||[1,0,0])).sub(new THREE.Vector3(...(host.position||[0,0,0])));
+    entryDir=stored.lengthSq()>1e-8?stored:new THREE.Vector3(1,0,0);
   }
-  nodeRoot.remove(guest.group);nodes.delete(guest.id);selected=host;rebuildAllWraps();return host;
+  entryDir.normalize();
+
+  // A ring may come from a mirror pair. The generic merge consumes this physical
+  // ring only; its old counterpart becomes an independent ring instead of blocking merge.
+  const oldGuestPartner=pairOfNode(guest);
+  if(oldGuestPartner){
+    oldGuestPartner.mirrorId=null;
+    oldGuestPartner.previousPartnerId=guest.id;
+    oldGuestPartner.manualUnlinked=true;
+    guest.mirrorId=null;
+    guest.previousPartnerId=oldGuestPartner.id;
+    guest.manualUnlinked=true;
+  }
+
+  const panelState=captureGenericPanelMergeState(guest,host);
+  host.snapMergeState={
+    guest:serializeNodeForMerge(guest),
+    topology:captureMergeTopology(guest,host),
+    panelState,
+    entryDir:entryDir.toArray(),
+    formerMirrorId:oldGuestPartner?.id||null
+  };
+  applyGenericPanelMerge(guest,host,panelState);
+
+  for(const s of [...straps.values()]){
+    if(s.a===guest.id)s.a=host.id;
+    if(s.b===guest.id)s.b=host.id;
+    if(s.a===s.b)removeStrap(s.id);
+    else if(s.a===host.id||s.b===host.id)rebuildAutoProjection(s);
+  }
+  nodeRoot.remove(guest.group);
+  nodes.delete(guest.id);
+  selected=host;
+  rebuildAllWraps();
+  return host;
 }
 function genericUnmergeRing(host,worldPoint=null){
-  const state=host?.snapMergeState;if(!state)return host;
+  const state=host?.snapMergeState;
+  if(!state)return host;
   const hp=nodeWorldPosition(host),hn=nodeWorldNormal(host);
-  let p=worldPoint?.clone?.()||hp.clone().add(new THREE.Vector3(genericRingSnapOut(host)*1.4,0,0));
-  if(p.distanceTo(hp)<genericRingSnapOut(host))p=hp.clone().add(new THREE.Vector3(genericRingSnapOut(host)*1.4,0,0));
+
+  const savedDir=new THREE.Vector3(...(state.entryDir||[1,0,0]));
+  if(savedDir.lengthSq()<1e-8)savedDir.set(1,0,0);
+  savedDir.normalize();
+
+  let p=worldPoint?.clone?.()||hp.clone().add(savedDir.multiplyScalar(genericRingSnapOut(host)*1.55));
+  if(p.distanceTo(hp)<genericRingSnapOut(host)){
+    const d=new THREE.Vector3(...(state.entryDir||[1,0,0]));
+    if(d.lengthSq()<1e-8)d.set(1,0,0);
+    p=hp.clone().add(d.normalize().multiplyScalar(genericRingSnapOut(host)*1.55));
+  }
+
   const guest=makeNode({...state.guest,id:state.guest.id,position:p.toArray(),normal:hn.toArray(),snapMergeState:null});
-  for(const s of [...straps.values()])if(s.a===host.id||s.b===host.id)removeStrap(s.id);
+
+  // Restore the former mirror relationship only when both original nodes still exist
+  // and neither has acquired a different partner in the meantime.
+  if(state.formerMirrorId&&nodes.has(state.formerMirrorId)){
+    const former=nodes.get(state.formerMirrorId);
+    if(!former.mirrorId&&!guest.mirrorId){
+      former.mirrorId=guest.id;
+      guest.mirrorId=former.id;
+      former.manualUnlinked=false;
+      guest.manualUnlinked=false;
+    }
+  }
+
+  for(const s of [...straps.values()]){
+    if(s.a===host.id||s.b===host.id)removeStrap(s.id);
+  }
   for(const d of state.topology||[]){
-    const a=d.a===state.guest.id?guest.id:d.a,b=d.b===state.guest.id?guest.id:d.b;
+    const a=d.a===state.guest.id?guest.id:d.a;
+    const b=d.b===state.guest.id?guest.id:d.b;
     if(!nodes.has(a)||!nodes.has(b)||a===b)continue;
     const s=makeStrap({id:d.id,a,b,widthMM:d.widthMM,slack:d.slack,locked:d.locked,controls:d.controls,surfaceLevel:d.surfaceLevel||0});
-    s.mirrorId=d.mirrorId||null;rebuildAutoProjection(s);
+    s.mirrorId=d.mirrorId||null;
+    rebuildAutoProjection(s);
   }
-  panelHandleNodeEntmerge(host,guest,host);host.snapMergeState=null;selected=guest;rebuildAllWraps();return guest;
+
+  // Exact slot restoration — no branch inference.
+  restoreGenericPanelMerge(state.panelState||[]);
+  host.snapMergeState=null;
+  selected=guest;
+  rebuildAllWraps();
+  return guest;
 }
 
 function finalizeGenericRingMerge(host){
@@ -431,15 +502,9 @@ function finalizeGenericRingMerge(host){
   if(!state)return false;
   const guestId=state.guest?.id;
 
-  // Straps are already remapped during the soft merge. Finalization removes
-  // only the reversible bookkeeping, not the resulting topology.
-  for(const panel of panels.values()){
-    for(const slot of panel.boundarySlots||[]){
-      const stack=slot.mergeStack||[];
-      const rec=stack[stack.length-1];
-      if(rec?.mergedId===host.id)stack.pop();
-    }
-  }
+  // Straps are already remapped during the soft merge.
+  // Panels now finalize from the exact snapshot captured at merge time.
+  finalizeGenericPanelMerge(state.panelState||[],guestId,host.id);
 
   // Remove stale partner references to the node that is now permanently gone.
   for(const n of nodes.values()){

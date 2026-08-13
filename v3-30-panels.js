@@ -450,6 +450,86 @@ function finalizeDirtyPanels(){
     }
   });
 }
+
+function captureGenericPanelMergeState(guest,host){
+  const out=[];
+  for(const panel of panels.values()){
+    const slots=[];
+    panel.boundarySlots.forEach((slot,index)=>{
+      if(slot.currentId===guest.id||slot.currentId===host.id){
+        slots.push({
+          index,
+          currentId:slot.currentId,
+          mergeStack:historyClone(slot.mergeStack||[])
+        });
+      }
+    });
+    if(slots.length)out.push({panelId:panel.id,slots});
+  }
+  return out;
+}
+function applyGenericPanelMerge(guest,host,snapshot){
+  const snapByPanel=new Map((snapshot||[]).map(x=>[x.panelId,x]));
+  for(const panel of panels.values()){
+    const rec=snapByPanel.get(panel.id);
+    if(!rec)continue;
+    let touched=false;
+    for(const item of rec.slots){
+      const slot=panel.boundarySlots[item.index];
+      if(!slot)continue;
+      slot.currentId=host.id;
+      // Keep a breadcrumb for debug/history, but restoration uses the exact snapshot.
+      slot.mergeStack=historyClone(item.mergeStack||[]);
+      slot.mergeStack.push({mergedId:host.id,branch:item.currentId===guest.id?'guest':'host',generic:true});
+      touched=true;
+    }
+    if(touched){
+      syncPanelNodeIds(panel);
+      panelDirty.add(panel.id);
+      updatePanelGeometry(panel,{preview:true});
+    }
+  }
+}
+function restoreGenericPanelMerge(snapshot){
+  for(const rec of snapshot||[]){
+    const panel=panels.get(rec.panelId);
+    if(!panel)continue;
+    let touched=false;
+    for(const item of rec.slots||[]){
+      const slot=panel.boundarySlots[item.index];
+      if(!slot)continue;
+      slot.currentId=item.currentId;
+      slot.mergeStack=historyClone(item.mergeStack||[]);
+      touched=true;
+    }
+    if(touched){
+      syncPanelNodeIds(panel);
+      panelDirty.add(panel.id);
+      updatePanelGeometry(panel,{preview:true});
+    }
+  }
+}
+function finalizeGenericPanelMerge(snapshot,guestId,hostId){
+  for(const rec of snapshot||[]){
+    const panel=panels.get(rec.panelId);
+    if(!panel)continue;
+    let touched=false;
+    for(const item of rec.slots||[]){
+      const slot=panel.boundarySlots[item.index];
+      if(!slot)continue;
+      // Permanent merge: every former guest/host occurrence now genuinely belongs to host.
+      slot.currentId=hostId;
+      slot.mergeStack=historyClone(item.mergeStack||[]);
+      touched=true;
+    }
+    if(touched){
+      syncPanelNodeIds(panel);
+      panelDirty.add(panel.id);
+      updatePanelGeometry(panel,{preview:true});
+    }
+  }
+}
+
 function panelHandleNodeMerge(left,right,merged){
   for(const panel of panels.values()){
     let touched=false;

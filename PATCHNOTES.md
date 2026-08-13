@@ -1,31 +1,53 @@
 # Patchnotes
 
-## V3.2.0 RING MERGE
+## V3.2.1 – Ring Merge Fix
 
-### Ring-Auswahl
-- Kleine Ringe erhalten eine größere, weiterhin ringförmige Touch-Hitbox.
-- Die Hitbox skaliert dynamisch mit Ringgröße und Ringstärke.
-- Hitbox-Debug zeigt jetzt dieselbe tatsächliche Auswahlzone.
+### Snap
+- Ring↔Ring-Snap-Schwelle nochmals vergrößert und stärker an die sichtbare Ringgröße gekoppelt.
+- Ziel bleibt Beinahe-Überlappung; klar getrennte Ringe sollen nicht versehentlich mergen.
 
-### Ring ↔ Ring Soft-Merge
-- Snap-In-Zone für kleine Ringe vergrößert, bleibt aber auf Beinahe-Überlappung begrenzt.
-- Soft-Merge bleibt weiterhin reversibel über `Trennen`.
-- Same-drag Pullout bleibt erhalten.
-- Maximal zwei Ringe dürfen gleichzeitig in einem reversiblen Soft-Merge stecken.
-- Versuch eines dritten Soft-Merges zeigt eine einmalige Meldung statt still zu scheitern.
+### Trennen
+- Soft-Merge speichert jetzt die Eintrittsrichtung des Gast-Rings.
+- Der Trennen-Button setzt den Gast bevorzugt auf der Seite wieder ab, aus der er ursprünglich kam.
 
-### Endgültig verschmelzen
-- Neuer Button `Ringe endgültig verschmelzen` erscheint nur bei einem Soft-Merge.
-- Finalisierung entfernt die reversible Gast-Ring-Identität.
-- Bereits remappte Riemen und Panel-Boundaries bleiben am Host.
-- Danach kann der verbleibende Ring erneut mit einem weiteren Ring soft-gemerged werden.
-- Undo/Redo bleibt weiterhin erlaubt; „endgültig“ bedeutet: nicht mehr über den normalen Trennen-Button lösbar.
+### Dritter Ring
+- Die Blockiermeldung ist jetzt echtes Hover-Feedback:
+  - über einem bereits soft-gemergten Ring sichtbar,
+  - beim Wegziehen sofort weg,
+  - beim erneuten Darüberziehen wieder sichtbar.
+
+### Flächen / Topology
+- Generic Ring-Merge speichert jetzt einen exakten Snapshot aller betroffenen Panel-Boundary-Slots.
+- Entmerge stellt `currentId` und den bisherigen Merge-Stack slotgenau wieder her.
+- Finalisieren remappt dieselben Slots dauerhaft auf den Host.
+- Dadurch soll kein unbeteiligter Boundary-Punkt mehr verloren gehen oder spontan auf einen anderen Ring springen.
+
+### Spiegelringe
+- Generic Ring-Merge wird nicht mehr pauschal übersprungen, nur weil der bewegte Ring Teil eines Spiegelpaares ist.
+- Wird ein physischer Spiegelring generisch gemergt, wird sein bisheriger Gegenring temporär eigenständig.
+- Beim Trennen wird die frühere Mirror-Verknüpfung wiederhergestellt, sofern beide Seiten noch frei sind.
+- Damit können Spiegelringe sowohl mit Einzelringen als auch mit Ringen anderer Spiegelpaare mergen.
 
 ### Tests
-- Guided Test auf 15 ausführliche, ausschließlich ring-/merge-relevante Impact-Tests umgestellt.
-- Tests prüfen kleine Hitboxen, Snap-Schwelle, Soft-Merge, Same-gesture Pullout, Trennen, Third-Merge-Block,
-  Finalisieren, erneutes Merge, Riemen-/Flächen-Attachments, Mirror-Regressions, Undo/Redo und Reload.
+- Reload/Persistenz-Test entfernt: Projektzustand-Persistenz ist bislang kein App-Feature.
+- 13 ausführliche Impact-Tests für Snap, Entmerge-Richtung, Hover-Warnung, Panel-Restore,
+  Finalisierung, Mirror↔Single, Mirror↔Mirror, Attachments, Undo/Redo und UI.
 
-### Unverändert
-- Kein Riemen-Solver- oder Panel-Algorithmus absichtlich verändert.
-- Bekannte Riemenprobleme bleiben Backlog für den nächsten Solver-Schritt.
+## V3.2.0 – Ring Merge
+- Dynamische Ring-Hitbox für kleine Ringe vergrößert.
+- Generic Soft-Merge eingeführt bzw. erweitert.
+- Maximal zwei Ringe pro reversiblem Soft-Merge.
+- Third-Merge-Warnung.
+- Neuer Button für endgültiges Verschmelzen.
+- Geführte Ring-/Merge-Debugtests.
+
+## V3.1.0 – Modular Base
+- V1.9f2-Golden-Code in austauschbare Quellblöcke zerlegt.
+- Preload-all Loader verhindert halb gestartete Builds.
+- Module für Core/Body, Nodes, Panels, Riemen, History/UI, Solver, Topology, Interaction und Tests getrennt.
+- Erweiterungsslots für Body Lab, Accessoires, Foto, Strap Paint, Materialien, Posing, Export und Generatoren reserviert.
+
+## V3.0.0f – Capture Fix
+- Screenshot-Capture für WebGL/Safari mit explizitem Render vor der Aufnahme stabilisiert.
+- Schwarze Frames werden erkannt.
+- HTML-Testreport enthält Kommentare und Screenshots.

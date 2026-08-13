@@ -45,3 +45,7 @@ Future modularization builds will declare only their changed modules and show a 
 
 ## V3.2.0
 Ring Snap/Merge Impact Patch. See PATCHNOTES.md. V3.1.0 remains the Modular Golden reference.
+
+
+## V3.2.1
+Targeted Ring/Topology fix. See PATCHNOTES.md (newest first).
