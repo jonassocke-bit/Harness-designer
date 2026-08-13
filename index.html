@@ -3,87 +3,224 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#111216">
-  <title>Harness Designer V2.0.2</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <canvas id="viewport"></canvas>
-
-  <div id="topbar">
-    <button id="toolRing" class="tool active">Ring</button>
-    <button id="toolConnect" class="tool">Verbinden</button>
-    <button id="toolPanel" class="tool">Fläche</button>
-    <button id="mirrorToggle" class="tool">Spiegel</button>
-  </div>
-
-  <div id="historybar">
-    <button id="undoBtn">Undo</button>
-    <button id="redoBtn">Redo</button>
-  </div>
-
-  <aside id="drawer">
-    <div id="drawerGrip"></div>
-    <div id="selectionNone" class="section">
-      <h3>Harness Designer V2</h3>
-      <p>Ring setzen, verbinden oder Fläche erstellen.</p>
-    </div>
-
-    <div id="nodePanel" class="section hidden">
-      <h3>Ring / Punkt</h3>
-      <label>Ring <input id="nodeRing" type="checkbox" checked></label>
-      <label>Durchmesser <input id="nodeDiameter" type="range" min="4" max="100" step="1"><span id="nodeDiameterVal"></span></label>
-      <label>Stärke <input id="nodeThickness" type="range" min="2" max="30" step="1"><span id="nodeThicknessVal"></span></label>
-      <div class="row"><button id="nodeLock">Sperren</button><button id="nodeDelete">Löschen</button></div>
-      <div class="row"><button id="nodeUnlink">Trennen</button><button id="nodeMirror">Spiegeln</button></div>
-    </div>
-
-    <div id="strapPanel" class="section hidden">
-      <h3>Riemen</h3>
-      <label>Breite <input id="strapWidth" type="range" min="4" max="80" step="1"><span id="strapWidthVal"></span></label>
-      <div class="row"><button id="strapDebug">Debug</button><button id="strapDelete">Löschen</button></div>
-      <div class="row"><button id="strapUnlink">Trennen</button></div>
-      <p class="hint">Auto-Strip ist der einzige Riemenmodus.</p>
-    </div>
-
-    <div id="panelPanel" class="section hidden">
-      <h3>Fläche</h3>
-      <label>Abstand <input id="panelOffset" type="range" min="0" max="5" step=".1"><span id="panelOffsetVal"></span></label>
-      <div class="row"><button id="panelDelete">Löschen</button></div>
-    </div>
-
-    <div id="bodyPanel" class="section">
-      <h3>Körper</h3>
-      <label>Modell
-        <select id="bodyModel">
-          <option value="female_custom_morph.glb">Female</option>
-          <option value="male_custom_morph.glb">Male</option>
-        </select>
-      </label>
-      <label>Farbe <input id="bodyColor" type="color" value="#e9e9e9"></label>
-      <label>Globaler Abstand <input id="surfaceOffset" type="range" min="0" max="8" step=".1"><span id="surfaceOffsetVal"></span></label>
-      <div class="row"><button id="hitboxDebug">Hitboxen</button><button id="clearBtn">Neu</button></div>
-    </div>
-
-    <div id="buildHelp" class="section hidden">
-      <h3 id="buildTitle"></h3>
-      <p id="buildText"></p>
-      <button id="buildConfirm" class="hidden">Fläche erstellen</button>
-      <button id="buildCancel">Abbrechen</button>
-    </div>
-  </aside>
-
-  <div id="status">V2 Alpha</div>
-
-  <div id="bootOverlay" style="position:fixed;inset:0;z-index:9999;background:#111216;color:#fff;display:flex;align-items:center;justify-content:center;font:600 16px system-ui;-webkit-font-smoothing:antialiased"><div style="width:min(82vw,420px)"><div style="font-size:22px;margin-bottom:14px">Harness Designer V2</div><div id="bootStatus" style="opacity:.72">Starte…</div><pre id="bootError" style="white-space:pre-wrap;font:12px ui-monospace,monospace;color:#ff9b9b;margin-top:16px"></pre></div></div>
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Harness Designer">
+  <title>Harness Designer V1.9f2 FILLED EDGE</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./style.css">
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
     }
   }
   </script>
-  <script type="module" src="bootstrap.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="viewport"><canvas id="scene"></canvas></main>
+
+  <div id="chrome">
+    <input id="modelInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
+
+    <div class="top-row">
+      <div class="history-group">
+        <button id="undoBtn" class="circle-btn icon-undo" aria-label="Rückgängig"></button>
+        <button id="redoBtn" class="circle-btn icon-redo" aria-label="Wiederholen"></button>
+      </div>
+
+      <div id="buildTools" class="build-tools one-shot-tools">
+        <button id="connectToggle" class="tool connect-toggle" data-tool="connect" aria-pressed="false">↔ Verbinden</button>
+        <button id="panelToggle" class="tool panel-toggle" data-tool="panel" aria-pressed="false">▰ Fläche</button>
+        </div><button id="panelConfirmBtn" class="panel-confirm-floating hidden" type="button">Fläche erstellen</button>
+
+      <div class="utility-group">
+        <button id="mirrorToggle" class="circle-btn icon-mirror" aria-label="Spiegelmodus" aria-pressed="false"></button>
+        <button id="mirrorSelectedBtn" class="circle-btn icon-diamond" aria-label="Auswahl spiegeln"></button>
+        <button id="rotateModelBtn" class="circle-btn icon-rotate" aria-label="Modell"></button>
+      </div>
+    </div>
+
+    <button id="restoreUI" class="restore-ui hidden" aria-label="Menüs einblenden">›</button>
+
+    <section id="selectionPanel" class="sheet hidden">
+      <div class="grabber" aria-label="Menühöhe ändern"></div>
+      <div class="sheet-scroll">
+        <div class="selection-head">
+          <div class="selection-name">
+            <span id="selectionLabel">AUSWAHL</span>
+            <strong id="selectionTitle">Element</strong>
+          </div>
+          <button id="linkSelectedBtn" class="head-btn link-btn" aria-label="Kopplung" aria-pressed="false">⇄</button>
+          <button id="lockSelectedBtn" class="head-btn icon-lock" aria-label="Sperren"></button>
+          <button id="deleteSelectedBtn" class="head-btn danger icon-trash" aria-label="Löschen"></button>
+        </div>
+
+        <div id="nodeControls" class="control-group hidden">
+          <div class="toggle-line">
+            <span>Ring</span>
+            <button id="nodeRingToggle" class="switch active" aria-pressed="true">An</button>
+          </div>
+
+          <div id="pointSizeControl" class="parameter hidden">
+            <div class="parameter-top"><span>Punktgröße</span><div id="pointSizeTools" class="parameter-tools"></div></div>
+            <input id="pointSizeSlider" type="range" min="0" max="30" step="1" value="8">
+          </div>
+
+          <div id="ringDiameterControl" class="parameter">
+            <div class="parameter-top"><span>Ringdurchmesser</span><div id="ringDiameterTools" class="parameter-tools"></div></div>
+            <input id="ringDiameterSlider" type="range" min="0" max="100" step="1" value="40">
+          </div>
+
+          <div id="ringThicknessControl" class="parameter">
+            <div class="parameter-top"><span>Ringstärke</span><div id="ringThicknessTools" class="parameter-tools"></div></div>
+            <input id="ringThicknessSlider" type="range" min="0" max="20" step="0.5" value="6">
+          </div>
+          <div id="anchorPositionControl" class="parameter hidden">
+            <div class="parameter-top"><span>Position auf Riemen</span><div id="anchorPositionTools" class="parameter-tools"></div></div>
+            <input id="anchorPositionSlider" type="range" min="0" max="100" step="1" value="50">
+          </div>
+        </div>
+
+        <button id="hitboxDebugBtn" class="soft-btn selection-debug-btn">Hitboxen</button>
+        <div id="strapControls" class="control-group hidden">
+          <div class="parameter">
+            <div class="parameter-top"><span>Breite</span><div id="strapWidthTools" class="parameter-tools"></div></div>
+            <input id="strapWidthSlider" type="range" min="0" max="100" step="1" value="30">
+          </div>
+
+          <div id="strapSlackControl" class="parameter hidden">
+            <div class="parameter-top">
+              <span>Lockerheit</span>
+              <div id="strapSlackTools" class="parameter-tools"></div>
+            </div>
+            <input id="strapSlackSlider" type="range" min="0" max="100" step="1" value="8">
+            <div class="range-caption"><span>Straff</span><span>Locker</span></div>
+          </div>
+
+          <div class="curve-box">
+            <div class="curve-title">
+              <span>Auflagepunkte</span>
+              <strong id="curvePointCount">Auto · 1</strong>
+            </div>
+            <div class="curve-actions">
+              <button id="curveMinusBtn" class="soft-btn">− Punkt</button>
+              <button id="curvePlusBtn" class="soft-btn hidden">Push</button>
+              <button id="curveAutoBtn" class="soft-btn hidden">Strip</button>
+              <button id="strapDebugBtn" class="soft-btn">Debug</button>
+            </div>
+          </div>
+
+          <button id="addAnchorBtn" class="primary-btn">+ Anker auf Riemen</button>
+        </div>
+
+        <div id="panelControls" class="control-group hidden">
+          <div class="parameter">
+            <div class="parameter-top">
+              <span>Abstand zum Körper</span>
+              <div id="panelOffsetTools" class="parameter-tools"></div>
+            </div>
+            <input id="panelOffsetSlider" type="range" min="0" max="12" step="0.5" value="1">
+            <div class="range-caption"><span>Aufliegend</span><span>Abstand</span></div>
+          </div>
+          <div class="range-caption">
+            <span>Live: schnelle Vorschau</span>
+            <span>Loslassen: Körper-Fit</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="modelPanel" class="sheet compact-sheet hidden">
+      <div class="grabber"></div>
+      <div class="sheet-scroll">
+        <div class="selection-head">
+          <div class="selection-name"><span>3D MODELL</span><strong>Ausrichtung</strong></div>
+          <button id="closeModelPanelBtn" class="head-btn icon-close" aria-label="Schließen"></button>
+        </div>
+
+        <div class="model-actions">
+          <button id="uploadModelBtn" class="soft-btn">Eigenes Modell laden</button>
+          <button id="reloadModelBtn" class="soft-btn">Standardmodell</button>
+        </div>
+
+        <div class="body-system">
+          <div class="body-system-title">Körper</div>
+
+          <div class="body-gender-switch">
+            <button id="bodyFemaleBtn" type="button" class="body-gender-btn active">Female</button>
+            <button id="bodyMaleBtn" type="button" class="body-gender-btn">Male</button>
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Körperform</span><span id="bodyShapeValue" class="body-value">Neutral</span></div>
+            <input id="bodyShapeSlider" type="range" min="-1" max="1" step="0.01" value="0">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Muskulatur</span><span id="bodyMuscleValue" class="body-value">0%</span></div>
+            <input id="bodyMuscleSlider" type="range" min="0" max="1" step="0.01" value="0">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Höhe</span><span id="bodyHeightValue" class="body-value">175 cm</span></div>
+            <input id="bodyHeightSlider" type="range" min="145" max="205" step="1" value="175">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Arme</span><span id="bodyArmsValue" class="body-value">A-Pose</span></div>
+            <input id="bodyArmsSlider" type="range" min="-1" max="1" step="0.01" value="0">
+          </div>
+
+          <div class="parameter body-parameter">
+            <div class="parameter-top"><span>Beine</span><span id="bodyLegsValue" class="body-value">Offen</span></div>
+            <input id="bodyLegsSlider" type="range" min="0" max="1" step="0.01" value="0">
+          </div>
+        </div>
+
+        <div class="parameter">
+          <div class="parameter-top"><span>X-Achse</span><div id="rotXTools" class="parameter-tools"></div></div>
+          <input id="rotXSlider" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Y-Achse</span><div id="rotYTools" class="parameter-tools"></div></div>
+          <input id="rotYSlider" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Z-Achse</span><div id="rotZTools" class="parameter-tools"></div></div>
+          <input id="rotZSlider" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Abstand zum Modell</span><div id="surfaceOffsetTools" class="parameter-tools"></div></div>
+          <input id="surfaceOffsetSlider" type="range" min="0" max="30" step="0.5" value="2">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Ankergröße</span><div id="globalAnchorSizeTools" class="parameter-tools"></div></div>
+          <input id="globalAnchorSizeSlider" type="range" min="4" max="30" step="1" value="12">
+        </div>
+        <div class="parameter">
+          <div class="parameter-top"><span>Auswahlfarbe</span></div>
+          <input id="selectionColorPicker" class="color-picker" type="color" value="#00d8ff">
+        </div>
+        <button id="rotationResetBtn" class="primary-btn">Rotation zurücksetzen</button>
+      </div>
+    </section>
+
+    <div id="modePill" class="mode-pill">
+      <button class="mode active" data-mode="build">Bauen</button>
+      <button class="mode" data-mode="accessories">Accessoires</button>
+      <button class="mode" data-mode="photo">Foto</button>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <div class="version-badge">v1.9f2 FILLED EDGE</div>
+  </div>
+</div>
+
+<script type="module" src="./app.js"></script>
+<div id="v3BuildBadge">V3.0.0 GOLDEN · V1.9f2 BASE</div>
 </body>
 </html>

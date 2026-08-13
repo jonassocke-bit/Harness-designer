@@ -1,60 +1,17 @@
-# Harness Designer V2 Alpha
+# V1.9f2 FILLED EDGE
 
-This is a clean rebuild, not a patch of V1.
+Rebuilt cleanly from V1.9e after V1.9f failed to start.
 
-## Architecture
-- `config.js` — immutable tuning constants
-- `state.js` — pure application data
-- `geometry.js` — math helpers only
-- `body.js` — body loading + surface access
-- `nodes.js` — rings / points / merge primitives
-- `straps.js` — auto Strip solver + renderer
-- `panels.js` — fast body-mesh extraction panels
-- `history.js` — serialized data-model undo/redo/persistence
-- `interaction.js` — pointer/camera/object interaction
-- `ui.js` — UI binding only
-- `app.js` — startup/render loop only
+The previous package accidentally left duplicate JavaScript statements behind
+the replaced extraction function. This build replaces the whole function
+between explicit function boundaries and passes Node syntax/structure checks.
 
-All files use the global `HD` namespace so they work as ordinary scripts and
-do not require ES-module hosting.
+Edge fix:
+- source body triangles are no longer discarded merely because their centroid
+  lies outside the requested panel;
+- every body triangle with real area overlap is retained;
+- the existing clipping stage cuts it at the requested boundary;
+- the clipped polygon is triangulated;
+- new edge vertices remain reconstructed from the original mannequin triangle.
 
-## Implemented in this Alpha
-- body loading (female / male)
-- body color diagnostic
-- global surface offset
-- ring / point nodes
-- dynamic ring hitboxes
-- ring parameter editing
-- mirror pairs
-- generic ring merge/unmerge foundation
-- auto Strip straps only
-- 3-line concept: center projection + independently projected left/right edges
-- cheap strap preview while moving a ring
-- strap width editing
-- strap debug lines
-- fast extracted-body panels
-- ring and strap panel cut approximation
-- panel creation tool
-- Undo / Redo from data snapshots
-- localStorage persistence
-- hitbox debug
-- iPhone camera orbit + pinch zoom
-
-## Deliberately deferred until Alpha is validated
-- polished generic merge topology restoration for every nested case
-- anchor-on-strap split/merge system
-- auto crossing nodes
-- exact strap-panel and panel-panel shared-edge clipping
-- material editor / mesh materials
-- Body Lab integration API beyond the current Body module seam
-- advanced model upload
-
-The point of V2 Alpha is to validate the architecture and core workflows before
-adding those systems. Patches should stay isolated to the owning module.
-
-
-## V2.0.2 boot fix
-- adds a browser Import Map for the bare `three` specifier used internally by Three addons
-- loads `GLTFLoader` via `three/addons/loaders/GLTFLoader.js`
-- exposes a mutable global `THREE = {...module, GLTFLoader}` for the classic V2 modules
-- leaves the V2 application modules themselves unchanged
+No dense panel raycast pass was added.
