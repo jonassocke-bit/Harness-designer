@@ -4581,11 +4581,12 @@ try{
 })();
 
 
+
 // ============================================================================
-// V3.0.0b GUIDED REGRESSION
+// V3.0.0c GUIDED+ REGRESSION
 // ============================================================================
 (function(){
-  const RELEASE={build:'V3.0.0b GUIDED TEST',base:'V1.9f2 GOLDEN',changedModules:['testHarness'],recommendedLevel:'full'};
+  const RELEASE={build:'V3.0.0c GUIDED+',base:'V1.9f2 GOLDEN',changedModules:['testHarness'],recommendedLevel:'full'};
   const TESTS={
     startup:{title:'App starten',instruction:'Mannequin und bekannte UI müssen vollständig sichtbar sein.',golden:'pass'},
     camera:{title:'Kamera testen',instruction:'Ein Finger drehen, zwei Finger zoomen.',golden:'pass'},
@@ -4607,57 +4608,54 @@ try{
     reload:{title:'Reload',instruction:'Lade die Seite neu. Die App muss erneut zuverlässig starten.',golden:'pass'},
     ui:{title:'UI bedienen',instruction:'Panel scrollen/ziehen und alle wichtigen Buttons erreichen.',golden:'pass'}
   };
-  const FULL=['startup','camera','ringCreate','ringMove','ringEdit','mirror','axisSnap','genericSnap','connect','strapPreview','strapBasic','strapComplex','strapEndpoints','panelCreate','panelComplex','panelSpeed','undoRedo','reload','ui'];
-  const SMOKE=['startup','camera','ringCreate','undoRedo'];
-  const IMPACT={
-    bootstrap:['startup','reload'],bodySurface:['startup','ringCreate','ringMove','strapBasic','strapComplex','panelCreate'],
-    interaction:['camera','ringCreate','ringMove','connect','panelCreate'],nodeModel:['ringCreate','ringMove','ringEdit','mirror','axisSnap','genericSnap','strapBasic','panelCreate'],
-    snapMerge:['mirror','axisSnap','genericSnap'],strapModel:['connect','strapBasic','strapComplex','strapEndpoints','undoRedo'],
-    strapPreview:['ringMove','strapPreview'],stripSolverLegacy:['strapBasic','strapComplex','strapEndpoints','strapPreview'],
-    strapRenderer:['strapBasic','strapComplex','strapEndpoints'],panelModel:['panelCreate','undoRedo'],panelPreview:['panelCreate','ringMove'],
-    panelExtractLegacy:['panelCreate','panelComplex','panelSpeed'],panelBoundary:['panelCreate','panelComplex'],panelRenderer:['panelCreate','panelComplex'],
-    history:['undoRedo','reload'],persistence:['reload'],ui:['ui'],testHarness:[]
-  };
-  const RUN_KEY='hd:v3:testRun:'+RELEASE.build,HISTORY_KEY='hd:v3:testHistory';
-  let mode='full',queue=[],index=0,run={results:{},startedAt:null,complete:false};
+  const FULL=Object.keys(TESTS);
+  const RUN_KEY='hd:v3:testRun:'+RELEASE.build,HISTORY_KEY='hd:v3:testHistory',DB_NAME='HarnessDesignerV3Tests',DB_STORE='screenshots';
+  let queue=FULL.slice(),index=0,run={results:{},startedAt:null,complete:false};
   try{const x=JSON.parse(localStorage.getItem(RUN_KEY)||'null');if(x&&x.results)run=x}catch{}
   const save=()=>{try{localStorage.setItem(RUN_KEY,JSON.stringify(run))}catch{}};
-  const hist=()=>{try{const h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'{}');h[RELEASE.build]={...run,build:RELEASE.build,base:RELEASE.base};localStorage.setItem(HISTORY_KEY,JSON.stringify(h))}catch{}};
-  const impactQueue=()=>{const s=new Set();for(const m of RELEASE.changedModules)for(const t of IMPACT[m]||[])s.add(t);return s.size?FULL.filter(x=>s.has(x)):FULL.slice()};
-  const makeQueue=()=>mode==='smoke'?SMOKE.slice():mode==='impact'?impactQueue():FULL.slice();
-  const firstUnanswered=()=>{const i=queue.findIndex(id=>!run.results[id]);return i<0?queue.length:i};
+  const saveHistory=()=>{try{const h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'{}');h[RELEASE.build]={...run,build:RELEASE.build,base:RELEASE.base};localStorage.setItem(HISTORY_KEY,JSON.stringify(h))}catch{}};
+  function db(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(DB_STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+  async function putShot(id,blob){const d=await db();return new Promise((res,rej)=>{const tx=d.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).put(blob,RELEASE.build+':'+id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}
+  async function getShot(id){const d=await db();return new Promise((res,rej)=>{const r=d.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(RELEASE.build+':'+id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
+  const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function logText(){
+    return `${RELEASE.build}\nBase: ${RELEASE.base}\n\n`+queue.map(id=>{const t=TESTS[id],r=run.results[id],i=r?.status==='pass'?'✓':r?.status==='fail'?'✕':r?.status==='skip'?'→':'?';return `${i} ${t.title}${t.golden==='known'?' [KNOWN]':''}${r?.note?' — '+r.note:''}`}).join('\n');
+  }
+  const blobData=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
+  async function exportReport(){
+    let sections='';
+    for(const id of queue){const t=TESTS[id],r=run.results[id],shot=await getShot(id),data=shot?await blobData(shot):null;sections+=`<section><h2>${escapeHtml(t.title)}</h2><p>Status: ${escapeHtml(r?.status||'ungetestet')}${t.golden==='known'?' · KNOWN':''}</p>${r?.note?`<p>Kommentar: ${escapeHtml(r.note)}</p>`:''}${data?`<img src="${data}" style="max-width:100%">`:''}</section>`}
+    const doc=`<!doctype html><meta charset="utf-8"><title>${RELEASE.build}</title><style>body{font:14px system-ui;max-width:900px;margin:auto;padding:24px}section{padding:14px 0;border-bottom:1px solid #ccc}</style><h1>${RELEASE.build}</h1><pre>${escapeHtml(logText())}</pre>${sections}`;
+    const a=document.createElement('a'),u=URL.createObjectURL(new Blob([doc],{type:'text/html'}));a.href=u;a.download='Harness-'+RELEASE.build.replace(/\s+/g,'-')+'-report.html';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
+  }
+  async function capture(id){
+    const c=document.querySelector('canvas');if(!c)throw new Error('Kein Canvas');
+    const blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Screenshot leer')),'image/png'));
+    await putShot(id,blob);
+  }
 
   function mount(){
     const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
-    const g=document.createElement('div');g.id='v3Guide';g.innerHTML=`<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kurze Fehlernotiz…">`;
-    const summary=document.createElement('div');summary.id='v3GuideSummary';document.body.append(btn,g,summary);
-    const $=q=>g.querySelector(q);
+    const g=document.createElement('div');g.id='v3Guide';g.innerHTML=`<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kommentar / Fehlerbeschreibung…"><div class="shotState"></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>`;
+    const s=document.createElement('div');s.id='v3GuideSummary';document.body.append(btn,g,s);const $=q=>g.querySelector(q);
 
-    function render(){
-      if(index>=queue.length){
-        run.complete=true;save();hist();g.style.display='none';
-        const lines=queue.map(id=>{const t=TESTS[id],r=run.results[id],ic=r?.status==='pass'?'✓':r?.status==='fail'?'✕':'→';return `${ic} ${t.title}${t.golden==='known'?' [KNOWN]':''}${r?.note?' — '+r.note:''}`});
-        summary.textContent=`${RELEASE.build}\n\n${lines.join('\n')}`;summary.style.display='block';return;
-      }
-      const id=queue[index],t=TESTS[id];
-      $('.count').textContent=`${index+1}/${queue.length}`;$('.title').textContent=t.title;$('.instruction').textContent=t.instruction;
-      $('.known').textContent=t.known||'';$('.known').style.display=t.known?'block':'none';$('.note').style.display='none';$('.note').value='';
-      summary.style.display='none';g.style.display='block';
+    async function render(){
+      s.style.display='none';
+      if(index>=queue.length)return summary();
+      const id=queue[index],t=TESTS[id],r=run.results[id]||{};
+      $('.count').textContent=`${index+1}/${queue.length}`;$('.title').textContent=t.title;$('.instruction').textContent=t.instruction;$('.known').textContent=t.known||'';$('.known').style.display=t.known?'block':'none';$('.note').value=r.note||'';$('.prev').disabled=index===0;$('.next').disabled=index===queue.length-1;
+      for(const k of ['pass','fail','skip'])$('.'+k).classList.toggle('activeAnswer',r.status===k);
+      $('.shotState').textContent=(await getShot(id))?'📷 Screenshot gespeichert':'';
+      g.style.display='block';
     }
-    function answer(status){
-      const id=queue[index];run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};save();index++;render();
-    }
-    $('.pass').onclick=()=>answer('pass');$('.skip').onclick=()=>answer('skip');
-    $('.fail').onclick=()=>{if($('.note').style.display!=='block'){$('.note').style.display='block';$('.note').focus()}else answer('fail')};
-    $('.note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();answer('fail')}});
-    $('.close').onclick=()=>g.style.display='none';
-    btn.onclick=()=>{
-      summary.style.display='none';mode=RELEASE.recommendedLevel;queue=makeQueue();
-      if(run.complete)run={results:{},startedAt:new Date().toISOString(),complete:false};
-      else if(!run.startedAt)run.startedAt=new Date().toISOString();
-      save();index=firstUnanswered();render();
-    };
-    window.HDV3GuidedTest={RELEASE,TESTS,IMPACT,getRun:()=>JSON.parse(JSON.stringify(run)),setChangedModules:m=>RELEASE.changedModules=[...m],setLevel:l=>RELEASE.recommendedLevel=l};
+    function record(status){const id=queue[index];run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};save();if(index<queue.length-1)index++;else index=queue.length;render()}
+    function summary(){g.style.display='none';run.complete=true;save();saveHistory();s.innerHTML=`<div>${escapeHtml(logText())}</div><div class="summaryActions"><button class="copy">Log kopieren</button><button class="export">Report exportieren</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>`;s.style.display='block';s.querySelector('.copy').onclick=async()=>{await navigator.clipboard.writeText(logText());s.querySelector('.copy').textContent='✓ Kopiert'};s.querySelector('.export').onclick=exportReport;s.querySelector('.back').onclick=()=>{index=queue.length-1;render()};s.querySelector('.closeSum').onclick=()=>s.style.display='none'}
+    $('.pass').onclick=()=>record('pass');$('.fail').onclick=()=>record('fail');$('.skip').onclick=()=>record('skip');
+    $('.note').onchange=()=>{const id=queue[index],r=run.results[id]||{};run.results[id]={...r,note:$('.note').value.trim()};save()};
+    $('.prev').onclick=()=>{if(index>0){index--;render()}};$('.next').onclick=()=>{if(index<queue.length-1){index++;render()}};
+    $('.close').onclick=()=>g.style.display='none';$('.shot').onclick=async()=>{const id=queue[index];$('.shotState').textContent='Screenshot…';try{await capture(id);$('.shotState').textContent='📷 Screenshot gespeichert'}catch(e){$('.shotState').textContent='Screenshot fehlgeschlagen'}};
+    btn.onclick=()=>{s.style.display='none';if(!run.startedAt)run.startedAt=new Date().toISOString();save();const i=queue.findIndex(id=>!run.results[id]);index=i<0?0:i;render()};
+    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport};
   }
   if(document.readyState==='loading')addEventListener('DOMContentLoaded',mount);else mount();
 })();
