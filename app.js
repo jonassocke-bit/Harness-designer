@@ -12,13 +12,11 @@ const mirrorToggle=$('mirrorToggle'),mirrorSelectedBtn=$('mirrorSelectedBtn'),ro
 const buildTools=$('buildTools'),connectToggle=$('connectToggle'),restoreUI=$('restoreUI'),modePill=$('modePill'),toast=$('toast');
 const panelToggle=$('panelToggle'),panelConfirmBtn=$('panelConfirmBtn');
 const panelControls=$('panelControls'),panelOffsetSlider=$('panelOffsetSlider'),panelOffsetTools=$('panelOffsetTools');
-const panelExtractDebugBtn=$('panelExtractDebugBtn'),panelPerfReadout=$('panelPerfReadout');
 const modelInput=$('modelInput'),uploadModelBtn=$('uploadModelBtn'),reloadModelBtn=$('reloadModelBtn');
 const closeModelPanelBtn=$('closeModelPanelBtn'),rotationResetBtn=$('rotationResetBtn');
 const bodyFemaleBtn=$('bodyFemaleBtn'),bodyMaleBtn=$('bodyMaleBtn');
 const bodyShapeSlider=$('bodyShapeSlider'),bodyMuscleSlider=$('bodyMuscleSlider'),bodyHeightSlider=$('bodyHeightSlider'),bodyArmsSlider=$('bodyArmsSlider'),bodyLegsSlider=$('bodyLegsSlider');
 const bodyShapeValue=$('bodyShapeValue'),bodyMuscleValue=$('bodyMuscleValue'),bodyHeightValue=$('bodyHeightValue'),bodyArmsValue=$('bodyArmsValue'),bodyLegsValue=$('bodyLegsValue');
-const bodyColorPicker=$('bodyColorPicker');
 const bodySystemPanel=document.querySelector('.body-system');
 
 
@@ -72,7 +70,6 @@ const PANEL_MAT=new THREE.MeshStandardMaterial({color:0x202124,roughness:.68,met
 const PANEL_SEL=new THREE.MeshStandardMaterial({color:0x00d8ff,roughness:.62,metalness:0,side:THREE.DoubleSide,emissive:0x007c96,emissiveIntensity:.55,transparent:true,opacity:.82,polygonOffset:true,polygonOffsetFactor:3,polygonOffsetUnits:3});
 const PANEL_GUIDE_MAT=new THREE.PointsMaterial({color:0x00d8ff,size:5,sizeAttenuation:false,transparent:true,opacity:.9,depthTest:true,depthWrite:false});
 
-let bodyColorHex=localStorage.getItem('hd:bodyColor')||'#e9e9e9';
 let bodyMeshes=[];
 let importedModel=null;
 let integratedBodyRoot=null,integratedBodyMesh=null,integratedBodyDict=null;
@@ -129,24 +126,6 @@ function updateCamera(){
 }
 addEventListener('resize',resize);
 
-
-function applyBodyColor(){
-  const c=new THREE.Color(bodyColorHex);
-  BODY_MAT.color.copy(c);
-
-  for(const mesh of bodyMeshes){
-    const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
-    for(const mat of mats){
-      if(mat&&mat.color){
-        mat.color.copy(c);
-        mat.needsUpdate=true;
-      }
-    }
-  }
-
-  if(bodyColorPicker)bodyColorPicker.value=bodyColorHex;
-}
-
 function addBodyMesh(mesh){
   mesh.material=BODY_MAT.clone();
   mesh.receiveShadow=false;mesh.castShadow=false;
@@ -181,7 +160,6 @@ function buildFallback(){
   modelRoot.rotation.set(0,0,0);
 }
 buildFallback();
-applyBodyColor();
 
 const integratedLoader=new GLTFLoader();
 
@@ -206,16 +184,6 @@ function updateBodyUI(){
   bodyArmsValue.textContent=Math.abs(ar)<.03?'A-Pose':ar<0?`Gerade ${Math.round(-ar*100)}%`:`Unten ${Math.round(ar*100)}%`;
   bodyLegsValue.textContent=bodySystem.legs<.03?'Offen':`Zusammen ${Math.round(bodySystem.legs*100)}%`;
 }
-
-if(bodyColorPicker){
-  bodyColorPicker.value=bodyColorHex;
-  bodyColorPicker.addEventListener('input',()=>{
-    bodyColorHex=bodyColorPicker.value;
-    try{localStorage.setItem('hd:bodyColor',bodyColorHex)}catch{}
-    applyBodyColor();
-  });
-}
-
 function saveBodyUI(){
   localStorage.setItem('hd:bodyGender',bodySystem.gender);
   localStorage.setItem('hd:bodyShape',String(bodySystem.shape));
@@ -239,7 +207,6 @@ function applyIntegratedBodyMorphs(){
   const heightFactor=bodySystem.height/180;
   integratedBodyRoot.scale.setScalar(integratedBodyBaseScale*heightFactor);
   integratedBodyRoot.updateMatrixWorld(true);
-  applyBodyColor();
 }
 function fitIntegratedBodyToHarnessScene(obj){
   // neutral 180 cm model -> existing mannequin working height 3.3 scene units
@@ -1301,123 +1268,6 @@ function panelPolygonMargin2(p,poly){
   for(let i=0;i<poly.length;i++)d=Math.min(d,pointSegmentDistance2(p,poly[i],poly[(i+1)%poly.length]));
   return d;
 }
-
-function candidateVertexKey(p,eps=.00002){
-  return Math.round(p.x/eps)+","+Math.round(p.y/eps)+","+Math.round(p.z/eps);
-}
-
-function selectConnectedPanelComponentLite(candidates,panel){
-  if(!candidates.length)return [];
-
-  const boundary=panelBoundaryWorld(panel);
-  const target=boundary.reduce((a,p)=>a.add(p),new THREE.Vector3())
-    .multiplyScalar(1/Math.max(1,boundary.length));
-
-  const vertexToCandidates=new Map();
-
-  for(let i=0;i<candidates.length;i++){
-    for(const p of candidates[i].p){
-      const k=candidateVertexKey(p);
-      let arr=vertexToCandidates.get(k);
-      if(!arr){
-        arr=[];
-        vertexToCandidates.set(k,arr);
-      }
-      arr.push(i);
-    }
-  }
-
-  const neighbors=Array.from({length:candidates.length},()=>[]);
-
-  for(const arr of vertexToCandidates.values()){
-    if(arr.length<2)continue;
-    for(let i=0;i<arr.length;i++){
-      for(let j=i+1;j<arr.length;j++){
-        neighbors[arr[i]].push(arr[j]);
-        neighbors[arr[j]].push(arr[i]);
-      }
-    }
-  }
-
-  const seen=new Uint8Array(candidates.length);
-  let best=[];
-  let bestScore=Infinity;
-
-  for(let seed=0;seed<candidates.length;seed++){
-    if(seen[seed])continue;
-
-    const stack=[seed];
-    const component=[];
-    seen[seed]=1;
-
-    while(stack.length){
-      const i=stack.pop();
-      component.push(candidates[i]);
-
-      for(const nb of neighbors[i]){
-        if(!seen[nb]){
-          seen[nb]=1;
-          stack.push(nb);
-        }
-      }
-    }
-
-    let minDist=Infinity;
-    for(const c of component){
-      minDist=Math.min(minDist,c.centroid.distanceTo(target));
-    }
-
-    const score=minDist-component.length*.00002;
-    if(score<bestScore){
-      bestScore=score;
-      best=component;
-    }
-  }
-
-  return best;
-}
-
-let panelExtractDebug=false;
-const panelExtractDebugRoot=new THREE.Group();
-helperRoot.add(panelExtractDebugRoot);
-
-function clearPanelExtractDebug(){
-  while(panelExtractDebugRoot.children.length){
-    const o=panelExtractDebugRoot.children.pop();
-    o.geometry?.dispose?.();
-    o.material?.dispose?.();
-  }
-}
-
-function showPanelExtractDebug(triangles){
-  clearPanelExtractDebug();
-
-  if(!panelExtractDebug||!triangles?.length)return;
-
-  const pos=[];
-
-  for(const tri of triangles){
-    const [a,b,c]=tri.p;
-    for(const [u,v] of [[a,b],[b,c],[c,a]]){
-      pos.push(u.x,u.y,u.z,v.x,v.y,v.z);
-    }
-  }
-
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-
-  const m=new THREE.LineBasicMaterial({
-    color:0xffcc55,
-    transparent:true,
-    opacity:.85,
-    depthTest:false
-  });
-
-  const lines=new THREE.LineSegments(g,m);
-  lines.renderOrder=100;
-  panelExtractDebugRoot.add(lines);
-}
-
 function extractBodyTrianglesForPanel(panel){
   const boundary=panelBoundaryWorld(panel);
   if(boundary.length<3)return [];
@@ -1425,33 +1275,24 @@ function extractBodyTrianglesForPanel(panel){
   const basis=panelBasis(panel);
   const poly=boundary.map(p=>panel2D(panel,p,basis));
   const boundaryTris=THREE.ShapeUtils.triangulateShape(poly,[]);
+  const cutRings=panelCutRings(panel);
 
   let boundaryDepth=0;
-  for(const p of boundary){
-    boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
-  }
-
-  const slab=Math.max(.12,boundaryDepth+.32);
+  for(const p of boundary)boundaryDepth=Math.max(boundaryDepth,panelPlaneDistance(p,basis));
+  const slab=Math.max(.10,boundaryDepth+.24);
 
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   for(const p of poly){
-    minX=Math.min(minX,p.x);
-    minY=Math.min(minY,p.y);
-    maxX=Math.max(maxX,p.x);
-    maxY=Math.max(maxY,p.y);
+    minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
+    maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y);
   }
 
-  const candidates=[];
-  const va=new THREE.Vector3();
-  const vb=new THREE.Vector3();
-  const vc=new THREE.Vector3();
-  const na=new THREE.Vector3();
-  const nb=new THREE.Vector3();
-  const nc=new THREE.Vector3();
+  const result=[];
+  const va=new THREE.Vector3(),vb=new THREE.Vector3(),vc=new THREE.Vector3();
+  const na=new THREE.Vector3(),nb=new THREE.Vector3(),nc=new THREE.Vector3();
 
   for(const mesh of bodyMeshes){
     if(!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position)continue;
-
     mesh.updateMatrixWorld(true);
 
     const g=mesh.geometry;
@@ -1468,8 +1309,16 @@ function extractBodyTrianglesForPanel(panel){
       bodyVertexWorld(mesh,ic,vc);
 
       const centroid=va.clone().add(vb).add(vc).multiplyScalar(1/3);
-
       if(panelPlaneDistance(centroid,basis)>slab)continue;
+
+      bodyVertexNormalWorld(mesh,ia,na);
+      bodyVertexNormalWorld(mesh,ib,nb);
+      bodyVertexNormalWorld(mesh,ic,nc);
+
+      let avgN=na.clone().add(nb).add(nc);
+      if(avgN.lengthSq()<1e-8)avgN=basis.normal.clone();
+      avgN.normalize();
+      if(avgN.dot(basis.normal)<-.18)continue;
 
       const tri2=[
         panel2D(panel,va,basis),
@@ -1478,44 +1327,35 @@ function extractBodyTrianglesForPanel(panel){
       ];
 
       let tMinX=Infinity,tMinY=Infinity,tMaxX=-Infinity,tMaxY=-Infinity;
-
       for(const p of tri2){
-        tMinX=Math.min(tMinX,p.x);
-        tMinY=Math.min(tMinY,p.y);
-        tMaxX=Math.max(tMaxX,p.x);
-        tMaxY=Math.max(tMaxY,p.y);
+        tMinX=Math.min(tMinX,p.x); tMinY=Math.min(tMinY,p.y);
+        tMaxX=Math.max(tMaxX,p.x); tMaxY=Math.max(tMaxY,p.y);
       }
-
       if(tMaxX<minX || tMinX>maxX || tMaxY<minY || tMinY>maxY)continue;
 
+      // Retain every mannequin triangle that has a genuine area overlap with
+      // the requested panel, even if the triangle centroid lies outside it.
       let overlaps=false;
-
       for(const bt of boundaryTris){
         const clipTri=[poly[bt[0]],poly[bt[1]],poly[bt[2]]];
-
         if(clipTriangleToTriangle(tri2,clipTri).length>=3){
           overlaps=true;
           break;
         }
       }
-
       if(!overlaps)continue;
 
-      bodyVertexNormalWorld(mesh,ia,na);
-      bodyVertexNormalWorld(mesh,ib,nb);
-      bodyVertexNormalWorld(mesh,ic,nc);
+      if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
 
-      candidates.push({
+      result.push({
         p:[va.clone(),vb.clone(),vc.clone()],
         n:[na.clone(),nb.clone(),nc.clone()],
-        centroid:centroid.clone()
+        centroid:centroid.clone(),
+        margin:panelPolygonMargin2(panel2D(panel,centroid,basis),poly)
       });
     }
   }
-
-  const connected=selectConnectedPanelComponentLite(candidates,panel);
-  showPanelExtractDebug(connected);
-  return connected;
+  return result;
 }
 
 function signedArea2(poly){
@@ -1696,32 +1536,12 @@ function makePanel(data={}){
 }
 function updatePanelGeometry(panel,{preview=false}={}){
   if(!panel)return;
-
   syncPanelNodeIds(panel);
-
-  const t0=performance.now();
   const old=panel.mesh.geometry;
-
-  panel.mesh.geometry=preview
-    ?buildPanelPreviewGeometry(panel)
-    :buildPanelGeometry(panel);
-
+  panel.mesh.geometry=preview?buildPanelPreviewGeometry(panel):buildPanelGeometry(panel);
   old?.dispose?.();
-
-  panel.mesh.visible=
-    panel.nodeIds.length>=3&&
-    panelHasArea(panel);
-
-  if(!preview&&panelPerfReadout){
-    const ms=performance.now()-t0;
-    const right=panelPerfReadout.querySelector('span:last-child');
-
-    if(right){
-      right.textContent=`${ms.toFixed(ms<10?1:0)} ms`;
-    }
-  }
+  panel.mesh.visible=panel.nodeIds.length>=3&&panelHasArea(panel);
 }
-
 function updatePanelsForNode(nodeId,{preview=true}={}){
   for(const p of panels.values()){
     if(!p.boundarySlots.some(s=>s.currentId===nodeId))continue;
@@ -2740,17 +2560,6 @@ strapWidthSlider.addEventListener('change',refreshAutomaticCrossings);
 setupParam('rotX',rotXSlider,$('rotXTools'),v=>{modelRoot.rotation.x=THREE.MathUtils.degToRad(v)});
 setupParam('rotY',rotYSlider,$('rotYTools'),v=>{modelRoot.rotation.y=THREE.MathUtils.degToRad(v)});
 setupParam('rotZ',rotZSlider,$('rotZTools'),v=>{modelRoot.rotation.z=THREE.MathUtils.degToRad(v)});
-panelExtractDebugBtn.addEventListener('click',()=>{
-  panelExtractDebug=!panelExtractDebug;
-  panelExtractDebugBtn.classList.toggle('active',panelExtractDebug);
-
-  if(!panelExtractDebug){
-    clearPanelExtractDebug();
-  }else if(selected?.kind==='panel'){
-    updatePanelGeometry(selected);
-  }
-});
-
 setupParam('panelOffset',panelOffsetSlider,panelOffsetTools,v=>{
   if(selected?.kind!=='panel')return;
   selected.offsetMM=v;
@@ -4722,3 +4531,63 @@ try{
 }catch(err){
   console.error('Initial history snapshot failed',err);
 }
+
+
+// ------------------------------------------------------------
+// V1.9k3 diagnostic only: Mannequin color control.
+// Appended at the END intentionally so it cannot participate in
+// the existing startup / initialization order.
+// ------------------------------------------------------------
+(function initBodyColorDiagnostic(){
+  try{
+    if(!bodySystemPanel)return;
+
+    const row=document.createElement('div');
+    row.className='parameter';
+    row.id='bodyColorDiagnosticRow';
+
+    const top=document.createElement('div');
+    top.className='parameter-top';
+
+    const label=document.createElement('span');
+    label.textContent='Mannequin-Farbe';
+
+    const picker=document.createElement('input');
+    picker.type='color';
+    picker.id='bodyColorDiagnosticPicker';
+    picker.value='#e9e9e9';
+    picker.style.width='44px';
+    picker.style.height='30px';
+    picker.style.padding='0';
+    picker.style.border='0';
+    picker.style.background='transparent';
+
+    top.appendChild(label);
+    top.appendChild(picker);
+    row.appendChild(top);
+    bodySystemPanel.appendChild(row);
+
+    const applyDiagnosticBodyColor=()=>{
+      const c=new THREE.Color(picker.value);
+
+      if(typeof BODY_MAT!=='undefined' && BODY_MAT && BODY_MAT.color){
+        BODY_MAT.color.copy(c);
+        BODY_MAT.needsUpdate=true;
+      }
+
+      for(const mesh of bodyMeshes){
+        const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+        for(const mat of mats){
+          if(mat && mat.color){
+            mat.color.copy(c);
+            mat.needsUpdate=true;
+          }
+        }
+      }
+    };
+
+    picker.addEventListener('input',applyDiagnosticBodyColor);
+  }catch(err){
+    console.warn('Body color diagnostic disabled:',err);
+  }
+})();

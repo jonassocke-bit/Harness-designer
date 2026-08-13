@@ -1,18 +1,9 @@
-# V1.9k2 BODY COLOR SAFE
+# V1.9k3 BODY COLOR MINIMAL
 
-Rebuilt directly from the known-starting V1.9j3.
+Built directly from the user-confirmed working V1.9f2.
 
-V1.9k startup bug:
-BODY_MAT referenced `bodyColorHex` before `bodyColorHex` was initialized,
-causing a browser ReferenceError (temporal dead zone). `node --check` cannot
-detect that class of runtime initialization error.
+The original V1.9f2 app.js is preserved byte-for-byte and the mannequin
+color diagnostic is appended only at the very end of the module.
 
-V1.9k2:
-- leaves BODY_MAT startup construction exactly as in V1.9j3
-- initializes bodyColorHex before runtime use
-- applies saved color only after the fallback body exists
-- recolors all body mesh materials live
-- stores the chosen color in localStorage
-- reapplies it after integrated body morph/model updates
-
-No panel geometry/extraction logic was changed.
+The diagnostic is wrapped in try/catch so it cannot prevent startup.
+No existing panel, strap, ring, snap, body initialization, or UI logic was changed.
