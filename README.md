@@ -1,21 +1,21 @@
-# V1.9l PANEL EDGE WELD
+# V1.9m PANEL SOLIDIFY
 
-Built directly from user-confirmed starting V1.9k3.
+Built directly from the user-confirmed starting V1.9k3.
 
-Only `buildPanelGeometry()` was replaced.
+Only `buildPanelGeometry()` is changed.
 
-Change:
-- final clipped panel vertices are canonicalized into one indexed vertex pool
-- coincident vertices use the exact same vertex index
-- their normals are averaged once
-- panel offset is applied once per shared vertex
-- adjacent triangles therefore cannot separate again because of independent offsets
+Panel generation:
+- same mannequin triangle extraction
+- same exact boundary clipping
+- canonical indexed top surface
+- 0.8 mm closed thickness
+- reversed bottom surface
+- automatic side walls on every true topological boundary edge
+- no extra raycasts
+- no denser body sampling
 
-Unchanged:
-- startup/init
-- panel extraction
-- clipping
-- ring-hole selection
-- straps/rings/snapping
-- body system
-- V1.9k3 mannequin color diagnostic
+The mannequin color diagnostic from V1.9k3 remains available.
+
+Purpose:
+Test whether the remaining angle-dependent body-colored cracks disappear when
+the panel is rendered as a real closed solid instead of a single thin surface.

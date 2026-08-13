@@ -1476,28 +1476,30 @@ function buildPanelGeometry(panel){
   if(!pieces.length)return buildPanelPreviewGeometry(panel);
 
   const lift=panelOffsetScene(panel);
+  const thickness=.0008; // 0.8 mm real solid thickness
   const cutRings=panelCutRings(panel);
 
-  // Canonical vertex pool for the FINAL clipped surface.
-  // Adjacent clipped triangles that produce the same point now reference the
-  // exact same indexed vertex instead of carrying separate float copies.
-  const EPS=.00002; // 0.02 mm in scene metres
+  // Build one shared indexed surface directly on the mannequin.
+  const EPS=.00002; // 0.02 mm canonicalization
   const buckets=new Map();
-  const positions=[],normalSums=[],normalCounts=[],indices=[];
+  const basePositions=[];
+  const normalSums=[];
+  const normalCounts=[];
+  const topIndices=[];
 
   const keyFor=q=>
     Math.round(q.x/EPS)+","+
     Math.round(q.y/EPS)+","+
     Math.round(q.z/EPS);
 
-  function canonicalVertex(v){
+  function vertexIndex(v){
     const k=keyFor(v.q);
     let idx=buckets.get(k);
 
     if(idx===undefined){
-      idx=positions.length/3;
+      idx=basePositions.length/3;
       buckets.set(k,idx);
-      positions.push(v.q.x,v.q.y,v.q.z);
+      basePositions.push(v.q.x,v.q.y,v.q.z);
       normalSums.push(v.n.clone());
       normalCounts.push(1);
     }else{
@@ -1512,40 +1514,125 @@ function buildPanelGeometry(panel){
     const centroid=tri[0].q.clone().add(tri[1].q).add(tri[2].q).multiplyScalar(1/3);
     if(cutRings.some(r=>centroid.distanceTo(r.p)<r.r))continue;
 
-    const ia=canonicalVertex(tri[0]);
-    const ib=canonicalVertex(tri[1]);
-    const ic=canonicalVertex(tri[2]);
+    const a=vertexIndex(tri[0]);
+    const b=vertexIndex(tri[1]);
+    const c=vertexIndex(tri[2]);
 
-    // Ignore only truly collapsed triangles after canonicalization.
-    if(ia===ib||ib===ic||ic===ia)continue;
-    indices.push(ia,ib,ic);
+    if(a===b||b===c||c===a)continue;
+    topIndices.push(a,b,c);
   }
 
-  // One shared averaged normal per canonical vertex, then one identical lift
-  // for every triangle that touches that vertex. This prevents neighboring
-  // triangles from separating again during the panel offset.
+  if(!topIndices.length)return buildPanelPreviewGeometry(panel);
+
+  const vertexCount=basePositions.length/3;
+  const smoothNormals=[];
+
+  for(let i=0;i<vertexCount;i++){
+    const n=normalSums[i].multiplyScalar(1/Math.max(1,normalCounts[i]));
+    if(n.lengthSq()<1e-10)n.set(0,0,1);
+    n.normalize();
+    smoothNormals.push(n);
+  }
+
+  // Top = normal panel offset.
+  // Bottom = 0.8 mm toward mannequin from the top surface.
+  const positions=[];
   const normals=[];
-  for(let i=0;i<positions.length/3;i++){
-    const n=normalSums[i].multiplyScalar(1/normalCounts[i]).normalize();
-    positions[i*3]+=n.x*lift;
-    positions[i*3+1]+=n.y*lift;
-    positions[i*3+2]+=n.z*lift;
+
+  for(let i=0;i<vertexCount;i++){
+    const n=smoothNormals[i];
+    const x=basePositions[i*3],y=basePositions[i*3+1],z=basePositions[i*3+2];
+
+    positions.push(
+      x+n.x*lift,
+      y+n.y*lift,
+      z+n.z*lift
+    );
     normals.push(n.x,n.y,n.z);
+  }
+
+  for(let i=0;i<vertexCount;i++){
+    const n=smoothNormals[i];
+    const x=basePositions[i*3],y=basePositions[i*3+1],z=basePositions[i*3+2];
+    const bottomLift=lift-thickness;
+
+    positions.push(
+      x+n.x*bottomLift,
+      y+n.y*bottomLift,
+      z+n.z*bottomLift
+    );
+    normals.push(-n.x,-n.y,-n.z);
+  }
+
+  const indices=[];
+
+  // Top faces.
+  for(let i=0;i<topIndices.length;i+=3){
+    const a=topIndices[i],b=topIndices[i+1],c=topIndices[i+2];
+    indices.push(a,b,c);
+  }
+
+  // Bottom faces, reversed winding.
+  for(let i=0;i<topIndices.length;i+=3){
+    const a=topIndices[i]+vertexCount;
+    const b=topIndices[i+1]+vertexCount;
+    const c=topIndices[i+2]+vertexCount;
+    indices.push(c,b,a);
+  }
+
+  // Find all true boundary edges of the topological panel.
+  const edges=new Map();
+  const edgeKey=(a,b)=>a<b?a+":"+b:b+":"+a;
+
+  function addEdge(a,b){
+    const k=edgeKey(a,b);
+    const rec=edges.get(k);
+    if(rec)rec.count++;
+    else edges.set(k,{a,b,count:1});
+  }
+
+  for(let i=0;i<topIndices.length;i+=3){
+    const a=topIndices[i],b=topIndices[i+1],c=topIndices[i+2];
+    addEdge(a,b);
+    addEdge(b,c);
+    addEdge(c,a);
+  }
+
+  // Close every outer / hole boundary with two triangles.
+  for(const edge of edges.values()){
+    if(edge.count!==1)continue;
+
+    const a=edge.a,b=edge.b;
+    const ab=a+vertexCount,bb=b+vertexCount;
+
+    // Side wall. Winding is less important because panel material is
+    // already DoubleSide, but keep a consistent quad order.
+    indices.push(a,ab,b);
+    indices.push(b,ab,bb);
   }
 
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
   g.setIndex(indices);
+
+  // Recompute normals so side-wall vertices shade consistently with the
+  // closed topology. The mesh stays indexed/connected.
+  g.computeVertexNormals();
   g.computeBoundingSphere();
+  g.computeBoundingBox();
+
   g.userData={
     extraction:true,
     cleanBoundary:true,
-    canonicalIndexedSurface:true,
+    solidified:true,
+    thicknessMM:.8,
     sourceTriangles:extracted.length,
-    outputTriangles:indices.length/3,
-    uniqueVertices:positions.length/3
+    topTriangles:topIndices.length/3,
+    totalTriangles:indices.length/3,
+    uniqueTopVertices:vertexCount
   };
+
   return g;
 }
 
