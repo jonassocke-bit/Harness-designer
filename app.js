@@ -4580,359 +4580,84 @@ try{
   });
 })();
 
+
 // ============================================================================
-// V3.0.0a REGRESSION HARNESS
-// Append-only test infrastructure. It does NOT modify legacy design logic.
+// V3.0.0b GUIDED REGRESSION
 // ============================================================================
-(function V3RegressionHarness(){
-  const BUILD='V3.0.0a TEST HARNESS';
-  const BASE='V1.9f2 GOLDEN';
-
-  // Future builds only need to change these two fields.
-  const RELEASE={
-    build:BUILD,
-    base:BASE,
-    changedModules:['testHarness'],
-    recommendedLevel:'full'
-  };
-
-  // Explicit architecture impact map. As modules get extracted, builds declare the
-  // changed module names and the harness picks only potentially affected workflows.
-  const IMPACT={
-    bootstrap:['startup','reload'],
-    appShell:['startup','camera','ui'],
-    bodySurface:['startup','ringCreate','ringMove','strapBasic','strapComplex','panelCreate'],
-    interaction:['camera','ringCreate','ringMove','connect','panelCreate'],
-    nodeModel:['ringCreate','ringMove','ringEdit','mirror','axisSnap','genericSnap','strapBasic','panelCreate'],
-    nodeRenderer:['ringCreate','ringEdit','selection','hitbox'],
-    snapMerge:['mirror','axisSnap','genericSnap','unmerge','strapBasic'],
-    strapModel:['connect','strapBasic','strapComplex','strapEndpoints','mirrorStrap','undoRedo'],
-    strapPreview:['ringMove','strapPreview'],
-    stripSolverLegacy:['strapBasic','strapComplex','strapEndpoints','strapPreview'],
-    stripSolverNext:['strapBasic','strapComplex','strapEndpoints','strapPreview'],
-    strapRenderer:['strapBasic','strapComplex','strapEndpoints','selection'],
-    panelModel:['panelCreate','panelPersistence','undoRedo'],
-    panelPreview:['panelCreate','ringMove'],
-    panelExtractLegacy:['panelCreate','panelComplex','panelSpeed'],
-    panelBoundary:['panelRingBoundary','panelStrapBoundary','panelPanelBoundary'],
-    panelRenderer:['panelCreate','panelComplex','selection'],
-    history:['undoRedo','reload'],
-    persistence:['reload'],
-    ui:['ui','selection'],
-    testHarness:[]
-  };
-
-  // Golden reference expectations.
-  // "known" means: do NOT treat this as a regression during modularization.
+(function(){
+  const RELEASE={build:'V3.0.0b GUIDED TEST',base:'V1.9f2 GOLDEN',changedModules:['testHarness'],recommendedLevel:'full'};
   const TESTS={
-    startup:{
-      title:'App starten',
-      instruction:'Seite neu laden. Mannequin und UI müssen erscheinen.',
-      smoke:true, golden:'pass'
-    },
-    camera:{
-      title:'Kamera',
-      instruction:'Mit einem Finger drehen und mit zwei Fingern zoomen.',
-      smoke:true, golden:'pass'
-    },
-    ringCreate:{
-      title:'Ring platzieren',
-      instruction:'Einen neuen Ring auf dem Körper platzieren.',
-      smoke:true, golden:'pass'
-    },
-    ringMove:{
-      title:'Ring verschieben',
-      instruction:'Den eben gesetzten Ring über den Körper ziehen und loslassen.',
-      golden:'pass'
-    },
-    ringEdit:{
-      title:'Ring bearbeiten',
-      instruction:'Ringdurchmesser und Ringstärke verändern.',
-      golden:'pass'
-    },
-    selection:{
-      title:'Objektauswahl',
-      instruction:'Ring, Riemen und – falls vorhanden – Fläche antippen. Passender Editor soll erscheinen.',
-      golden:'pass'
-    },
-    hitbox:{
-      title:'Ring-Hitbox',
-      instruction:'Großen und kleinen Ring antippen. Auswahlbereich soll ungefähr mit der Ringgröße skalieren.',
-      golden:'pass'
-    },
-    mirror:{
-      title:'Spiegelpaar',
-      instruction:'Einen Ring spiegeln und den Master bewegen. Partner soll gekoppelt folgen.',
-      golden:'pass'
-    },
-    axisSnap:{
-      title:'Mittelachsen-Snap',
-      instruction:'Ein Spiegelpaar zur Mittelachse ziehen und das Merge/Entmerge-Verhalten prüfen.',
-      golden:'pass'
-    },
-    genericSnap:{
-      title:'Ring ↔ Ring Snap',
-      instruction:'Zwei beliebige Ringe fast deckungsgleich aufeinander ziehen.',
-      golden:'known',
-      known:'Golden Known Issue: Ring-zu-Ring-Snap/Merge funktioniert in dieser Baseline nicht zuverlässig.'
-    },
-    unmerge:{
-      title:'Trennen',
-      instruction:'Ein vorhandenes Spiegel-/Merge-Paar über Trennen lösen und prüfen, ob beide Objekte erhalten bleiben.',
-      golden:'pass'
-    },
-    connect:{
-      title:'Riemen verbinden',
-      instruction:'Zwei Ringe über „Verbinden“ verbinden.',
-      golden:'pass'
-    },
-    strapPreview:{
-      title:'Riemen Drag-Preview',
-      instruction:'Einen Endring eines Riemens ziehen. Während des Drags muss die App flüssig bleiben.',
-      golden:'pass'
-    },
-    strapBasic:{
-      title:'Einfacher Riemen',
-      instruction:'Zwei Ringe an einer relativ flachen Körperstelle verbinden.',
-      golden:'pass'
-    },
-    strapComplex:{
-      title:'Riemen Brust / Schulter',
-      instruction:'Einen Riemen über Brust oder Schulter legen und aus mehreren Blickwinkeln prüfen.',
-      golden:'known',
-      known:'Golden Known Issue: Riemen können unnötige Knicke/S-Schlängellinien bilden. Funktional brauchbar, optisch noch nicht final.'
-    },
-    strapEndpoints:{
-      title:'Riemen-Endpunkte',
-      instruction:'Prüfen, ob der Riemen sauber am sichtbaren Ring endet.',
-      golden:'pass'
-    },
-    mirrorStrap:{
-      title:'Gespiegelter Riemen',
-      instruction:'Zwischen gespiegelten Ringen verbinden und prüfen, ob der Partner korrekt gespiegelt wird.',
-      golden:'pass'
-    },
-    panelCreate:{
-      title:'Fläche erstellen',
-      instruction:'Mindestens drei Ringe wählen und eine Fläche erstellen.',
-      smoke:false,golden:'pass'
-    },
-    panelComplex:{
-      title:'Fläche auf komplexer Körperform',
-      instruction:'Eine größere Fläche über Brust/Taille erzeugen und drehen. Kleine winkelabhängige Mesh-Lücken sind bekannt und erlaubt.',
-      golden:'known',
-      known:'Golden Known Issue: Bei sehr flachen Blickwinkeln können kleine körperfarbene Dreiecksspalten sichtbar sein.'
-    },
-    panelSpeed:{
-      title:'Flächen-Geschwindigkeit',
-      instruction:'Eine mittelgroße Fläche erzeugen. Die Berechnung sollte nahezu sofort erfolgen.',
-      golden:'pass'
-    },
-    panelRingBoundary:{
-      title:'Fläche ↔ Ring',
-      instruction:'Rand einer Fläche an einem Ring betrachten. Prüfen, ob die Aussparung plausibel ist.',
-      golden:'known',
-      known:'Noch nicht Endqualität; exakte Ringgrenze ist für PanelBoundaryResolver geplant.'
-    },
-    panelStrapBoundary:{
-      title:'Fläche ↔ Riemen',
-      instruction:'Nur testen, falls die Baseline an dieser Stelle bereits etwas zeigt.',
-      golden:'known',
-      known:'Noch kein finaler gemeinsamer Boundary-Solver.'
-    },
-    panelPanelBoundary:{
-      title:'Fläche ↔ Fläche',
-      instruction:'Zwei benachbarte Flächen erzeugen und deren Grenzbereich ansehen.',
-      golden:'known',
-      known:'Gemeinsame exakte Flächenkante ist ein späteres V3-Feature.'
-    },
-    panelPersistence:{
-      title:'Flächentopologie',
-      instruction:'Boundary-Ringe verschieben und prüfen, ob die Fläche erhalten bleibt.',
-      golden:'pass'
-    },
-    undoRedo:{
-      title:'Undo / Redo',
-      instruction:'Eine Änderung rückgängig und anschließend wiederherstellen.',
-      smoke:true,golden:'pass'
-    },
-    reload:{
-      title:'Reload / Persistenz',
-      instruction:'Seite neu laden und prüfen, ob die App weiterhin startet und der erwartete Zustand erhalten ist.',
-      golden:'pass'
-    },
-    ui:{
-      title:'UI',
-      instruction:'Editor hoch/runter ziehen, scrollen und Buttons auf kleinem Bildschirm erreichen.',
-      golden:'pass'
-    }
+    startup:{title:'App starten',instruction:'Mannequin und bekannte UI müssen vollständig sichtbar sein.',golden:'pass'},
+    camera:{title:'Kamera testen',instruction:'Ein Finger drehen, zwei Finger zoomen.',golden:'pass'},
+    ringCreate:{title:'Ring platzieren',instruction:'Setze irgendwo einen neuen Ring auf den Körper.',golden:'pass'},
+    ringMove:{title:'Ring verschieben',instruction:'Ziehe den Ring über den Körper und lasse ihn los.',golden:'pass'},
+    ringEdit:{title:'Ring bearbeiten',instruction:'Ändere Durchmesser und Ringstärke.',golden:'pass'},
+    mirror:{title:'Ring spiegeln',instruction:'Erzeuge ein Spiegelpaar und bewege den Master.',golden:'pass'},
+    axisSnap:{title:'Mittelachsen-Snap',instruction:'Ziehe ein Spiegelpaar zur Körpermitte.',golden:'pass'},
+    genericSnap:{title:'Ring ↔ Ring Snap',instruction:'Ziehe zwei beliebige Ringe fast exakt übereinander.',golden:'known',known:'Known Issue: funktioniert in der Golden-Baseline nicht zuverlässig.'},
+    connect:{title:'Riemen verbinden',instruction:'Verbinde zwei Ringe über „Verbinden“.',golden:'pass'},
+    strapPreview:{title:'Riemen-Preview',instruction:'Bewege einen Endring eines vorhandenen Riemens. Der Drag soll flüssig bleiben.',golden:'pass'},
+    strapBasic:{title:'Einfacher Riemen',instruction:'Prüfe einen Riemen an einer relativ flachen Körperstelle.',golden:'pass'},
+    strapComplex:{title:'Riemen Brust / Schulter',instruction:'Prüfe einen Riemen über Brust oder Schulter aus mehreren Winkeln.',golden:'known',known:'Known Issue: unnötige Knicke/S-Schlangen sind möglich.'},
+    strapEndpoints:{title:'Riemen-Endpunkte',instruction:'Prüfe, ob der Riemen plausibel am sichtbaren Ring endet.',golden:'pass'},
+    panelCreate:{title:'Fläche erstellen',instruction:'Erstelle aus mindestens drei Ringen eine Fläche.',golden:'pass'},
+    panelComplex:{title:'Große Fläche',instruction:'Erzeuge eine größere Fläche über komplexer Körpergeometrie.',golden:'known',known:'Known Issue: kleine winkelabhängige Dreiecksspalten sind akzeptiert.'},
+    panelSpeed:{title:'Flächen-Speed',instruction:'Erzeuge eine mittelgroße Fläche. Sie sollte praktisch sofort erscheinen.',golden:'pass'},
+    undoRedo:{title:'Undo / Redo',instruction:'Mache eine Änderung rückgängig und stelle sie wieder her.',golden:'pass'},
+    reload:{title:'Reload',instruction:'Lade die Seite neu. Die App muss erneut zuverlässig starten.',golden:'pass'},
+    ui:{title:'UI bedienen',instruction:'Panel scrollen/ziehen und alle wichtigen Buttons erreichen.',golden:'pass'}
   };
-
-  const FULL_ORDER=[
-    'startup','camera','ringCreate','ringMove','ringEdit','selection',
-    'mirror','axisSnap','genericSnap','unmerge',
-    'connect','strapPreview','strapBasic','strapComplex','strapEndpoints','mirrorStrap',
-    'panelCreate','panelComplex','panelSpeed','panelPersistence',
-    'undoRedo','reload','ui'
-  ];
-
-  const SMOKE_ORDER=['startup','camera','ringCreate','undoRedo'];
-
-  function impactTests(){
-    const ids=new Set();
-    for(const mod of RELEASE.changedModules){
-      for(const id of IMPACT[mod]||[])ids.add(id);
-    }
-    // If this build only changes the harness itself, calibrate against the full Golden baseline once.
-    if(!ids.size)return FULL_ORDER.slice();
-    return FULL_ORDER.filter(x=>ids.has(x));
-  }
-
-  function autoChecks(){
-    const checks=[];
-    const add=(name,fn)=>{
-      try{
-        const r=fn();
-        checks.push({name,status:r===true?'pass':r===false?'fail':'skip',detail:typeof r==='string'?r:''});
-      }catch(e){checks.push({name,status:'fail',detail:String(e?.message||e)})}
-    };
-
-    add('DOM ready',()=>document.readyState==='complete'||document.readyState==='interactive');
-    add('THREE loaded',()=>typeof THREE!=='undefined');
-    add('Canvas exists',()=>!!document.querySelector('canvas'));
-    add('Render canvas has size',()=>{
-      const c=document.querySelector('canvas');return c&&c.width>0&&c.height>0;
-    });
-    add('No duplicate object IDs',()=>{
-      if(typeof nodes==='undefined'||typeof straps==='undefined'||typeof panels==='undefined')return 'Legacy collections not externally visible';
-      const ids=[...nodes.keys(),...straps.keys(),...panels.keys()];
-      return new Set(ids).size===ids.length;
-    });
-    add('All strap node references valid',()=>{
-      if(typeof nodes==='undefined'||typeof straps==='undefined')return 'Legacy collections not externally visible';
-      for(const s of straps.values())if(!nodes.has(s.a)||!nodes.has(s.b))return false;
-      return true;
-    });
-    add('Panel boundary references valid',()=>{
-      if(typeof nodes==='undefined'||typeof panels==='undefined')return 'Legacy collections not externally visible';
-      for(const p of panels.values()){
-        const ids=p.boundarySlots||p.nodeIds||[];
-        for(const id of ids)if(!nodes.has(id))return false;
-      }
-      return true;
-    });
-    add('Build badge matches',()=>document.getElementById('v3BuildBadge')?.textContent?.includes('V3.0.0a'));
-    return checks;
-  }
-
-  const STORE='hd:v3Regression:'+RELEASE.build;
-  let mode='full',queue=[],index=0,results={};
-
-  function loadResults(){
-    try{results=JSON.parse(localStorage.getItem(STORE)||'{}')}catch{results={}}
-  }
-  function saveResults(){
-    try{localStorage.setItem(STORE,JSON.stringify(results))}catch{}
-  }
-  function queueFor(m){
-    if(m==='smoke')return SMOKE_ORDER.slice();
-    if(m==='impact')return impactTests();
-    return FULL_ORDER.slice();
-  }
-
-  function renderTask(){
-    const p=document.getElementById('v3TestPanel');if(!p)return;
-    const body=p.querySelector('#v3TestBody');
-    const auto=autoChecks();
-    const autoHtml=auto.map(c=>`<div class="${c.status}">${c.status==='pass'?'✓':c.status==='fail'?'✕':'·'} ${c.name}${c.detail?' — '+c.detail:''}</div>`).join('');
-
-    if(!queue.length){
-      body.innerHTML=`<div id="v3AutoChecks"><b>Automatische Checks</b>${autoHtml}</div><div>Für diesen Impact sind keine manuellen Tests nötig.</div>`;
-      return;
-    }
-
-    if(index>=queue.length){
-      const lines=queue.map(id=>{
-        const t=TESTS[id],r=results[id];
-        return `${r?.status==='pass'?'✓':r?.status==='fail'?'✕':r?.status==='skip'?'→':'?'} ${t.title}${t.golden==='known'?' [KNOWN]':''}${r?.note?' — '+r.note:''}`;
-      });
-      const regressions=queue.filter(id=>TESTS[id].golden==='pass'&&results[id]?.status==='fail').length;
-      const knownFails=queue.filter(id=>TESTS[id].golden==='known'&&results[id]?.status==='fail').length;
-      body.innerHTML=`<div id="v3AutoChecks"><b>Automatische Checks</b>${autoHtml}</div>
-        <h3>Testlauf abgeschlossen</h3>
-        <div class="meta">${queue.length} manuelle Tasks · ${regressions} Regression(en) · ${knownFails} bekannte Problemstelle(n)</div>
-        <pre id="v3TestSummary">${lines.join('\n')}</pre>
-        <button id="v3RestartTests">Nochmal testen</button>`;
-      body.querySelector('#v3RestartTests').onclick=()=>{index=0;renderTask()};
-      return;
-    }
-
-    const id=queue[index],t=TESTS[id],r=results[id]||{};
-    const known=t.known?`<div class="known">${t.known}</div>`:'';
-    body.innerHTML=`<div id="v3AutoChecks"><b>Automatische Checks</b>${autoHtml}</div>
-      <div id="v3TestTask">
-        <div class="counter">TASK ${index+1}/${queue.length} · ${mode.toUpperCase()}</div>
-        <div class="title">${t.title}</div>
-        <div class="instruction">${t.instruction}</div>
-        ${known}
-        <div class="actions">
-          <button data-result="pass">✓ Funktioniert</button>
-          <button data-result="fail">✕ Fehler</button>
-          <button data-result="skip">→ Skip</button>
-        </div>
-        <textarea id="v3TestNote" placeholder="Optional: kurze Notiz, z. B. „schlängelt sich“">${r.note||''}</textarea>
-      </div>`;
-
-    for(const b of body.querySelectorAll('[data-result]')){
-      b.onclick=()=>{
-        results[id]={status:b.dataset.result,note:body.querySelector('#v3TestNote').value.trim(),at:new Date().toISOString()};
-        saveResults();index++;renderTask();
-      };
-    }
-  }
-
-  function setMode(m){
-    mode=m;queue=queueFor(m);index=0;
-    document.querySelectorAll('#v3TestPanel .tabs button').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
-    renderTask();
-  }
+  const FULL=['startup','camera','ringCreate','ringMove','ringEdit','mirror','axisSnap','genericSnap','connect','strapPreview','strapBasic','strapComplex','strapEndpoints','panelCreate','panelComplex','panelSpeed','undoRedo','reload','ui'];
+  const SMOKE=['startup','camera','ringCreate','undoRedo'];
+  const IMPACT={
+    bootstrap:['startup','reload'],bodySurface:['startup','ringCreate','ringMove','strapBasic','strapComplex','panelCreate'],
+    interaction:['camera','ringCreate','ringMove','connect','panelCreate'],nodeModel:['ringCreate','ringMove','ringEdit','mirror','axisSnap','genericSnap','strapBasic','panelCreate'],
+    snapMerge:['mirror','axisSnap','genericSnap'],strapModel:['connect','strapBasic','strapComplex','strapEndpoints','undoRedo'],
+    strapPreview:['ringMove','strapPreview'],stripSolverLegacy:['strapBasic','strapComplex','strapEndpoints','strapPreview'],
+    strapRenderer:['strapBasic','strapComplex','strapEndpoints'],panelModel:['panelCreate','undoRedo'],panelPreview:['panelCreate','ringMove'],
+    panelExtractLegacy:['panelCreate','panelComplex','panelSpeed'],panelBoundary:['panelCreate','panelComplex'],panelRenderer:['panelCreate','panelComplex'],
+    history:['undoRedo','reload'],persistence:['reload'],ui:['ui'],testHarness:[]
+  };
+  const RUN_KEY='hd:v3:testRun:'+RELEASE.build,HISTORY_KEY='hd:v3:testHistory';
+  let mode='full',queue=[],index=0,run={results:{},startedAt:null,complete:false};
+  try{const x=JSON.parse(localStorage.getItem(RUN_KEY)||'null');if(x&&x.results)run=x}catch{}
+  const save=()=>{try{localStorage.setItem(RUN_KEY,JSON.stringify(run))}catch{}};
+  const hist=()=>{try{const h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'{}');h[RELEASE.build]={...run,build:RELEASE.build,base:RELEASE.base};localStorage.setItem(HISTORY_KEY,JSON.stringify(h))}catch{}};
+  const impactQueue=()=>{const s=new Set();for(const m of RELEASE.changedModules)for(const t of IMPACT[m]||[])s.add(t);return s.size?FULL.filter(x=>s.has(x)):FULL.slice()};
+  const makeQueue=()=>mode==='smoke'?SMOKE.slice():mode==='impact'?impactQueue():FULL.slice();
+  const firstUnanswered=()=>{const i=queue.findIndex(id=>!run.results[id]);return i<0?queue.length:i};
 
   function mount(){
-    loadResults();
+    const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
+    const g=document.createElement('div');g.id='v3Guide';g.innerHTML=`<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kurze Fehlernotiz…">`;
+    const summary=document.createElement('div');summary.id='v3GuideSummary';document.body.append(btn,g,summary);
+    const $=q=>g.querySelector(q);
 
-    const btn=document.createElement('button');
-    btn.id='v3TestBtn';btn.textContent='TEST';
-
-    const panel=document.createElement('div');
-    panel.id='v3TestPanel';
-    panel.innerHTML=`
-      <button id="v3TestClose">✕</button>
-      <h3>V3 Guided Regression</h3>
-      <div class="meta">${RELEASE.build} · Base ${RELEASE.base}<br>Changed modules: ${RELEASE.changedModules.join(', ')}</div>
-      <div class="tabs">
-        <button data-mode="smoke">Smoke</button>
-        <button data-mode="impact">Impact</button>
-        <button data-mode="full">Full</button>
-      </div>
-      <div id="v3TestBody"></div>`;
-
-    document.body.append(btn,panel);
-
+    function render(){
+      if(index>=queue.length){
+        run.complete=true;save();hist();g.style.display='none';
+        const lines=queue.map(id=>{const t=TESTS[id],r=run.results[id],ic=r?.status==='pass'?'✓':r?.status==='fail'?'✕':'→';return `${ic} ${t.title}${t.golden==='known'?' [KNOWN]':''}${r?.note?' — '+r.note:''}`});
+        summary.textContent=`${RELEASE.build}\n\n${lines.join('\n')}`;summary.style.display='block';return;
+      }
+      const id=queue[index],t=TESTS[id];
+      $('.count').textContent=`${index+1}/${queue.length}`;$('.title').textContent=t.title;$('.instruction').textContent=t.instruction;
+      $('.known').textContent=t.known||'';$('.known').style.display=t.known?'block':'none';$('.note').style.display='none';$('.note').value='';
+      summary.style.display='none';g.style.display='block';
+    }
+    function answer(status){
+      const id=queue[index];run.results[id]={status,note:$('.note').value.trim(),at:new Date().toISOString()};save();index++;render();
+    }
+    $('.pass').onclick=()=>answer('pass');$('.skip').onclick=()=>answer('skip');
+    $('.fail').onclick=()=>{if($('.note').style.display!=='block'){$('.note').style.display='block';$('.note').focus()}else answer('fail')};
+    $('.note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();answer('fail')}});
+    $('.close').onclick=()=>g.style.display='none';
     btn.onclick=()=>{
-      panel.style.display=panel.style.display==='block'?'none':'block';
-      if(panel.style.display==='block')setMode(RELEASE.recommendedLevel);
+      summary.style.display='none';mode=RELEASE.recommendedLevel;queue=makeQueue();
+      if(run.complete)run={results:{},startedAt:new Date().toISOString(),complete:false};
+      else if(!run.startedAt)run.startedAt=new Date().toISOString();
+      save();index=firstUnanswered();render();
     };
-    panel.querySelector('#v3TestClose').onclick=()=>panel.style.display='none';
-    for(const b of panel.querySelectorAll('.tabs button'))b.onclick=()=>setMode(b.dataset.mode);
+    window.HDV3GuidedTest={RELEASE,TESTS,IMPACT,getRun:()=>JSON.parse(JSON.stringify(run)),setChangedModules:m=>RELEASE.changedModules=[...m],setLevel:l=>RELEASE.recommendedLevel=l};
   }
-
-  window.HDV3Regression={
-    RELEASE,IMPACT,TESTS,
-    setChangedModules(mods){RELEASE.changedModules=[...mods]},
-    getImpactTests:impactTests,
-    autoChecks
-  };
-
-  if(document.readyState==='loading')addEventListener('DOMContentLoaded',mount);
-  else mount();
+  if(document.readyState==='loading')addEventListener('DOMContentLoaded',mount);else mount();
 })();
