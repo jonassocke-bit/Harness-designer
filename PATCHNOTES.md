@@ -1,5 +1,12 @@
 # Patchnotes
 
+## V3.3.2a – Projection Hotfix
+- Reiner Runtime-Hotfix auf V3.3.2.
+- Die Glättungsstufe verwendete weiterhin `projectEdgeCandidateToBody()`, die beim Umbau auf Projection Continuity versehentlich entfernt worden war.
+- Dadurch brach `rebuildAutoProjection()` beim Riemenbau ab; deshalb wurden weder Riemen noch Debug-Trace fertig erzeugt.
+- Die Hilfsfunktion ist wieder vorhanden.
+- Keine Schwellenwerte, L/R-Frame-Regeln, Winkelkontinuität, Triangulation oder Debuglogik geändert.
+
 ## V3.3.2 – Projection Continuity
 - Surface-Walker aus V3.3.1 entfernt; keine rekursive Pfadsuche mehr.
 - L/R-Außenkanten besitzen eine feste Identität und dürfen nicht mehr die Seiten tauschen.

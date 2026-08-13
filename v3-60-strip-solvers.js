@@ -186,6 +186,13 @@ function edgeSurfaceCandidates(candidate,preferredNormal){
   }
   out.sort((x,y)=>x.distance-y.distance);return out;
 }
+function projectEdgeCandidateToBody(candidate,preferredNormal){
+  // Compatibility helper still used by the smoothing stage.
+  // It deliberately performs a simple local projection only; continuity
+  // decisions are handled earlier by chooseProjectionHit().
+  const cands=edgeSurfaceCandidates(candidate,preferredNormal);
+  return cands.length?cands[0]:null;
+}
 function projectionVector(candidate,hit){return hit.point.clone().sub(candidate)}
 function projectionAngleDeg(a,b){
   if(!a||!b||a.lengthSq()<1e-12||b.lengthSq()<1e-12)return 0;
