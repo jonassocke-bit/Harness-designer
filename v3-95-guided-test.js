@@ -1,25 +1,25 @@
 // ============================================================================
-// V3.3.3 DIRECT + GUIDED
+// V3.3.4 RIGID GUIDE FRAME
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.3.3 DIRECT + GUIDED',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.3.4 RIGID GUIDE FRAME',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.2 · Projection Continuity stehen.',golden:'pass'},
-    simple:{title:'2 · Einfacher Riemen',instruction:'Mehrere einfache Riemen setzen. Verlauf und Live-Breite mindestens so stabil wie V3.3.1.',golden:'pass'},
-    lr:{title:'3 · L/R Frame Lock',instruction:'Debug Schritt 2: linke und rechte nominelle Außenkante dürfen niemals die Seite tauschen oder sich kreuzen. Kopf/Schulter stressen.',golden:'known'},
-    proj:{title:'4 · Projektionsrichtungen',instruction:'Debug Schritt 3: Vektoren sollen sich nur langsam drehen. Gelb >25°, Rot >60°. Einzelne rote Sprünge mitten in gleichgerichteten Vektoren bitte screenshotten.',golden:'known'},
-    head:{title:'5 · Kopf-Stresstest',instruction:'Bisherigen Kopfproblemfall wiederholen. Keine L/R-Seitenvertauschung und kein Surface-Sprung quer durch den Kopf.',golden:'known'},
-    torso:{title:'6 · Torso-Stresstest',instruction:'Direkte Verbindung absichtlich durch Torso führen. Projektionsrichtungen müssen eine zusammenhängende Körperseite wählen.',golden:'known'},
-    chest:{title:'7 · Brust / Schulter',instruction:'Praxisnahe Riemen: natürliche Verdrehung okay; keine Schlangenlinien, 90°-Flips oder Zufallsausreißer.',golden:'known'},
-    ends:{title:'8 · Ring-Enden / Abstand',instruction:'Letzten Knick und Schweben mit V3.3.1 vergleichen.',golden:'known'},
-    mirror:{title:'9 · Mirror + Breite',instruction:'Spiegelbreite und Bewegung prüfen. Keine temporär abgelösten Ringe.',golden:'known'},
-    mid:{title:'10 · Mittiger Spiegelring',instruction:'Mittigen Spiegelring aus Achse ziehen. Bekannten Paarstatus-Bug nur beobachten und kommentieren.',golden:'known'},
-    perf:{title:'11 · Performance',instruction:'Kopf-Stress + Merge/Entmerge. Zeiten notieren. Ohne rekursiven Walker darf der Problemfall nicht extrem hängen.',golden:'known'},
-    debug:{title:'12 · Debug Lesbarkeit',instruction:'Prüfen, ob Frame Lock und farbige Projektionsrichtungen die Fehlerstufe klar zeigen.',golden:'known'},
-    finalPage:{title:'13 · Abschlussseite',instruction:'Nach Beantwortung muss die Abschluss-/Exportseite erscheinen.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.3.4 · Rigid Guide Frame stehen.',golden:'pass'},
+    direct:{title:'2 · Direct Hilfslinien',instruction:'Debug Schritt 2: weiße Mittellinie und rote/blaue Hilfslinien müssen jeweils gerade sein. Rot/Blau über die ganze Strecke parallel.',golden:'known'},
+    twist:{title:'3 · Keine Drehung',instruction:'Brust/Seite oder Schulter/Torso testen. Die Körperform darf die nominellen Hilfslinien nicht verdrehen.',golden:'known'},
+    guided:{title:'4 · Guided Orientierung',instruction:'Orientierungspunkt ziehen. Weiße A→B-Linie bleibt gerade; nur das gesamte rote/blaue Linienpaar dreht sich als starre Ebene.',golden:'known'},
+    width:{title:'5 · Breite',instruction:'Breite ändern: Rot/Blau dürfen sich nur symmetrisch von Weiß entfernen/annähern, nicht drehen.',golden:'known'},
+    head:{title:'6 · Kopf-Stress nur Schritt 2',instruction:'Kopfproblemfall nachbauen. In Debug Schritt 2 müssen Weiß/Rot/Blau sauber gerade und parallel bleiben.',golden:'known'},
+    proj:{title:'7 · Projektion beobachten',instruction:'Danach Schritt 3 screenshotten. Finalen Riemen noch nicht bewerten; wir wollen nur sehen, was von starren Hilfslinien aus passiert.',golden:'known'},
+    mirror:{title:'8 · Mirror Regression',instruction:'Spiegelriemen kurz prüfen.',golden:'pass'},
+    debug:{title:'9 · Debug schließen',instruction:'Debug schließen: normale Darstellung wiederhergestellt.',golden:'pass'},
+    ui:{title:'10 · UI',instruction:'Orientierungspunkt auswählbar und ziehbar, ohne Kamerasteuerung zu blockieren.',golden:'known'},
+    perf:{title:'11 · Performance',instruction:'Orientierungspunkt/Breite bewegen und Reaktionszeit grob notieren.',golden:'known'},
+    shots:{title:'12 · Screenshots',instruction:'Screenshot-Reihe und Scrollen weiter funktionsfähig.',golden:'pass'},
+    finalPage:{title:'13 · Abschlussseite',instruction:'Nach Beantwortung muss Abschluss-/Exportseite erscheinen.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

@@ -1,6 +1,6 @@
 'use strict';
 window.HDV3=window.HDV3||{};
-window.HDV3.build='V3.3.3 DIRECT + GUIDED';
+window.HDV3.build='V3.3.4 RIGID GUIDE FRAME';
 window.HDV3.goldenBase='V1.9f2';
 window.HDV3.architecture={
   modes:{build:{status:'active'},accessories:{status:'reserved'},photo:{status:'reserved'}},

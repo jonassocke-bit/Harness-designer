@@ -215,33 +215,57 @@ function lockedNominalFrames(s,count){
   const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];
   const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
   const A=visibleEndpoint(a,B0),B=visibleEndpoint(b,A0);
-  let tangent=B.clone().sub(A);if(tangent.lengthSq()<1e-10)tangent=strapFrame(s).tangent.clone();tangent.normalize();
-  const halfW=Math.max(.0003,s.widthMM*.0037*.5),frames=[];let prevSide=null;
-  let guidedSide=null;
+
+  let tangent=B.clone().sub(A);
+  if(tangent.lengthSq()<1e-10)tangent=strapFrame(s).tangent.clone();
+  tangent.normalize();
+
+  const mid=A.clone().lerp(B,.5);
+  let side=null;
+
+  // Guided point defines ONLY orientation around A→B.
   if(s.guideActive&&s.guidePoint){
-    const M=A.clone().lerp(B,.5),G=new THREE.Vector3().fromArray(s.guidePoint);
-    let guideDir=G.clone().sub(M);guideDir.addScaledVector(tangent,-guideDir.dot(tangent));
-    if(guideDir.lengthSq()>1e-10){guideDir.normalize();guidedSide=new THREE.Vector3().crossVectors(guideDir,tangent).normalize()}
+    let guideDir=new THREE.Vector3().fromArray(s.guidePoint).sub(mid);
+    guideDir.addScaledVector(tangent,-guideDir.dot(tangent));
+    if(guideDir.lengthSq()>1e-10){
+      guideDir.normalize();
+      side=new THREE.Vector3().crossVectors(guideDir,tangent);
+    }
   }
+
+  // Direct uses endpoint surface orientation ONCE.
+  if(!side||side.lengthSq()<1e-10){
+    let refNormal=nodeWorldNormal(a).clone().add(nodeWorldNormal(b));
+    refNormal.addScaledVector(tangent,-refNormal.dot(tangent));
+    if(refNormal.lengthSq()<1e-10){
+      refNormal=nodeWorldNormal(a).clone();
+      refNormal.addScaledVector(tangent,-refNormal.dot(tangent));
+    }
+    if(refNormal.lengthSq()<1e-10)refNormal=strapFrame(s).normal.clone();
+    refNormal.normalize();
+    side=new THREE.Vector3().crossVectors(refNormal,tangent);
+  }
+
+  if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
+  side.normalize();
+
+  const fs=strapFrame(s).side;
+  if(fs.lengthSq()>1e-10&&side.dot(fs)<0)side.negate();
+
+  const normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
+  const frames=[];
+
   for(let i=0;i<=count;i++){
     const t=i/count;
-    const center=(s.guideActive&&s.guidePoint)?new THREE.QuadraticBezierCurve3(A,new THREE.Vector3().fromArray(s.guidePoint),B).getPoint(t):A.clone().lerp(B,t);
-    let normal=nodeWorldNormal(a).clone().lerp(nodeWorldNormal(b),t);
-    normal.addScaledVector(tangent,-normal.dot(tangent));
-    if(normal.lengthSq()<1e-10)normal=frames.at(-1)?.normal.clone()||strapFrame(s).normal.clone();
-    normal.normalize();
-    let side=guidedSide?guidedSide.clone():new THREE.Vector3().crossVectors(normal,tangent);
-    if(side.lengthSq()<1e-10)side=prevSide?.clone()||strapFrame(s).side.clone();
-    side.normalize();
-    if(prevSide&&side.dot(prevSide)<0)side.negate(); // never swap L/R
-    if(prevSide){
-      const ang=THREE.MathUtils.radToDeg(prevSide.angleTo(side));
-      if(ang>18)side=prevSide.clone().lerp(side,18/ang).normalize();
-    }
-    prevSide=side.clone();
-    frames.push({t,center,normal,side,
+    const center=A.clone().lerp(B,t);
+    frames.push({
+      t,center,
+      normal:normal.clone(),
+      side:side.clone(),
       nominalLeft:center.clone().addScaledVector(side,-halfW),
-      nominalRight:center.clone().addScaledVector(side,halfW)});
+      nominalRight:center.clone().addScaledVector(side,halfW)
+    });
   }
   return frames;
 }
@@ -324,6 +348,7 @@ function buildStripMethodRoute(s,samples,lift){
     ],
     nominalLeft:samples.map(g=>g.nominalLeft.clone()),
     nominalRight:samples.map(g=>g.nominalRight.clone()),
+    nominalCenters:samples.map(g=>g.center.clone()),
     probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
     probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
     projectionAnglesLeft:samples.map(g=>g.leftAngle||0),
@@ -401,8 +426,9 @@ function updateStrapMethodDebug(s,route){
 
   if(show(0))strapDebugLine(s,d.endpoints,0xffffff,.95);
   if(show(1)){
-    strapDebugLine(s,d.nominalLeft,0xff6b6b,.95);
-    strapDebugLine(s,d.nominalRight,0x6ba8ff,.95);
+    strapDebugLine(s,d.nominalCenters,0xffffff,.72);
+    strapDebugLine(s,d.nominalLeft,0xff6b6b,.98);
+    strapDebugLine(s,d.nominalRight,0x6ba8ff,.98);
   }
   if(show(2)){
     const draw=(probes,angles,color)=>{

@@ -1,5 +1,15 @@
 # Patchnotes
 
+## V3.3.4 – Rigid Guide Frame
+- A→M→B-Ausgangskurve wieder entfernt.
+- Nominelle Mittellinie ist immer die direkte Gerade A→B.
+- Linke/rechte Hilfslinie verwenden exakt einen einmal bestimmten Breitenvektor.
+- Direct bestimmt diesen Vektor einmal aus den Ring-/Oberflächennormalen.
+- Guided benutzt den Orientierungspunkt nur zum Drehen dieser Ebene.
+- Körpernormalen entlang des Riemens dürfen die nominellen Hilfslinien nicht mehr verdrehen.
+- Debug Schritt 2 zeigt zusätzlich die weiße Direktmittellinie.
+- Dieser Patch testet bewusst zuerst nur die Ausgangsgeometrie; die Surface-Projektion bleibt für den nächsten Schritt sichtbar, aber unverändert.
+
 ## V3.3.3 – Direct + Guided
 - Direct bleibt Standard.
 - Ausgewählter Riemen zeigt einen weißen Mittelpunkt-Griff.
