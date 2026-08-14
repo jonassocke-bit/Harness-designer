@@ -478,4 +478,4 @@ function initV344DesignUI(){
   load?.addEventListener('click',()=>{const list=readDesignSaves();if(!list.length){showToast('Noch keine lokalen Designs');return}const pick=prompt(list.map((x,i)=>`${i+1}: ${x.name}`).join('\n'),'1'),idx=Number(pick)-1;if(Number.isInteger(idx)&&list[idx]){loadDesignState(list[idx].state);showToast(`Geladen: ${list[idx].name}`)}});
   code?.addEventListener('click',async()=>{const x=prompt('„kopieren“ oder einen HD1-Code einfügen:','kopieren');if(x===null)return;if(x.trim().toLowerCase()==='kopieren'){const c=encodeDesignCode(serializeDesignState());try{await navigator.clipboard.writeText(c);showToast('Design-Code kopiert')}catch{prompt('Design-Code:',c)}}else{try{loadDesignState(decodeDesignCode(x));showToast('Design-Code geladen')}catch{showToast('Ungültiger Design-Code')}}});
 }
-setTimeout(initV344DesignUI,0);
+

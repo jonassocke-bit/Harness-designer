@@ -1,5 +1,13 @@
 # Patchnotes
 
+## V3.4.4a – Start Hotfix
+- Kritischen Loader-Fehler behoben: `app.js` lud alle Module trotz V3.4.4 weiterhin mit `?build=340`.
+- Sämtliche Module werden jetzt konsistent mit `?build=344a` angefordert; dadurch kann GitHub Pages keine alten V3.4.0-Module mehr mit V3.4.4-Code mischen.
+- Initialisierungsreihenfolge der neuen V3.4.4-Tools korrigiert: Tool-Buttons werden zuerst erzeugt, Save/Load/Design-Code danach verdrahtet.
+- Optionale V3.4.4-Debug-Tools sind beim Bootstrap gekapselt; ein Fehler dort soll nicht mehr die eigentliche App verhindern.
+- Kamera-Near-Clipping für Deep Zoom von 0.01 auf 0.001 reduziert.
+- Keine Änderungen an Körperzonen, radialem Solver oder Riemengeometrie gegenüber V3.4.4.
+
 ## V3.4.4 – Zones + Radial
 - Körperzonen: Torso, Kopf/Hals, linker/rechter Arm, linker/rechtes Bein.
 - Zonen sofort farbig einblendbar, damit die Grenzziehung vor der Feinlogik beurteilt werden kann.

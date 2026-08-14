@@ -644,6 +644,15 @@ try{
 }
 
 
+function safeInitV344Tools(){
+  try{
+    initV344Tools();
+    if(typeof initV344DesignUI==='function')initV344DesignUI();
+  }catch(e){
+    console.error('[V3.4.4a] optional tools init failed',e);
+    showToast?.('Debug-Tools konnten nicht initialisiert werden');
+  }
+}
 function initV344Tools(){
   if(document.getElementById('v344Tools'))return;
   const el=document.createElement('div');el.id='v344Tools';
@@ -653,4 +662,4 @@ function initV344Tools(){
   z.onclick=()=>{setBodyZoneDebug(!bodyZoneDebug);z.classList.toggle('active',bodyZoneDebug)};
   h.onclick=()=>{setHitboxDebug(!hitboxDebug);h.classList.toggle('active',hitboxDebug)};
 }
-setTimeout(initV344Tools,0);
+setTimeout(safeInitV344Tools,0);
