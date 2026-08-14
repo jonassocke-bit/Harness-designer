@@ -25,6 +25,7 @@ function makeStrap(data={}){
     autoMethod:'strip',
     routingGuide:data.routingGuide?historyClone(data.routingGuide):null,
     routingMode:data.routingGuide?'guided':'direct',
+    radialFlip:!!data.radialFlip,
     guideHandle:null,
     debugRoute:!!data.debugRoute,
     debugStep:Number.isFinite(data.debugStep)?data.debugStep:0,

@@ -248,6 +248,8 @@ function filteredBodyHitsV344(origin,dir,allowedZones){
 }
 function radialProjectionCenterV344(s,frame){
   const {A,B,mid,projectionAxis}=frame;
+  const allowedZones=allowedZonesForStrap(s);
+
   let outward=projectionAxis.clone().normalize();
 
   if(s.routingGuide){
@@ -264,9 +266,46 @@ function radialProjectionCenterV344(s,frame){
     }
   }
 
-  const depth=THREE.MathUtils.clamp(A.distanceTo(B)*.34,.10,.45);
-  // Zentrum bewusst auf die Innenseite setzen.
-  return mid.clone().addScaledVector(outward,-depth);
+  if(s.radialFlip)outward.negate();
+
+  // Cast through the mannequin along the local radial axis.
+  const span=Math.max(2.0,A.distanceTo(B)*3.0);
+  const origin=mid.clone().addScaledVector(outward,-span);
+  const hits=filteredBodyHitsV344(origin,outward,allowedZones);
+
+  if(hits.length>=2){
+    const h0=hits[0];
+    let h1=null;
+    for(let i=1;i<hits.length;i++){
+      if(hits[i].point.distanceTo(h0.point)>.01){h1=hits[i];break}
+    }
+    if(h1){
+      const p0=h0.point.clone(),p1=h1.point.clone();
+      const thickness=p0.distanceTo(p1);
+
+      // p1 is the outward-side intersection along the cast direction.
+      // Move 40% inward from that outer surface.
+      const center=p1.clone().lerp(p0,.40);
+
+      return {
+        center,outward,
+        surfaceNear:p1.clone(),
+        surfaceFar:p0.clone(),
+        thickness,
+        valid:true
+      };
+    }
+  }
+
+  // Explicit invalid fallback, visible in Debug.
+  return {
+    center:mid.clone().addScaledVector(outward,-.08),
+    outward,
+    surfaceNear:null,
+    surfaceFar:null,
+    thickness:0,
+    valid:false
+  };
 }
 function radialSurfaceHitV344(candidate,center,allowedZones){
   const dir=candidate.clone().sub(center);
@@ -309,7 +348,8 @@ function projectedChordSamplesStrip(s,{lift=0}={}){
   const frame=rigidStrapGuideFrame(s);if(!frame)return [];
   const {A,B,side,projectionAxis}=frame;
   const allowedZones=allowedZonesForStrap(s);
-  const radialCenter=radialProjectionCenterV344(s,frame);
+  const radialInfo=radialProjectionCenterV344(s,frame);
+  const radialCenter=radialInfo.center;
   const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.025),8,80);
   const halfW=Math.max(.0003,s.widthMM*.0037*.5);
   const route=[];
@@ -338,7 +378,18 @@ function projectedChordSamplesStrip(s,{lift=0}={}){
     normal.normalize();
     route.push({t,center,normal,side:side.clone(),nominalLeft,nominalRight,leftHit:lh.point.clone(),rightHit:rh.point.clone(),leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),stripLeft:left,stripRight:right,radialCenter:radialCenter.clone()});
   }
-  s.routingDebug={mode:'radial',zones:[...allowedZones],radialCenter:radialCenter.clone(),radialFallbacks,frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}};
+  s.routingDebug={
+    mode:'radial',
+    zones:[...allowedZones],
+    radialCenter:radialCenter.clone(),
+    radialCenterValid:!!radialInfo.valid,
+    radialThickness:radialInfo.thickness||0,
+    radialSurfaceNear:radialInfo.surfaceNear?.clone?.()||null,
+    radialSurfaceFar:radialInfo.surfaceFar?.clone?.()||null,
+    radialFlip:!!s.radialFlip,
+    radialFallbacks,
+    frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}
+  };
   return route;
 }
 function projectEdgeCandidateToBody(candidate,preferredNormal){
@@ -396,6 +447,11 @@ function buildStripMethodRoute(s,samples,lift){
     nominalCenters:samples.map(g=>g.center.clone()),
     routingDebug:s.routingDebug||null,
     radialCenter:s.routingDebug?.radialCenter?.clone?.()||null,
+    radialCenterValid:!!s.routingDebug?.radialCenterValid,
+    radialThickness:s.routingDebug?.radialThickness||0,
+    radialSurfaceNear:s.routingDebug?.radialSurfaceNear?.clone?.()||null,
+    radialSurfaceFar:s.routingDebug?.radialSurfaceFar?.clone?.()||null,
+    radialFlip:!!s.routingDebug?.radialFlip,
     routingGuide:s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null,
     probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
     probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
@@ -478,7 +534,11 @@ function updateStrapMethodDebug(s,route){
   if(show(2)){
     if(d.routingGuide)strapDebugPoints(s,[d.routingGuide],0xffd54a,10);
     if(d.radialCenter){
-      strapDebugPoints(s,[d.radialCenter],0xffffff,9);
+      strapDebugPoints(s,[d.radialCenter],d.radialCenterValid?0xffffff:0xff3333,10);
+      if(d.radialSurfaceNear&&d.radialSurfaceFar){
+        strapDebugPoints(s,[d.radialSurfaceNear,d.radialSurfaceFar],0x00ff88,8);
+        strapDebugLine(s,[d.radialSurfaceFar,d.radialSurfaceNear],0x00ff88,.85);
+      }
       strapDebugLine(s,d.probesLeft.map(q=>[d.radialCenter,q.to]),0xff6b6b,.72,true);
       strapDebugLine(s,d.probesRight.map(q=>[d.radialCenter,q.to]),0x6ba8ff,.72,true);
     }else{
@@ -522,6 +582,12 @@ function setStrapDebugBodyMode(active){
   }
 }
 function refreshStrapDebugPanel(s){
+  const radialBtn=document.getElementById('radialFlipBtn');
+  if(radialBtn){
+    radialBtn.textContent=`Radial ${s?.radialFlip?'B':'A'} · 180°`;
+    radialBtn.classList.toggle('active',!!s?.radialFlip);
+  }
+
   const panel=document.getElementById('strapDebugPanel');
   if(!panel)return;
   const step=THREE.MathUtils.clamp(s?.debugStep||0,0,STRAP_DEBUG_STEPS.length-1);
@@ -536,6 +602,27 @@ function openStrapDebugMode(s){
   setStrapDebugBodyMode(true);
   updateStrapMethodDebug(s,s.methodRoute||[]);
   refreshStrapDebugPanel(s);
+  let flipBtn=document.getElementById('radialFlipBtn');
+  if(!flipBtn){
+    flipBtn=document.createElement('button');
+    flipBtn.id='radialFlipBtn';
+    flipBtn.type='button';
+    flipBtn.style.marginTop='8px';
+    const panel=document.getElementById('strapDebugPanel');
+    panel?.appendChild(flipBtn);
+    flipBtn.addEventListener('click',()=>{
+      const ss=selected;
+      if(!ss||ss.kind!=='strap')return;
+      ss.radialFlip=!ss.radialFlip;
+      rebuildAutoProjection(ss);
+      refreshStrapDebugPanel(ss);
+      updateStrapMethodDebug(ss,ss.methodRoute||[]);
+      flipBtn.classList.toggle('active',!!ss.radialFlip);
+      showToast(ss.radialFlip?'Radial B aktiv':'Radial A aktiv');
+    });
+  }
+  flipBtn.textContent=`Radial ${s.radialFlip?'B':'A'} · 180°`;
+  flipBtn.classList.toggle('active',!!s.radialFlip);
   strapDebugBtn.classList.add('active');
   updateControlHandles(s);
 }

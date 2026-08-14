@@ -62,7 +62,8 @@ function serialize(){
       manualUnlinked:!!s.manualUnlinked,
       autoProject:!!s.autoProject,
       routingGuide:s.routingGuide?historyClone(s.routingGuide):null,
-      routingMode:s.routingMode||'direct'
+      routingMode:s.routingMode||'direct',
+      radialFlip:!!s.radialFlip
     })),
     panels:[...panels.values()].map(p=>({
       id:p.id,
