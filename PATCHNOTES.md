@@ -1,5 +1,17 @@
 # Patchnotes
 
+## V3.4.7 – Tangent + Zones
+- V3.4.6 Spline-Prototyp bleibt Grundlage; keine neue Surface-/Pfadfinderlogik.
+- Ringnormalen werden nicht mehr als direkte Flugrichtung der Spline interpretiert.
+- Start-/Endtangente = gewünschte Zielrichtung, projiziert in die jeweilige Ringebene.
+- Dadurch löst sich die Leit-Spline tangential vom Ring und schwenkt erst danach zum Ziel bzw. Guide ein.
+- Bézier-Handles verkürzt, damit die Ringorientierung nur lokal am Anschluss dominiert.
+- Guided-Endtangenten orientieren sich zunächst zum Guide.
+- Körperzonen an die markierten Grenzen angepasst: tiefere Halsbasis, diagonale Schulter→Achsel-Grenze, Schulterkappe als Arm, Becken/Schritt als Torso, höhere flache Leisten-V-Grenze zu den Beinen.
+- Rote Zonenlinien verwenden dieselben Parameter wie der Klassifikator.
+- Toolbox ist frei verschiebbar, einklappbar und speichert Position + Zustand lokal.
+- Save/Load, Hitbox-System und grundsätzlicher Spline→Surface-Ablauf unverändert.
+
 ## V3.4.6 – Spline Prototype
 - Radialsolver aus dem aktiven Riemenpfad entfernt.
 - Neuer Ablauf: Ringorientierung → räumliche Leit-Spline → zwei Offset-Splines → lokale Surface-Suche in erlaubten Körperzonen → Triangulation.

@@ -193,12 +193,32 @@ function continuityScore(h,ctx,candidate){
   return score;
 }
 function splineEndpointTangentV346(node,from,to,fallback){
-  const chord=to.clone().sub(from).normalize();
-  let t=nodeWorldNormal(node).clone();
-  if(t.dot(chord)<0)t.negate();
-  t.lerp(chord,.58);
-  if(t.lengthSq()<1e-10)t=fallback.clone();
-  return t.normalize();
+  // Ring normal defines the ring PLANE, not the strap flight direction.
+  // Project the desired route direction into that plane.
+  const desired=to.clone().sub(from);
+  if(desired.lengthSq()<1e-10)return fallback.clone().normalize();
+  desired.normalize();
+
+  let ringNormal=nodeWorldNormal(node).clone();
+  if(ringNormal.lengthSq()<1e-10)return desired.clone();
+  ringNormal.normalize();
+
+  let tangent=desired.clone().addScaledVector(ringNormal,-desired.dot(ringNormal));
+
+  // Stable in-plane fallback.
+  if(tangent.lengthSq()<1e-10){
+    tangent=fallback.clone();
+    tangent.addScaledVector(ringNormal,-tangent.dot(ringNormal));
+  }
+  if(tangent.lengthSq()<1e-10){
+    tangent=new THREE.Vector3(1,0,0);
+    tangent.addScaledVector(ringNormal,-tangent.dot(ringNormal));
+  }
+  if(tangent.lengthSq()<1e-10)tangent=desired.clone();
+
+  tangent.normalize();
+  if(tangent.dot(desired)<0)tangent.negate();
+  return tangent;
 }
 function splineGuideFrameV346(s){
   const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return null;
@@ -207,17 +227,19 @@ function splineGuideFrameV346(s){
   const A=visibleEndpoint(a,guide||B0),B=visibleEndpoint(b,guide||A0);
   const chord=B.clone().sub(A),length=chord.length();if(length<1e-10)return null;
   const chordDir=chord.clone().normalize();
-  const TA=splineEndpointTangentV346(a,A,B,chordDir);
-  const TB=splineEndpointTangentV346(b,B,A,chordDir.clone().negate()).negate();
+  const targetA=guide||B;
+  const targetB=guide||A;
+  const TA=splineEndpointTangentV346(a,A,targetA,chordDir);
+  const TB=splineEndpointTangentV346(b,B,targetB,chordDir.clone().negate()).negate();
   let curve;
   if(guide){
-    const dA=Math.max(.02,A.distanceTo(guide)*.38),dB=Math.max(.02,B.distanceTo(guide)*.38);
+    const dA=Math.max(.018,A.distanceTo(guide)*.28),dB=Math.max(.018,B.distanceTo(guide)*.28);
     let tg=TA.clone().add(TB);if(tg.lengthSq()<1e-10)tg.copy(chordDir);else tg.normalize();
     const c1=new THREE.CubicBezierCurve3(A.clone(),A.clone().addScaledVector(TA,dA),guide.clone().addScaledVector(tg,-dA*.45),guide.clone());
     const c2=new THREE.CubicBezierCurve3(guide.clone(),guide.clone().addScaledVector(tg,dB*.45),B.clone().addScaledVector(TB,-dB),B.clone());
     curve={getPoint(t){return t<=.5?c1.getPoint(t*2):c2.getPoint((t-.5)*2)}};
   }else{
-    const h=THREE.MathUtils.clamp(length*.34,.025,.28);
+    const h=THREE.MathUtils.clamp(length*.24,.018,.20);
     curve=new THREE.CubicBezierCurve3(A.clone(),A.clone().addScaledVector(TA,h),B.clone().addScaledVector(TB,-h),B.clone());
   }
   return {A,B,TA,TB,guide,curve,length};

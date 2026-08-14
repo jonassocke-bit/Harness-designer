@@ -290,3 +290,22 @@ white-space:pre-wrap;display:none}
 }
 
 #v344Tools{position:fixed;right:8px;top:72px;z-index:1600;width:min(185px,42vw);padding:8px;border-radius:12px;background:rgba(16,18,23,.86);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);display:grid;grid-template-columns:1fr 1fr;gap:5px;color:#fff;font:11px/1.25 system-ui}#v344Tools .v344Title,#v344Tools .v344Legend{grid-column:1/-1}#v344Tools .v344Title{font-weight:700;opacity:.85}#v344Tools .v344Legend{font-size:9px;opacity:.9}#v344Tools button{border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px 5px;background:rgba(255,255,255,.08);color:#fff;font:11px system-ui}#v344Tools button.active{outline:2px solid #fff;background:rgba(255,255,255,.18)}
+
+/* V3.4.7 movable/collapsible tools */
+#v344Tools{
+  position:fixed;right:8px;top:72px;z-index:1600;
+  width:min(190px,46vw);padding:0!important;overflow:hidden;
+  border-radius:12px;background:rgba(16,18,23,.88);
+  backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);
+  color:#fff;font:11px/1.25 system-ui;touch-action:none;
+}
+#v344Tools .v344Header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:7px 8px;cursor:grab;user-select:none;background:rgba(255,255,255,.035);
+}
+#v344Tools .v344Title{grid-column:auto;font-weight:700;opacity:.88}
+#v344Tools .v344Collapse{width:28px;height:28px;padding:0}
+#v344Tools .v344Body{padding:7px;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+#v344Tools .v344Legend{grid-column:1/-1}
+#v344Tools.collapsed{width:auto;min-width:116px}
+#v344Tools.collapsed .v344Body{display:none}

@@ -656,8 +656,75 @@ function safeInitV344Tools(){
 function initV344Tools(){
   if(document.getElementById('v344Tools'))return;
   const el=document.createElement('div');el.id='v344Tools';
-  el.innerHTML=`<div class="v344Title">V3.4.4 Tools</div><button id="v344Zones">Zonen</button><button id="v344Hitboxes">Hitboxen</button><button id="v344Save">Save</button><button id="v344Load">Load</button><button id="v344Code">Design-Code</button><div class="v344Legend"><span style="color:#32c7ff">Torso</span> · <span style="color:#ff5fc8">Kopf</span> · <span style="color:#ff9638">L-Arm</span> · <span style="color:#ffd84a">R-Arm</span> · <span style="color:#75e06e">L-Bein</span> · <span style="color:#31b85a">R-Bein</span></div>`;
+  el.innerHTML=`
+    <div class="v344Header">
+      <div class="v344Title">V3.4.7 Tools</div>
+      <button class="v344Collapse" type="button" aria-label="Toolbox einklappen">−</button>
+    </div>
+    <div class="v344Body">
+      <button id="v344Zones">Zonen</button>
+      <button id="v344Hitboxes">Hitboxen</button>
+      <button id="v344Save">Save</button>
+      <button id="v344Load">Load</button>
+      <button id="v344Code">Design-Code</button>
+      <div class="v344Legend">
+        <span style="color:#32c7ff">Torso</span> ·
+        <span style="color:#ff5fc8">Kopf</span> ·
+        <span style="color:#ff9638">L-Arm</span> ·
+        <span style="color:#ffd84a">R-Arm</span> ·
+        <span style="color:#75e06e">L-Bein</span> ·
+        <span style="color:#31b85a">R-Bein</span>
+      </div>
+    </div>`;
   document.body.appendChild(el);
+
+  const persist=()=>{
+    const r=el.getBoundingClientRect();
+    localStorage.setItem('HD_V347_TOOLS_UI',JSON.stringify({
+      left:r.left,top:r.top,collapsed:el.classList.contains('collapsed')
+    }));
+  };
+
+  try{
+    const saved=JSON.parse(localStorage.getItem('HD_V347_TOOLS_UI')||'{}');
+    if(Number.isFinite(saved.left)&&Number.isFinite(saved.top)){
+      el.style.left=saved.left+'px';el.style.top=saved.top+'px';el.style.right='auto';
+    }
+    if(saved.collapsed)el.classList.add('collapsed');
+  }catch{}
+
+  const collapse=el.querySelector('.v344Collapse');
+  collapse.textContent=el.classList.contains('collapsed')?'+':'−';
+  collapse.onclick=e=>{
+    e.stopPropagation();
+    el.classList.toggle('collapsed');
+    collapse.textContent=el.classList.contains('collapsed')?'+':'−';
+    persist();
+  };
+
+  const header=el.querySelector('.v344Header');
+  let drag=null;
+  header.addEventListener('pointerdown',e=>{
+    if(e.target===collapse)return;
+    const r=el.getBoundingClientRect();
+    drag={dx:e.clientX-r.left,dy:e.clientY-r.top};
+    header.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  });
+  header.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    const margin=6,w=el.offsetWidth,h=el.offsetHeight;
+    const left=THREE.MathUtils.clamp(e.clientX-drag.dx,margin,Math.max(margin,window.innerWidth-w-margin));
+    const top=THREE.MathUtils.clamp(e.clientY-drag.dy,margin,Math.max(margin,window.innerHeight-h-margin));
+    el.style.left=left+'px';el.style.top=top+'px';el.style.right='auto';
+  });
+  const stop=e=>{
+    if(!drag)return;drag=null;persist();
+    try{header.releasePointerCapture?.(e.pointerId)}catch{}
+  };
+  header.addEventListener('pointerup',stop);
+  header.addEventListener('pointercancel',stop);
+
   const z=el.querySelector('#v344Zones'),h=el.querySelector('#v344Hitboxes');
   z.onclick=()=>{setBodyZoneDebug(!bodyZoneDebug);z.classList.toggle('active',bodyZoneDebug)};
   h.onclick=()=>{setHitboxOverlayDebugV344(!hitboxOverlayDebugV344);h.classList.toggle('active',hitboxOverlayDebugV344)};
