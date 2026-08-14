@@ -98,6 +98,14 @@ function screenSpaceStrapHit(x,y){
 }
 
 function interactiveHit(x,y){
+  // Selected strap's unified guide handle wins over the strap mesh.
+  const handles=[...straps.values()].map(s=>s.guideHandle).filter(Boolean);
+  if(handles.length){
+    setPointer(x,y);
+    const hh=raycaster.intersectObjects(handles,false)[0];
+    if(hh)return {kind:'strapGuideHandle',id:hh.object.userData.id};
+  }
+
   // Existing visible objects always win over placing a new ring.
   const softNode=screenSpaceNodeHit(x,y);
   if(softNode)return softNode;
@@ -142,6 +150,23 @@ function interactiveHit(x,y){
 function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
 
 let pointers=new Map(),gesture=null,single=null,dragRaf=0,pendingDrag=null;
+let connectGuideVisual=null;
+function activeDebugStrap(){return [...straps.values()].find(s=>s.debugRoute)||null}
+function clearConnectGuideVisual(){
+  if(!connectGuideVisual)return;
+  helperRoot.remove(connectGuideVisual);
+  connectGuideVisual.geometry?.dispose?.();connectGuideVisual.material?.dispose?.();
+  connectGuideVisual=null;
+}
+function showConnectGuideVisual(p){
+  clearConnectGuideVisual();
+  connectGuideVisual=new THREE.Mesh(
+    new THREE.SphereGeometry(.04,14,10),
+    new THREE.MeshBasicMaterial({color:0xffd54a,depthTest:false,depthWrite:false})
+  );
+  connectGuideVisual.position.copy(p);connectGuideVisual.renderOrder=60;helperRoot.add(connectGuideVisual);
+}
+
 
 let genericMergeHoverVisible=false;
 function setGenericMergeHoverWarning(active){
@@ -317,6 +342,18 @@ canvas.addEventListener('pointerdown',e=>{
     return;
   }
 
+  // Debug is read-only: camera navigation + selecting another strap only.
+  // No node drag, ring creation, strap creation or geometry editing.
+  const dbg=activeDebugStrap();
+  if(dbg){
+    const dh=interactiveHit(e.clientX,e.clientY);
+    single={
+      sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,
+      hit:null,debugReadOnly:true,debugSelectId:dh?.kind==='strap'?dh.id:null
+    };
+    return;
+  }
+
   // One-finger tap/drag remains in waypoint-placement mode.
   if(waypointPlacementStrapId){
     single={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false,hit:null,waypointPlacement:true};
@@ -326,6 +363,7 @@ canvas.addEventListener('pointerdown',e=>{
   single={
     sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,
     moved:false,hit,activeNodeId:hit?.kind==='node'?hit.id:null,
+    guideStrapId:hit?.kind==='strapGuideHandle'?hit.id:null,
     waypointDragState:hit?.kind==='node'?captureEndpointWaypointDragState(hit.id):null
   };
   if(hit?.kind==='node'){
@@ -344,6 +382,30 @@ canvas.addEventListener('pointermove',e=>{
   }
   if(!single)return;
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
+  if(single.debugReadOnly){
+    if(single.moved){
+      camAz-=(e.clientX-single.lx)*.007;
+      camEl=THREE.MathUtils.clamp(camEl+(e.clientY-single.ly)*.006,-1.2,1.2);
+      updateCamera();
+    }
+    single.lx=e.clientX;single.ly=e.clientY;
+    return;
+  }
+  if(single.guideStrapId){
+    const s=straps.get(single.guideStrapId);
+    const bh=bodyHit(e.clientX,e.clientY);
+    if(s&&bh){
+      s.routingGuide=bh.point.toArray();s.routingMode='guided';
+      rebuildAutoProjection(s);updateControlHandles(s);
+      const ps=pairOfStrap(s);
+      if(ps){
+        ps.routingGuide=[-bh.point.x,bh.point.y,bh.point.z];
+        ps.routingMode='guided';rebuildAutoProjection(ps);
+      }
+    }
+    single.lx=e.clientX;single.ly=e.clientY;
+    return;
+  }
   if(single.waypointPlacement){
     // Point mode does not freeze navigation: drag rotates, tap places.
     if(single.moved){
@@ -370,6 +432,23 @@ canvas.addEventListener('pointerup',e=>{
   if(pointers.size<2)gesture=null;
   if(!single){return}
   const was=single;single=null;setGenericMergeHoverWarning(false);
+
+  if(was.debugReadOnly){
+    if(!was.moved&&was.debugSelectId){
+      const old=activeDebugStrap();
+      const next=straps.get(was.debugSelectId);
+      if(next&&old?.id!==next.id){
+        closeStrapDebugMode(old);selectObject(next);openStrapDebugMode(next);
+      }
+    }
+    return;
+  }
+
+  if(was.guideStrapId){
+    const s=straps.get(was.guideStrapId);
+    if(s){selectObject(s);commitHistory();showToast('Riemenrichtung gespeichert')}
+    return;
+  }
 
   if(was.waypointPlacement){
     const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
@@ -460,7 +539,7 @@ canvas.addEventListener('pointerup',e=>{
             s.mirrorId=ms.id;ms.mirrorId=s.id;rememberFormerPartners(s,ms)
           }
         }
-        connectStart=null;connectGuidePoint=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');
+        connectStart=null;connectGuidePoint=null;clearConnectGuideVisual();tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');
         dynReconcileSymmetry({syncProps:true});
         selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
       }
@@ -475,6 +554,7 @@ canvas.addEventListener('pointerup',e=>{
     const bh=bodyHit(e.clientX,e.clientY);
     if(bh){
       connectGuidePoint=bh.point.clone();
+      showConnectGuideVisual(connectGuidePoint);
       showToast('Führungspunkt gesetzt · jetzt Zielring antippen');
       return;
     }

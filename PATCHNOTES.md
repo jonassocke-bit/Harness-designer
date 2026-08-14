@@ -1,13 +1,18 @@
-# V3.4.1 GUIDED SIDE LOCK
-
-- Guided-Zwischenpunkt entscheidet jetzt eindeutig die Projektions-/Extrusionsseite.
-- Guided-Punkt bleibt reine Orientierungsinformation und ist kein dauerhafter Wegpunkt.
-- Nach Ringbewegungen wird der Riemen neu berechnet, ohne durch den alten Guide-Punkt gezwungen zu werden.
-- Guide-Punkt ist im Riemen-Debug sichtbar.
-- Test-Kommentarfeld ist mehrzeilig.
-- Direct-Routing behält die automatische globale ± Auswahl.
-
 # Patchnotes
+
+## V3.4.2 – Unified Strap Guide
+- Guided-Projektionsrichtung aus V3.4.1 invertiert: der gespeicherte Guide lockt jetzt die gegenüberliegende globale ± Hypothese.
+- Jeder ausgewählte Riemen besitzt einen mittleren Guide-Handle.
+- Direct-Riemen zeigen zunächst einen automatisch positionierten cyanfarbenen Handle; erst beim Ziehen wird ein expliziter Guide gespeichert.
+- Explizite Guides werden gelb dargestellt und bestimmen die Riemenorientierung.
+- Guide-Handle kann direkt über die Körperoberfläche gezogen werden; der Riemen wird live neu berechnet.
+- Spiegelriemen übernehmen den Guide gespiegelt.
+- Während Ring → Körperpunkt → Ring bleibt der gewählte Guide-Punkt als gelber Marker sichtbar.
+- Debug-Modus ist read-only: erlaubt sind Kamera und Auswahl eines anderen Riemens; Geometrieänderungen/Neubau sind blockiert.
+- Globaler Körperabstand 0 entfernt den alten versteckten längenabhängigen 6–22-mm-Lift; übrig bleibt nur ca. 1.2 mm Anti-Z-Fighting-Clearance.
+- Endpoint-Blend verwendet denselben Clearance-Wert statt eines zweiten Offset-Modells.
+- Abschlussseite des Testers hat jetzt ein persistentes mehrzeiliges Gesamtkommentar-Feld; es landet auch im HTML-Report.
+- Testcheckliste auf die neue Unified-Guide-Architektur angepasst.
 
 ## V3.4.0 – Strap Routing Rebuild
 - Bewusster Rücksprung auf V3.3.1 als funktionale Riemenbasis.

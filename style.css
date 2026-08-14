@@ -281,3 +281,10 @@ white-space:pre-wrap;display:none}
 .strap-debug-nav button.active{outline:2px solid #00d8ffaa;background:#17424b}
 
 .shotGallery{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:2px 0 5px;scroll-snap-type:x proximity}.shotTile{position:relative;flex:0 0 31%;min-width:31%;scroll-snap-align:start}.shotTile img{width:100%!important;aspect-ratio:4/3;object-fit:cover!important;max-height:none!important}.shotTile button{position:absolute;right:3px;top:3px;border:0;border-radius:999px;width:24px;height:24px;padding:0;background:#000b;color:#fff}
+
+/* V3.4.2 final report note */
+#v3GuideSummary .overallNote{
+  display:block;width:100%;min-height:120px;max-height:32vh;resize:vertical;
+  box-sizing:border-box;margin:10px 0;padding:10px;border:1px solid #454a55;
+  border-radius:10px;background:#17191e;color:#fff;font:13px/1.4 system-ui;
+}

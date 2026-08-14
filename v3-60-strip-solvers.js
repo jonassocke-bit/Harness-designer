@@ -13,8 +13,9 @@ function clearWaypointGuide(){
 // This is intentionally NOT the old recursive collision solver.
 
 function waypointBaseLiftForStrap(s){
-  const f=strapFrame(s);
-  return surfaceOffsetScene()+THREE.MathUtils.clamp(f.length*.018,.006,.022);
+  // V3.4.2: global 0 really means near-contact.
+  // Keep only a tiny anti-z-fighting clearance; no hidden length-dependent air gap.
+  return surfaceOffsetScene()+.0012;
 }
 
 // Cheap tautening pass over the already-computed dense surface samples.
@@ -322,7 +323,7 @@ function projectedChordSamplesStrip(s,{lift=0}={}){
     const gp=new THREE.Vector3().fromArray(s.routingGuide);
     const rel=gp.clone().sub(frame.mid);
     const d=rel.dot(frame.projectionAxis);
-    if(Math.abs(d)>1e-7)guidedSign=d>=0?1:-1;
+    if(Math.abs(d)>1e-7)guidedSign=d>=0?-1:1;
   }
   const chosen=guidedSign===1?plus:guidedSign===-1?minus:(plus.score<=minus.score?plus:minus);
 
@@ -374,7 +375,7 @@ function buildStripMethodRoute(s,samples,lift){
   });
 
   if(out.length>=3){
-    const blend=(i0,i1,node)=>{const g0=out[i0],g1=out[i1],mid=g1.stripLeft.clone().lerp(g1.stripRight,.5),center=visibleEndpoint(node,mid),n=nodeWorldNormal(node),lift2=Math.max(lift,surfaceOffsetMM*.001);let side=g0.stripRight.clone().sub(g0.stripLeft);if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();side.normalize();const hw=Math.max(.0003,s.widthMM*.0037*.5),target=center.clone().addScaledVector(n,lift2),L=target.clone().addScaledVector(side,-hw),R=target.clone().addScaledVector(side,hw);g0.stripLeft=L;g0.stripRight=R;g1.stripLeft=g1.stripLeft.clone().lerp(L,.22);g1.stripRight=g1.stripRight.clone().lerp(R,.22)};
+    const blend=(i0,i1,node)=>{const g0=out[i0],g1=out[i1],mid=g1.stripLeft.clone().lerp(g1.stripRight,.5),center=visibleEndpoint(node,mid),n=nodeWorldNormal(node),lift2=lift;let side=g0.stripRight.clone().sub(g0.stripLeft);if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();side.normalize();const hw=Math.max(.0003,s.widthMM*.0037*.5),target=center.clone().addScaledVector(n,lift2),L=target.clone().addScaledVector(side,-hw),R=target.clone().addScaledVector(side,hw);g0.stripLeft=L;g0.stripRight=R;g1.stripLeft=g1.stripLeft.clone().lerp(L,.22);g1.stripRight=g1.stripRight.clone().lerp(R,.22)};
     blend(0,1,nodes.get(s.a));blend(out.length-1,out.length-2,nodes.get(s.b));
   }
 
@@ -523,6 +524,7 @@ function openStrapDebugMode(s){
   updateStrapMethodDebug(s,s.methodRoute||[]);
   refreshStrapDebugPanel(s);
   strapDebugBtn.classList.add('active');
+  updateControlHandles(s);
 }
 function closeStrapDebugMode(s=selected){
   if(s?.kind==='strap'){
@@ -533,6 +535,7 @@ function closeStrapDebugMode(s=selected){
   setStrapDebugBodyMode(false);
   document.getElementById('strapDebugPanel')?.classList.add('hidden');
   strapDebugBtn.classList.remove('active');
+  if(s?.kind==='strap')updateControlHandles(s);
 }
 function strapRouteLooksPlausible(route){if(!route||route.length<2)return false;for(let i=1;i<route.length;i++){const a=route[i-1],b=route[i],sa=a.stripRight.clone().sub(a.stripLeft),sb=b.stripRight.clone().sub(b.stripLeft);if(a.stripLeft.distanceTo(b.stripLeft)>.34||a.stripRight.distanceTo(b.stripRight)>.34)return false;if(segmentCutsBody(a.stripLeft,b.stripLeft)||segmentCutsBody(a.stripRight,b.stripRight))return false;if(sa.lengthSq()>1e-10&&sb.lengthSq()>1e-10&&sa.dot(sb)<0)return false}return true}
 function rebuildAutoProjection(s){

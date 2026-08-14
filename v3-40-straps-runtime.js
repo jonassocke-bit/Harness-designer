@@ -25,6 +25,7 @@ function makeStrap(data={}){
     autoMethod:'strip',
     routingGuide:data.routingGuide?historyClone(data.routingGuide):null,
     routingMode:data.routingGuide?'guided':'direct',
+    guideHandle:null,
     debugRoute:!!data.debugRoute,
     debugStep:Number.isFinite(data.debugStep)?data.debugStep:0,
     debugAll:!!data.debugAll,
@@ -283,9 +284,31 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
 function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){s.previewMode=true;updateStrapGeometry(s)}
 }
+function strapGuideHandlePosition(s){
+  if(s.routingGuide)return new THREE.Vector3().fromArray(s.routingGuide);
+  const r=s.methodRoute;
+  if(r?.length){
+    const g=r[Math.floor((r.length-1)*.5)];
+    if(g?.stripLeft&&g?.stripRight)return g.stripLeft.clone().lerp(g.stripRight,.5);
+  }
+  const a=nodes.get(s.a),b=nodes.get(s.b);
+  return a&&b?nodeWorldPosition(a).lerp(nodeWorldPosition(b),.5):new THREE.Vector3();
+}
 function updateControlHandles(s){
-  // V1.1: generated curve points are internal only.
   s.controlGroup.clear();
+  s.guideHandle=null;
+  if(selected?.kind!=='strap'||selected.id!==s.id||s.debugRoute)return;
+
+  const mat=new THREE.MeshBasicMaterial({
+    color:s.routingGuide?0xffd54a:0x00d8ff,
+    depthTest:false,depthWrite:false,transparent:true,opacity:.95
+  });
+  const h=new THREE.Mesh(new THREE.SphereGeometry(.035,14,10),mat);
+  h.position.copy(strapGuideHandlePosition(s));
+  h.renderOrder=55;
+  h.userData={kind:'strapGuideHandle',id:s.id};
+  s.controlGroup.add(h);
+  s.guideHandle=h;
 }
 function rebuildWrapsForNode(n){
   n.wrapGroup.clear();

@@ -65,3 +65,7 @@ Continuity-aware Surface-Walker, live/mirrored width, endpoint blending, tester 
 
 ## V3.4.0
 Rebuilt strap construction from V3.3.1: 2-tap Direct or optional 3-tap Guided, rigid parallel nominal edges, global ± projection.
+
+
+## V3.4.2
+Unified strap guide: every selected strap gets a midpoint guide handle; explicit drag locks routing direction, debug is read-only, and surface offset 0 is near-contact.

@@ -4,22 +4,23 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.4.1 GUIDED SIDE LOCK',base:'V3.4.0 STRAP ROUTING REBUILD'};
+  const RELEASE={build:'V3.4.2 UNIFIED STRAP GUIDE',base:'V3.4.1 GUIDED SIDE LOCK'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.0 · Strap Routing Rebuild stehen.',golden:'pass'},
-    direct:{title:'2 · Direct bauen',instruction:'Verbinden → Ring A → Ring B. Kein Körperpunkt. Riemen muss direkt gebaut werden.',golden:'known'},
-    guided:{title:'3 · Guided bauen',instruction:'Verbinden → Ring A → Körperpunkt → Ring B. Der Körperpunkt darf keinen Ring erzeugen; er ist nur die Orientierungsinformation.',golden:'known'},
-    rigid:{title:'4 · Starre Hilfslinien',instruction:'Debug Schritt 2: Weiß/Rot/Blau müssen gerade sein; Rot/Blau über die gesamte Strecke parallel. Körperform darf sie nicht drehen.',golden:'known'},
-    guidedOrient:{title:'5 · Guided Orientierung',instruction:'Zwei ähnliche Guided-Riemen mit unterschiedlich gesetztem Körperpunkt bauen. Nur die Ebene der starren Hilfslinien soll sich ändern.',golden:'known'},
-    globalProjection:{title:'6 · Globale ± Projektion',instruction:'Kopf-/Torso-Stress: beide Außenkanten müssen dieselbe globale Projektionsseite benutzen. Eine Seite vorne und die andere hinten darf nicht mehr vorkommen.',golden:'known'},
-    normal:{title:'7 · Praxisriemen',instruction:'Brust/Schulter/Torso normal testen und mit V3.3.0/3.3.1 vergleichen.',golden:'known'},
-    debug:{title:'8 · Debug 1–7',instruction:'Alle Schritte ansehen. Schritt 2 muss exakt die tatsächlich verwendeten starren Ausgangslinien zeigen.',golden:'known'},
-    width:{title:'9 · Breite',instruction:'Live-Breite aus V3.3.1 regressionsprüfen.',golden:'pass'},
-    mirror:{title:'10 · Mirror',instruction:'Direct und Guided jeweils gespiegelt testen; Guided-Punkt muss auf die andere Körperseite gespiegelt werden.',golden:'known'},
-    ends:{title:'11 · Endpunkte',instruction:'Ringanschlüsse/Körperabstand beobachten.',golden:'known'},
-    perf:{title:'12 · Performance',instruction:'Mehrere Direct/Guided bauen und Reaktionszeit grob notieren.',golden:'known'},
-    finalPage:{title:'13 · Abschlussseite',instruction:'Danach Abschluss-/Exportseite.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.2 · Unified Strap Guide stehen.',golden:'pass'},
+    direct:{title:'2 · Direct',instruction:'Ring A → Ring B. Mehrere normale Direct-Riemen bauen. Verlauf und Orientierung prüfen.',golden:'known'},
+    guidedSide:{title:'3 · Guided Richtung',instruction:'Ring A → Körperpunkt → Ring B. Die Projektionsvektoren müssen jetzt ZUM Körper zeigen, nicht davon weg.',golden:'known'},
+    guideMarker:{title:'4 · Guide sichtbar',instruction:'Beim Setzen des Körperpunkts muss bis zum Zielring ein gelber Marker sichtbar bleiben.',golden:'known'},
+    handle:{title:'5 · Mittlerer Guide-Handle',instruction:'Einen Direct-Riemen auswählen: cyanfarbener mittlerer Handle. Ziehen auf dem Körper muss den Riemen in einen explizit geführten Riemen umwandeln.',golden:'known'},
+    handleMove:{title:'6 · Richtung nachziehen',instruction:'Guide-Handle auf eine andere Körperseite ziehen. Riemen soll seine Orientierung entsprechend neu berechnen und nicht durch den alten Punkt gezwungen werden.',golden:'known'},
+    debugLock:{title:'7 · Debug Read-only',instruction:'Debug öffnen. Kamera bewegen und anderen Riemen auswählen muss gehen. Ringe/Riemen verschieben, neue Ringe setzen oder neue Verbindungen bauen darf im Debug NICHT gehen.',golden:'known'},
+    debugGuide:{title:'8 · Debug Guide',instruction:'Im Debug muss der gespeicherte Guide-Punkt gelb sichtbar sein; starre Hilfslinien bleiben gerade und parallel.',golden:'known'},
+    contact0:{title:'9 · Körperabstand 0',instruction:'Globalen Körperabstand auf 0 setzen. Riemen soll nahezu aufliegen; nur minimale Anti-Z-Fighting-Luft ist erlaubt.',golden:'known'},
+    width:{title:'10 · Breiten-Stress',instruction:'Riemen schrittweise sehr breit machen. Prüfen, wann/ob die Außenkanten instabil werden; Screenshot bei erstem Fehler.',golden:'known'},
+    mirror:{title:'11 · Mirror + Guide',instruction:'Spiegelriemen auswählen und Guide-Handle ziehen. Partner muss Guide und Richtung gespiegelt übernehmen.',golden:'known'},
+    endpoints:{title:'12 · Endpunkte',instruction:'Ringanschlüsse bei Abstand 0 prüfen. Kein sichtbarer zusätzlicher Knick durch versteckten Lift.',golden:'known'},
+    perf:{title:'13 · Performance',instruction:'Mehrere Direct-Riemen erstellen und Guide-Handles ziehen. Lade-/Reaktionszeit notieren.',golden:'known'},
+    finalPage:{title:'14 · Abschlussseite',instruction:'Abschlussseite muss erscheinen; Gesamtkommentar ist mehrzeilig editierbar und wird exportiert.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -169,7 +170,7 @@
     }
     const doc=`<!doctype html><meta charset="utf-8"><title>${RELEASE.build}</title>
       <style>body{font:14px system-ui;max-width:900px;margin:auto;padding:24px}pre{white-space:pre-wrap;background:#f4f4f4;padding:12px}section{padding:16px 0;border-bottom:1px solid #ccc}img{display:block;max-width:100%;max-height:700px;margin-top:10px;border:1px solid #999}</style>
-      <h1>${RELEASE.build}</h1><pre>${escapeHtml(logText())}</pre>${sections}`;
+      <h1>${RELEASE.build}</h1><pre>${escapeHtml(logText())}</pre>${run.overallNote?`<section><h2>Gesamtkommentar</h2><p>${escapeHtml(run.overallNote).replace(/\n/g,'<br>')}</p></section>`:''}${sections}`;
     const blob=new Blob([doc],{type:'text/html'});
     const u=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=u;a.download='Harness-Designer-'+RELEASE.build.replace(/\s+/g,'-')+'-report.html';
@@ -229,8 +230,11 @@
 
     async function showSummary(){
       g.style.display='none';run.complete=true;save();saveHistory();
-      summary.innerHTML='<div class="log"></div><div class="summaryActions"><button class="copy">Log kopieren</button><button class="export">Report + Bilder</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
-      summary.querySelector('.log').textContent=logText();summary.style.display='block';
+      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="copy">Log kopieren</button><button class="export">Report + Bilder</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
+      summary.querySelector('.log').textContent=logText();
+      summary.querySelector('.overallNote').value=run.overallNote||'';
+      summary.querySelector('.overallNote').oninput=e=>{run.overallNote=e.target.value;save();summary.querySelector('.log').textContent=logText()};
+      summary.style.display='block';
       summary.querySelector('.copy').onclick=async()=>{const ok=await copyText(logText());summary.querySelector('.copy').textContent=ok?'✓ Kopiert':'Kopieren fehlgeschlagen'};
       summary.querySelector('.export').onclick=async()=>{summary.querySelector('.export').textContent='Export…';try{await exportReport();summary.querySelector('.export').textContent='✓ Exportiert'}catch(e){summary.querySelector('.export').textContent='Export fehlgeschlagen'}};
       summary.querySelector('.back').onclick=()=>{index=QUEUE.length-1;render()};
