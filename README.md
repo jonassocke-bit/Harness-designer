@@ -73,3 +73,7 @@ Unified strap guide: every selected strap gets a midpoint guide handle; explicit
 
 ## V3.4.3
 Stable guide editing: cheap live route/width preview while dragging, one full solve on release, and guide-aware ring endpoint orientation.
+
+
+## V3.4.4
+Body zones, radial projection, hitbox visualization, deep zoom, screen-relative pan and Design Save/Code.

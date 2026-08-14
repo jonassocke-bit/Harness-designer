@@ -566,3 +566,77 @@ function surfaceOffsetScene(){return Number(surfaceOffsetMM)*.0037}
 function ringMajor(n){return Math.max(.003,(n.diameterMM*.0037)*.5)}
 function ringTube(n){return Math.max(.001,(n.thicknessMM*.0037)*.5)}
 
+
+// ===== V3.4.4 BODY ZONES / HITBOXES =====
+const BODY_ZONE_COLORS={torso:0x32c7ff,head:0xff5fc8,armL:0xff9638,armR:0xffd84a,legL:0x75e06e,legR:0x31b85a};
+let bodyZoneDebug=false,bodyZoneDebugGroup=null;
+function getBodyBoundsV344(){const b=new THREE.Box3();for(const m of bodyMeshes)b.expandByObject(m);return b}
+function classifyBodyZoneWorldPoint(p){
+  const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
+  const x=(p.x-c.x)/(sz.x||1),y=(p.y-c.y)/(sz.y||1);
+  if(y>.305)return 'head';
+  if(y>-.165&&Math.abs(x)>.235)return x<0?'armL':'armR';
+  if(y<=-.165)return x<0?'legL':'legR';
+  return 'torso';
+}
+function zoneForNode(n){return n?classifyBodyZoneWorldPoint(nodeWorldPosition(n)):'torso'}
+function allowedZonesForStrap(s){
+  const za=zoneForNode(nodes.get(s.a)),zb=zoneForNode(nodes.get(s.b));
+  if(za===zb)return new Set([za]);
+  const out=new Set([za,zb]);
+  if(s.routingGuide)out.add(classifyBodyZoneWorldPoint(new THREE.Vector3().fromArray(s.routingGuide)));
+  return out;
+}
+function clearBodyZoneDebug(){
+  if(!bodyZoneDebugGroup)return;
+  helperRoot.remove(bodyZoneDebugGroup);
+  bodyZoneDebugGroup.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.()});
+  bodyZoneDebugGroup=null;
+}
+function rebuildBodyZoneDebug(){
+  clearBodyZoneDebug();if(!bodyZoneDebug)return;
+  const group=new THREE.Group();group.renderOrder=120;
+  for(const m of bodyMeshes){
+    const pos=m.geometry?.attributes?.position;if(!pos)continue;
+    const buckets={torso:[],head:[],armL:[],armR:[],legL:[],legR:[]};
+    const step=Math.max(1,Math.floor(pos.count/18000));
+    for(let i=0;i<pos.count;i+=step){
+      const p=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld);
+      buckets[classifyBodyZoneWorldPoint(p)].push(p);
+    }
+    for(const [zone,pts] of Object.entries(buckets)){
+      if(!pts.length)continue;
+      const g=new THREE.BufferGeometry().setFromPoints(pts);
+      const mat=new THREE.PointsMaterial({color:BODY_ZONE_COLORS[zone],size:.012,sizeAttenuation:true,transparent:true,opacity:.82,depthTest:false,depthWrite:false});
+      const cloud=new THREE.Points(g,mat);cloud.renderOrder=120;group.add(cloud);
+    }
+  }
+  helperRoot.add(group);bodyZoneDebugGroup=group;
+}
+function setBodyZoneDebug(v){bodyZoneDebug=!!v;rebuildBodyZoneDebug()}
+
+const HITBOX_COLORS={node:0x00e5ff,strap:0xffd54a,guide:0xff4fd8,panel:0x52ef7d,snap:0xff7a21};
+let hitboxDebug=false,hitboxDebugGroup=null;
+function clearHitboxDebug(){
+  if(!hitboxDebugGroup)return;
+  helperRoot.remove(hitboxDebugGroup);
+  hitboxDebugGroup.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.()});
+  hitboxDebugGroup=null;
+}
+function rebuildHitboxDebug(){
+  clearHitboxDebug();if(!hitboxDebug)return;
+  const group=new THREE.Group();group.renderOrder=125;
+  const sphere=(p,r,color,opacity)=>{const o=new THREE.Mesh(new THREE.SphereGeometry(r,12,8),new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity,depthTest:false,depthWrite:false}));o.position.copy(p);o.renderOrder=125;group.add(o)};
+  const boxFor=(obj,color,opacity)=>{const box=new THREE.Box3().setFromObject(obj);if(box.isEmpty())return;const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());const o=new THREE.Mesh(new THREE.BoxGeometry(Math.max(size.x,.01),Math.max(size.y,.01),Math.max(size.z,.01)),new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity,depthTest:false,depthWrite:false}));o.position.copy(center);o.renderOrder=125;group.add(o)};
+  for(const n of nodes.values()){
+    const p=nodeWorldPosition(n),rr=Math.max(.035,(n.diameterMM||20)*.001*.7);
+    sphere(p,rr,HITBOX_COLORS.node,.55);sphere(p,rr*1.8,HITBOX_COLORS.snap,.22);
+  }
+  for(const s of straps.values()){
+    if(s.mesh)boxFor(s.mesh,HITBOX_COLORS.strap,.42);
+    if(s.guideHandle)sphere(s.guideHandle.position,.05,HITBOX_COLORS.guide,.65);
+  }
+  for(const p of panels.values())if(p.mesh)boxFor(p.mesh,HITBOX_COLORS.panel,.38);
+  helperRoot.add(group);hitboxDebugGroup=group;
+}
+function setHitboxDebug(v){hitboxDebug=!!v;rebuildHitboxDebug()}

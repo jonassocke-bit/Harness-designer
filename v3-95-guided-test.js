@@ -4,23 +4,24 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.4.3 GUIDE PREVIEW STABILITY',base:'V3.4.2 UNIFIED STRAP GUIDE'};
+  const RELEASE={build:'V3.4.4 ZONES + RADIAL',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.3 · Guide Preview Stability stehen.',golden:'pass'},
-    direct:{title:'2 · Direct Regression',instruction:'Mehrere Direct-Riemen bauen. V3.4.2-Funktion darf nicht schlechter geworden sein.',golden:'pass'},
-    preview:{title:'3 · Guide Live-Preview',instruction:'Riemen auswählen und mittleren Handle ziehen. Während des Ziehens darf der fertige Riemen NICHT wild neu berechnet werden. Stattdessen müssen eine weiße ungefähre Route und zwei gelbe Breitenlinien live folgen.',golden:'known'},
-    previewWidth:{title:'4 · Preview Breite',instruction:'Riemenbreite ändern und erneut Handle ziehen. Abstand der beiden gelben Preview-Linien muss ungefähr der aktuellen Breite entsprechen.',golden:'known'},
-    release:{title:'5 · Solve erst beim Loslassen',instruction:'Handle länger über den Körper ziehen. Während Drag flüssige Preview; beim Loslassen genau eine sichtbare finale Neuberechnung.',golden:'known'},
-    shoulderArmpit:{title:'6 · Schulter → Achsel',instruction:'Guide eines Schulterverlaufs deutlich Richtung Achsel ziehen. Nach Loslassen muss sich nicht nur die Mitte, sondern auch die Anschlussorientierung an BEIDEN Ringen sichtbar in Richtung der neuen Route ändern.',golden:'known'},
-    notWaypoint:{title:'7 · Guide bleibt Orientierung',instruction:'Nach dem Solve Ringe verschieben. Der Riemen darf nicht künstlich durch die alte Guide-Koordinate gezwungen werden; Guide bestimmt Orientierung/Routenseite, nicht einen harten Kurvenpunkt.',golden:'known'},
-    stability:{title:'8 · Eskalations-Stress',instruction:'Guide 10× zwischen deutlich verschiedenen Körperregionen verschieben. Kein explodierender Riemen, keine riesigen Dimensionen, kein dauerhafter Geometriefehler.',golden:'known'},
-    mirror:{title:'9 · Mirror Preview',instruction:'Spiegelpaar: Master-Guide ziehen. Preview nur am gezogenen Master; nach Loslassen muss der Partner einmal sauber gespiegelt neu berechnet werden.',golden:'known'},
-    endpoints:{title:'10 · Ring-Endpunkte',instruction:'Mehrere Guided-Riemen mit stark unterschiedlicher Richtung prüfen. Ringanschlüsse müssen jeweils zur gewählten Route zeigen.',golden:'known'},
-    contact:{title:'11 · Körperabstand',instruction:'Abstand 0 regressionsprüfen: weiterhin annähernd aufliegend.',golden:'pass'},
-    debug:{title:'12 · Debug Regression',instruction:'Debug bleibt read-only und zeigt Guide/Hilfslinien weiterhin korrekt.',golden:'pass'},
-    performance:{title:'13 · Drag Performance',instruction:'Guide langsam und schnell ziehen. Preview soll deutlich flüssiger als V3.4.2 sein; finale Berechnung darf kurz dauern.',golden:'known'},
-    finalPage:{title:'14 · Abschluss',instruction:'Abschlussseite, mehrzeiliger Gesamtkommentar und Export prüfen.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.4 · Zones + Radial stehen.',golden:'pass'},
+    zones:{title:'2 · Körperzonen beurteilen',instruction:'Zonen einschalten. Bitte Torso/Kopf/Arme/Beine beurteilen – besonders Schulter, Achsel, Hals und Becken. Screenshot bei jeder Grenze, die du anders ziehen würdest.',golden:'known'},
+    torso:{title:'3 · Torso → Torso',instruction:'Zwei Ringe am Torso verbinden. Projektion darf nicht auf Arme, Kopf oder Beine springen.',golden:'known'},
+    cross:{title:'4 · Torso → Arm',instruction:'Torso mit einem Arm verbinden. Solver darf nur beteiligte Endzonen und ggf. explizite Guide-Zone benutzen.',golden:'known'},
+    radial:{title:'5 · Radiale Abstandslinien',instruction:'Debug Schritt 3: Abstandslinien sollen von einem gemeinsamen lokalen Zentrum auffächern und nicht parallel am Körper entlanglaufen.',golden:'known'},
+    ring:{title:'6 · Ringanschlüsse',instruction:'Flache Ringe unterschiedlich positionieren. Prüfen, ob Start/Ende nachvollziehbar aus der Ringlage kommen.',golden:'known'},
+    guide:{title:'7 · Guide Schulter → Achsel',instruction:'Guide verschieben und finalen Solve prüfen. Route soll nachvollziehbar reagieren.',golden:'known'},
+    hitbox:{title:'8 · Hitboxen',instruction:'Hitboxen einschalten: Cyan Ringe, Gelb Riemen, Magenta Guide, Grün Flächen, Orange Snap/Merge. Durch Mannequin sichtbar.',golden:'known'},
+    zoom:{title:'9 · Deep Zoom',instruction:'Sehr weit hineinzoomen. Alte Nahgrenze darf nicht mehr stoppen.',golden:'known'},
+    save:{title:'10 · Save / Load',instruction:'Design speichern, verändern, wieder laden. Zustand muss zurückkehren.',golden:'known'},
+    code:{title:'11 · Design-Code',instruction:'Code kopieren, Design verändern, Code laden. Konstruktion muss wiederhergestellt werden.',golden:'known'},
+    backPan:{title:'12 · Zwei-Finger-Pan Rückseite',instruction:'Vorder-/Rückseite prüfen: links/rechts soll aus Bildschirmsicht gleich reagieren.',golden:'known'},
+    regression:{title:'13 · Riemen Regression',instruction:'Mehrere normale Direct-/Guided-Riemen bauen und Stabilität mit V3.4.3 vergleichen.',golden:'known'},
+    perf:{title:'14 · Performance',instruction:'Zonen/Hitboxen ausschalten und mehrere Riemen bauen.',golden:'known'},
+    finalPage:{title:'15 · Abschluss',instruction:'Report mit Gesamtkommentar exportieren.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

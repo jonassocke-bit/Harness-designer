@@ -15,6 +15,7 @@ function commitHistory(){
   redoStack=[];
   updateHistoryButtons();
   try{localStorage.setItem('harnessDesignerV1',sig)}catch{}
+  if(typeof hitboxDebug!=='undefined'&&hitboxDebug)rebuildHitboxDebug();
 }
 
 function serialize(){
@@ -461,3 +462,20 @@ undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
 
 
+
+// ===== V3.4.4 DESIGN SAVE / LOAD =====
+const DESIGN_STORAGE_KEY='HD_DESIGN_SAVES_V1';
+function serializeDesignState(){return {schemaVersion:1,createdAt:new Date().toISOString(),snapshot:historyClone(serialize())}}
+function encodeDesignCode(state){const raw=JSON.stringify(state);return 'HD1-'+btoa(unescape(encodeURIComponent(raw))).replace(/=+$/,'')}
+function decodeDesignCode(code){const raw=String(code||'').trim().replace(/^HD1-/,'');const pad=raw+'='.repeat((4-raw.length%4)%4);return JSON.parse(decodeURIComponent(escape(atob(pad))))}
+function readDesignSaves(){try{return JSON.parse(localStorage.getItem(DESIGN_STORAGE_KEY)||'[]')}catch{return []}}
+function writeDesignSaves(v){localStorage.setItem(DESIGN_STORAGE_KEY,JSON.stringify(v))}
+function saveDesignNamed(name){const list=readDesignSaves();list.unshift({name:name||'Design',savedAt:new Date().toISOString(),state:serializeDesignState()});writeDesignSaves(list.slice(0,20))}
+function loadDesignState(state){if(!state?.snapshot)throw new Error('invalid design state');restore(historyClone(state.snapshot));commitHistory()}
+function initV344DesignUI(){
+  const save=document.getElementById('v344Save'),load=document.getElementById('v344Load'),code=document.getElementById('v344Code');
+  save?.addEventListener('click',()=>{const name=prompt('Name für den Designstand:','Mein Design');if(name===null)return;saveDesignNamed(name);showToast('Design lokal gespeichert')});
+  load?.addEventListener('click',()=>{const list=readDesignSaves();if(!list.length){showToast('Noch keine lokalen Designs');return}const pick=prompt(list.map((x,i)=>`${i+1}: ${x.name}`).join('\n'),'1'),idx=Number(pick)-1;if(Number.isInteger(idx)&&list[idx]){loadDesignState(list[idx].state);showToast(`Geladen: ${list[idx].name}`)}});
+  code?.addEventListener('click',async()=>{const x=prompt('„kopieren“ oder einen HD1-Code einfügen:','kopieren');if(x===null)return;if(x.trim().toLowerCase()==='kopieren'){const c=encodeDesignCode(serializeDesignState());try{await navigator.clipboard.writeText(c);showToast('Design-Code kopiert')}catch{prompt('Design-Code:',c)}}else{try{loadDesignState(decodeDesignCode(x));showToast('Design-Code geladen')}catch{showToast('Ungültiger Design-Code')}}});
+}
+setTimeout(initV344DesignUI,0);

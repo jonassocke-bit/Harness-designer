@@ -1,5 +1,18 @@
 # Patchnotes
 
+## V3.4.4 – Zones + Radial
+- Körperzonen: Torso, Kopf/Hals, linker/rechter Arm, linker/rechtes Bein.
+- Zonen sofort farbig einblendbar, damit die Grenzziehung vor der Feinlogik beurteilt werden kann.
+- Gleiche Ringzone → Projektion akzeptiert nur diese Zone. Unterschiedliche Ringzonen → nur beteiligte Endzonen; Guide kann eine Zone ergänzen.
+- Radiale Projektion als Primärmethode; alte parallele Projektion nur als lokaler Fallback.
+- Debug Schritt 3 zeigt radiales Zentrum und tatsächliche Strahlen.
+- Hitbox-Toggle: Cyan Ringe, Gelb Riemen, Magenta Guide, Grün Flächen, Orange Snap/Merge.
+- Hitboxen/Zonen durch das Mannequin sichtbar.
+- Deep Zoom: Nahgrenze von 2.5 auf 0.025.
+- Zwei-Finger-Pan kamerarelativ und damit vorn/hinten gleich ausgerichtet.
+- Bis zu 20 lokale Design-Saves.
+- Versionierter HD1-Design-Code für exakte manuelle Zustände.
+
 ## V3.4.3 – Guide Preview Stability
 - Guide-Drag führt während des Ziehens keinen vollständigen Surface-Solve mehr aus.
 - Stattdessen erscheint eine schnelle Live-Vorschau: weiße ungefähre Route Ring A → Guide → Ring B plus zwei gelbe Breitenkanten.

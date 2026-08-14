@@ -241,19 +241,40 @@ function rigidStrapGuideFrame(s){
   return {A,B,mid,tangent,side,projectionAxis};
 }
 
-function projectionHits(candidate,axis,sign){
+function filteredBodyHitsV344(origin,dir,allowedZones){
+  raycaster.set(origin,dir);
+  const hits=raycaster.intersectObjects(bodyMeshes,true);
+  return allowedZones?hits.filter(h=>allowedZones.has(classifyBodyZoneWorldPoint(h.point))):hits;
+}
+function radialProjectionCenterV344(s,frame){
+  const {A,B,mid,projectionAxis}=frame;
+  let inward=projectionAxis.clone().normalize();
+  if(s.routingGuide){
+    const g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
+    if(g.dot(inward)>0)inward.negate();
+  }
+  const depth=THREE.MathUtils.clamp(A.distanceTo(B)*.34,.10,.45);
+  return mid.clone().addScaledVector(inward,-depth);
+}
+function radialSurfaceHitV344(candidate,center,allowedZones){
+  const dir=candidate.clone().sub(center);
+  if(dir.lengthSq()<1e-12)return null;
+  dir.normalize();
+  const hits=filteredBodyHitsV344(center,dir,allowedZones);
+  if(!hits.length)return null;
+  let best=null,bd=Infinity;
+  for(const h of hits){const d=h.point.distanceTo(candidate);if(d<bd){best=h;bd=d}}
+  return best?{point:best.point.clone(),normal:worldNormal(best).clone().normalize(),distance:bd}:null;
+}
+function projectionHits(candidate,axis,sign,allowedZones=null){
   const dir=axis.clone().normalize().multiplyScalar(sign);
   const origin=candidate.clone().addScaledVector(dir,-1.20);
-  raycaster.set(origin,dir);
-  return raycaster.intersectObjects(bodyMeshes,true).slice(0,14).map(h=>({
-    point:h.point.clone(),
-    normal:worldNormal(h).clone().normalize(),
-    distance:h.point.distanceTo(candidate)
+  return filteredBodyHitsV344(origin,dir,allowedZones).slice(0,14).map(h=>({
+    point:h.point.clone(),normal:worldNormal(h).clone().normalize(),distance:h.point.distanceTo(candidate)
   })).sort((a,b)=>a.distance-b.distance);
 }
-
-function chooseProjectionHitGlobal(candidate,axis,sign,prevPoint=null){
-  const hits=projectionHits(candidate,axis,sign);
+function chooseProjectionHitGlobal(candidate,axis,sign,prevPoint=null,allowedZones=null){
+  const hits=projectionHits(candidate,axis,sign,allowedZones);
   if(!hits.length)return null;
   if(!prevPoint)return hits[0];
 
@@ -268,75 +289,33 @@ function chooseProjectionHitGlobal(candidate,axis,sign,prevPoint=null){
 function projectedChordSamplesStrip(s,{lift=0}={}){
   const frame=rigidStrapGuideFrame(s);if(!frame)return [];
   const {A,B,side,projectionAxis}=frame;
+  const allowedZones=allowedZonesForStrap(s);
+  const radialCenter=radialProjectionCenterV344(s,frame);
   const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.025),8,80);
   const halfW=Math.max(.0003,s.widthMM*.0037*.5);
-  const widthTarget=Math.max(.0006,s.widthMM*.0037);
+  const route=[];
+  let prevL=null,prevR=null,radialFallbacks=0;
 
-  // IMPORTANT: solve two WHOLE-STRAP hypotheses.
-  // L and R can never choose opposite projection sides.
-  const solveSign=(sign)=>{
-    const route=[];
-    let prevL=null,prevR=null,totalLength=0,invalid=0,widthPenalty=0;
-
-    for(let i=0;i<=segments;i++){
-      const t=i/segments;
-      const center=A.clone().lerp(B,t);
-      const nominalLeft=center.clone().addScaledVector(side,-halfW);
-      const nominalRight=center.clone().addScaledVector(side, halfW);
-
-      const lh=chooseProjectionHitGlobal(nominalLeft,projectionAxis,sign,prevL);
-      const rh=chooseProjectionHitGlobal(nominalRight,projectionAxis,sign,prevR);
-      if(!lh||!rh){invalid+=10;continue}
-
-      const left=lh.point.clone().addScaledVector(lh.normal,lift);
-      const right=rh.point.clone().addScaledVector(rh.normal,lift);
-
-      if(prevL)totalLength+=prevL.distanceTo(left)+prevR.distanceTo(right);
-      prevL=left;prevR=right;
-
-      const width=left.distanceTo(right);
-      const ratio=width/widthTarget;
-      widthPenalty+=Math.abs(Math.log(Math.max(.05,ratio)));
-      if(ratio<.4||ratio>2.5)invalid+=3;
-
-      let normal=lh.normal.clone().lerp(rh.normal,.5);
-      if(normal.lengthSq()<1e-10)normal=projectionAxis.clone().multiplyScalar(sign);
-      normal.normalize();
-
-      route.push({
-        t,center,
-        normal,side:side.clone(),
-        nominalLeft,nominalRight,
-        leftHit:lh.point.clone(),rightHit:rh.point.clone(),
-        leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),
-        stripLeft:left,stripRight:right,
-        projectionSign:sign
-      });
-    }
-
-    const score=invalid*10000+widthPenalty*25+totalLength;
-    return {route,score,invalid,widthPenalty,totalLength,sign};
-  };
-
-  const plus=solveSign(1),minus=solveSign(-1);
-  // Guided: the construction point chooses the projection hemisphere once.
-  // It is NOT a waypoint and is never part of the solved route.
-  let guidedSign=null;
-  if(s.routingGuide){
-    const gp=new THREE.Vector3().fromArray(s.routingGuide);
-    const rel=gp.clone().sub(frame.mid);
-    const d=rel.dot(frame.projectionAxis);
-    if(Math.abs(d)>1e-7)guidedSign=d>=0?-1:1;
+  for(let i=0;i<=segments;i++){
+    const t=i/segments;
+    const center=A.clone().lerp(B,t);
+    const nominalLeft=center.clone().addScaledVector(side,-halfW);
+    const nominalRight=center.clone().addScaledVector(side,halfW);
+    let lh=radialSurfaceHitV344(nominalLeft,radialCenter,allowedZones);
+    let rh=radialSurfaceHitV344(nominalRight,radialCenter,allowedZones);
+    if(!lh){radialFallbacks++;lh=chooseProjectionHitGlobal(nominalLeft,projectionAxis,1,prevL,allowedZones)||chooseProjectionHitGlobal(nominalLeft,projectionAxis,-1,prevL,allowedZones)}
+    if(!rh){radialFallbacks++;rh=chooseProjectionHitGlobal(nominalRight,projectionAxis,1,prevR,allowedZones)||chooseProjectionHitGlobal(nominalRight,projectionAxis,-1,prevR,allowedZones)}
+    if(!lh||!rh)continue;
+    const left=lh.point.clone().addScaledVector(lh.normal,lift);
+    const right=rh.point.clone().addScaledVector(rh.normal,lift);
+    prevL=left;prevR=right;
+    let normal=lh.normal.clone().lerp(rh.normal,.5);
+    if(normal.lengthSq()<1e-10)normal=projectionAxis.clone();
+    normal.normalize();
+    route.push({t,center,normal,side:side.clone(),nominalLeft,nominalRight,leftHit:lh.point.clone(),rightHit:rh.point.clone(),leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),stripLeft:left,stripRight:right,radialCenter:radialCenter.clone()});
   }
-  const chosen=guidedSign===1?plus:guidedSign===-1?minus:(plus.score<=minus.score?plus:minus);
-
-  s.routingDebug={
-    chosenSign:chosen.sign,guidedSign,
-    plus:{score:plus.score,invalid:plus.invalid,totalLength:plus.totalLength,widthPenalty:plus.widthPenalty},
-    minus:{score:minus.score,invalid:minus.invalid,totalLength:minus.totalLength,widthPenalty:minus.widthPenalty},
-    frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}
-  };
-  return chosen.route;
+  s.routingDebug={mode:'radial',zones:[...allowedZones],radialCenter:radialCenter.clone(),radialFallbacks,frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}};
+  return route;
 }
 function projectEdgeCandidateToBody(candidate,preferredNormal){
   // Compatibility for the conservative smoothing pass only.
@@ -392,6 +371,7 @@ function buildStripMethodRoute(s,samples,lift){
     nominalRight:samples.map(g=>g.nominalRight.clone()),
     nominalCenters:samples.map(g=>g.center.clone()),
     routingDebug:s.routingDebug||null,
+    radialCenter:s.routingDebug?.radialCenter?.clone?.()||null,
     routingGuide:s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null,
     probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
     probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
@@ -473,8 +453,14 @@ function updateStrapMethodDebug(s,route){
   }
   if(show(2)){
     if(d.routingGuide)strapDebugPoints(s,[d.routingGuide],0xffd54a,10);
-    strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
-    strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
+    if(d.radialCenter){
+      strapDebugPoints(s,[d.radialCenter],0xffffff,9);
+      strapDebugLine(s,d.probesLeft.map(q=>[d.radialCenter,q.to]),0xff6b6b,.72,true);
+      strapDebugLine(s,d.probesRight.map(q=>[d.radialCenter,q.to]),0x6ba8ff,.72,true);
+    }else{
+      strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
+      strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
+    }
   }
   if(show(3)){
     strapDebugPoints(s,d.projectedLeft,0xff6b6b,5);

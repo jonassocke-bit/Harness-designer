@@ -413,8 +413,12 @@ canvas.addEventListener('pointermove',e=>{
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pointers.size===2&&gesture){
     const a=[...pointers.values()],dist=Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),mx=(a[0].x+a[1].x)/2,my=(a[0].y+a[1].y)/2;
-    camDist=THREE.MathUtils.clamp(gesture.camDist*(gesture.dist/Math.max(dist,1)),2.5,9);
-    target.x=gesture.target.x-(mx-gesture.mx)*.003;target.y=gesture.target.y+(my-gesture.my)*.003;updateCamera();return;
+    camDist=THREE.MathUtils.clamp(gesture.camDist*(gesture.dist/Math.max(dist,1)),.025,20);
+    const panDx=(mx-gesture.mx)*.003,panDy=(my-gesture.my)*.003;
+    const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion).normalize();
+    const up=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion).normalize();
+    target.copy(gesture.target).addScaledVector(right,-panDx).addScaledVector(up,panDy);
+    updateCamera();return;
   }
   if(!single)return;
   const dx=e.clientX-single.sx,dy=e.clientY-single.sy;if(Math.hypot(dx,dy)>5)single.moved=true;
@@ -639,3 +643,14 @@ try{
   console.error('Initial history snapshot failed',err);
 }
 
+
+function initV344Tools(){
+  if(document.getElementById('v344Tools'))return;
+  const el=document.createElement('div');el.id='v344Tools';
+  el.innerHTML=`<div class="v344Title">V3.4.4 Tools</div><button id="v344Zones">Zonen</button><button id="v344Hitboxes">Hitboxen</button><button id="v344Save">Save</button><button id="v344Load">Load</button><button id="v344Code">Design-Code</button><div class="v344Legend"><span style="color:#32c7ff">Torso</span> · <span style="color:#ff5fc8">Kopf</span> · <span style="color:#ff9638">L-Arm</span> · <span style="color:#ffd84a">R-Arm</span> · <span style="color:#75e06e">L-Bein</span> · <span style="color:#31b85a">R-Bein</span></div>`;
+  document.body.appendChild(el);
+  const z=el.querySelector('#v344Zones'),h=el.querySelector('#v344Hitboxes');
+  z.onclick=()=>{setBodyZoneDebug(!bodyZoneDebug);z.classList.toggle('active',bodyZoneDebug)};
+  h.onclick=()=>{setHitboxDebug(!hitboxDebug);h.classList.toggle('active',hitboxDebug)};
+}
+setTimeout(initV344Tools,0);
