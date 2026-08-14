@@ -1,5 +1,16 @@
 # Patchnotes
 
+## V3.4.6 – Spline Prototype
+- Radialsolver aus dem aktiven Riemenpfad entfernt.
+- Neuer Ablauf: Ringorientierung → räumliche Leit-Spline → zwei Offset-Splines → lokale Surface-Suche in erlaubten Körperzonen → Triangulation.
+- Direct-Riemen verwenden eine kubische Bézier-Spline.
+- Ringnormalen beeinflussen Start- und Endtangente.
+- Optionaler dritter Körperpunkt formt die Leitkurve direkt und entscheidet keine Projektionsseite mehr.
+- Surface-Suche nutzt Nähe zur Spline als Hauptkriterium; Kontinuität nur sekundär.
+- Körperzonen bleiben harter Filter.
+- Kein Radialzentrum, kein +/- Solver, kein 180°-Fallback und kein zweiter Pfadfinder im aktiven Solve.
+- Debugmodus zeigt Leit-Spline, beide Offset-Splines und die tatsächlichen Suchwege zur Oberfläche.
+
 ## V3.4.5a – Safe Radial Test
 - Neu auf der nachweislich startenden V3.4.4c aufgebaut.
 - Nur Radialzentrum und 180°-Debugtest geändert.

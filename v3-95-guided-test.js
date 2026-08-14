@@ -7,13 +7,21 @@
   const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.5a SAFE RADIAL TEST stehen.',golden:'pass'},
-    center:{title:'2 · Zentrum',instruction:'Debug: Weiß zwischen zwei grünen Surface-Punkten = gültig; Rot = Fallback.',golden:'known'},
-    flip:{title:'3 · A/B 180°',instruction:'Riemen auswählen und den festen Radial-A/B-Button unten rechts drücken. Richtung muss sofort wechseln.',golden:'known'},
-    flipBack:{title:'4 · Zurück',instruction:'Noch einmal drücken; ursprüngliche Seite muss zurückkommen.',golden:'known'},
-    normal:{title:'5 · Normalriemen',instruction:'Mehrere normale Riemen testen.',golden:'known'},
-    zones:{title:'6 · Zonen',instruction:'Zonen unverändert regressionsprüfen.',golden:'pass'},
-    finalPage:{title:'7 · Abschluss',instruction:'Report exportieren.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.6 SPLINE PROTOTYPE stehen.',golden:'pass'},
+    directSpline:{title:'2 · Direct Spline',instruction:'Debug Schritt 2: Ist die weiße Leitkurve als grober räumlicher Verlauf plausibel?',golden:'known'},
+    ringStart:{title:'3 · Startwinkel',instruction:'Läuft die Spline plausibel aus Ring A heraus?',golden:'known'},
+    ringEnd:{title:'4 · Endwinkel',instruction:'Läuft die Spline plausibel in Ring B hinein?',golden:'known'},
+    offsets:{title:'5 · Drei Hilfslinien',instruction:'Bleiben Mitte + rote/blaue Offset-Spline ohne spontane 90°-Drehung konsistent?',golden:'known'},
+    guide:{title:'6 · Dritter Punkt',instruction:'Formt der optionale Körperpunkt die Spline wie erwartet?',golden:'known'},
+    surface:{title:'7 · Surface-Suche',instruction:'Schritt 3: Gehen die kurzen Suchlinien sinnvoll zur nächsten erlaubten Oberfläche?',golden:'known'},
+    zones:{title:'8 · Körperteile',instruction:'Torso→Torso und Torso→Arm prüfen. Werden nur erlaubte Zonen getroffen?',golden:'known'},
+    special:{title:'9 · Sonderfall',instruction:'Bisherigen Kopf/Schulter/Achsel-Problemfall testen.',golden:'known'},
+    width:{title:'10 · Breite',instruction:'Breite live ändern. Bleiben beide Offset-Splines gekoppelt?',golden:'known'},
+    mirror:{title:'11 · Spiegelpaar',instruction:'Spiegelriemen regressionsprüfen.',golden:'known'},
+    save:{title:'12 · Save/Load',instruction:'Save/Load regressionsprüfen.',golden:'pass'},
+    zoom:{title:'13 · Zoom/Pan',instruction:'Zoom/Pan regressionsprüfen.',golden:'pass'},
+    perf:{title:'14 · Performance',instruction:'Mehrere Riemen bauen und Performance beurteilen.',golden:'known'},
+    finalPage:{title:'15 · Abschluss',instruction:'Report exportieren.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

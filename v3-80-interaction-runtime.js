@@ -663,37 +663,3 @@ function initV344Tools(){
   h.onclick=()=>{setHitboxOverlayDebugV344(!hitboxOverlayDebugV344);h.classList.toggle('active',hitboxOverlayDebugV344)};
 }
 setTimeout(safeInitV344Tools,0);
-
-// V3.4.5a SAFE: late debug-only radial flip control.
-// No schema or startup dependency; strap gets a dynamic radialFlip property only when used.
-function initSafeRadialFlipV345a(){
-  try{
-    if(document.getElementById('radialFlipSafeBtn'))return;
-    const btn=document.createElement('button');
-    btn.id='radialFlipSafeBtn';
-    btn.type='button';
-    btn.textContent='Radial A/B · 180°';
-    btn.style.cssText='position:fixed;right:12px;bottom:210px;z-index:1900;padding:9px 12px;border-radius:10px;border:1px solid #666;background:#20242b;color:white;font:12px system-ui;';
-    btn.onclick=()=>{
-      const s=selected;
-      if(!s||s.kind!=='strap'){showToast('Erst einen Riemen auswählen');return}
-      s.radialFlip=!s.radialFlip;
-      try{
-        rebuildAutoProjection(s);
-        if(s.debugRoute){
-          updateStrapMethodDebug(s,s.methodRoute||[]);
-          refreshStrapDebugPanel(s);
-        }
-        btn.textContent=`Radial ${s.radialFlip?'B':'A'} · 180°`;
-        showToast(s.radialFlip?'Radial B':'Radial A');
-      }catch(err){
-        console.error('[V3.4.5a] radial flip failed',err);
-        showToast('Radial-Test fehlgeschlagen');
-      }
-    };
-    document.body.appendChild(btn);
-  }catch(err){
-    console.error('[V3.4.5a] late button init failed',err);
-  }
-}
-setTimeout(initSafeRadialFlipV345a,50);

@@ -192,190 +192,104 @@ function continuityScore(h,ctx,candidate){
   if(ctx.prevNormal){const d=THREE.MathUtils.clamp(h.normal.dot(ctx.prevNormal),-1,1);score+=(1-d)*.22;if(d<-.1)score+=1.2}
   return score;
 }
-function rigidStrapGuideFrame(s){
+function splineEndpointTangentV346(node,from,to,fallback){
+  const chord=to.clone().sub(from).normalize();
+  let t=nodeWorldNormal(node).clone();
+  if(t.dot(chord)<0)t.negate();
+  t.lerp(chord,.58);
+  if(t.lengthSq()<1e-10)t=fallback.clone();
+  return t.normalize();
+}
+function splineGuideFrameV346(s){
   const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return null;
   const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
-  const guideTarget=s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null;
-  // A guided strap must reorient its ring attachments toward the chosen route.
-  // The guide is still NOT a waypoint in the surface solve.
-  const A=visibleEndpoint(a,guideTarget||B0),B=visibleEndpoint(b,guideTarget||A0);
-
-  let tangent=B.clone().sub(A);
-  if(tangent.lengthSq()<1e-10)return null;
-  tangent.normalize();
-
-  const mid=A.clone().lerp(B,.5);
-  let planeNormal=null;
-
-  // Optional third construction tap: orientation only.
-  if(s.routingGuide){
-    let g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
-    g.addScaledVector(tangent,-g.dot(tangent));
-    if(g.lengthSq()>1e-10)planeNormal=g.normalize();
+  const guide=s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null;
+  const A=visibleEndpoint(a,guide||B0),B=visibleEndpoint(b,guide||A0);
+  const chord=B.clone().sub(A),length=chord.length();if(length<1e-10)return null;
+  const chordDir=chord.clone().normalize();
+  const TA=splineEndpointTangentV346(a,A,B,chordDir);
+  const TB=splineEndpointTangentV346(b,B,A,chordDir.clone().negate()).negate();
+  let curve;
+  if(guide){
+    const dA=Math.max(.02,A.distanceTo(guide)*.38),dB=Math.max(.02,B.distanceTo(guide)*.38);
+    let tg=TA.clone().add(TB);if(tg.lengthSq()<1e-10)tg.copy(chordDir);else tg.normalize();
+    const c1=new THREE.CubicBezierCurve3(A.clone(),A.clone().addScaledVector(TA,dA),guide.clone().addScaledVector(tg,-dA*.45),guide.clone());
+    const c2=new THREE.CubicBezierCurve3(guide.clone(),guide.clone().addScaledVector(tg,dB*.45),B.clone().addScaledVector(TB,-dB),B.clone());
+    curve={getPoint(t){return t<=.5?c1.getPoint(t*2):c2.getPoint((t-.5)*2)}};
+  }else{
+    const h=THREE.MathUtils.clamp(length*.34,.025,.28);
+    curve=new THREE.CubicBezierCurve3(A.clone(),A.clone().addScaledVector(TA,h),B.clone().addScaledVector(TB,-h),B.clone());
   }
-
-  // Direct strap: choose orientation ONCE from endpoint normals.
-  if(!planeNormal){
-    planeNormal=nodeWorldNormal(a).clone().add(nodeWorldNormal(b));
-    planeNormal.addScaledVector(tangent,-planeNormal.dot(tangent));
-    if(planeNormal.lengthSq()<1e-10){
-      planeNormal=nodeWorldNormal(a).clone();
-      planeNormal.addScaledVector(tangent,-planeNormal.dot(tangent));
-    }
-    if(planeNormal.lengthSq()<1e-10){
-      planeNormal=strapFrame(s).normal.clone();
-      planeNormal.addScaledVector(tangent,-planeNormal.dot(tangent));
-    }
-    planeNormal.normalize();
+  return {A,B,TA,TB,guide,curve,length};
+}
+function splineFrameSamplesV346(s){
+  const f=splineGuideFrameV346(s);if(!f)return [];
+  const count=THREE.MathUtils.clamp(Math.ceil(f.length/.022),10,90);
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];let prevSide=null;
+  for(let i=0;i<=count;i++){
+    const t=i/count,p=f.curve.getPoint(t);
+    const p0=f.curve.getPoint(Math.max(0,t-1/count)),p1=f.curve.getPoint(Math.min(1,t+1/count));
+    let tangent=p1.clone().sub(p0);if(tangent.lengthSq()<1e-10)tangent=f.B.clone().sub(f.A);tangent.normalize();
+    let normal=nodeWorldNormal(nodes.get(s.a)).clone().lerp(nodeWorldNormal(nodes.get(s.b)),t);
+    normal.addScaledVector(tangent,-normal.dot(tangent));
+    if(normal.lengthSq()<1e-10)normal=strapFrame(s).normal.clone();normal.normalize();
+    let side=new THREE.Vector3().crossVectors(normal,tangent);
+    if(side.lengthSq()<1e-10)side=prevSide?.clone()||strapFrame(s).side.clone();
+    side.normalize();if(prevSide&&side.dot(prevSide)<0)side.negate();prevSide=side.clone();
+    out.push({t,center:p.clone(),tangent,normal,side,
+      nominalLeft:p.clone().addScaledVector(side,-halfW),
+      nominalRight:p.clone().addScaledVector(side,halfW)});
   }
-
-  let side=new THREE.Vector3().crossVectors(planeNormal,tangent);
-  if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
-  side.normalize();
-
-  // Deterministic L/R sign.
-  const fs=strapFrame(s).side;
-  if(fs.lengthSq()>1e-10&&side.dot(fs)<0)side.negate();
-
-  const projectionAxis=new THREE.Vector3().crossVectors(tangent,side).normalize();
-  return {A,B,mid,tangent,side,projectionAxis};
+  return out;
 }
-
-function filteredBodyHitsV344(origin,dir,allowedZones){
-  raycaster.set(origin,dir);
-  const hits=raycaster.intersectObjects(bodyMeshes,true);
-  return allowedZones?hits.filter(h=>allowedZones.has(classifyBodyZoneWorldPoint(h.point))):hits;
-}
-function radialProjectionCenterV344(s,frame){
-  try{
-    const {A,B,mid,projectionAxis}=frame;
-    const allowedZones=allowedZonesForStrap(s);
-    let outward=projectionAxis.clone().normalize();
-
-    if(s.routingGuide){
-      const g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
-      if(g.lengthSq()>1e-10){g.normalize();if(outward.dot(g)<0)outward.negate()}
-    }else{
-      const avg=nodeWorldNormal(nodes.get(s.a)).clone().add(nodeWorldNormal(nodes.get(s.b)));
-      if(avg.lengthSq()>1e-10){avg.normalize();if(outward.dot(avg)<0)outward.negate()}
-    }
-
-    if(s.radialFlip)outward.negate();
-
-    const span=Math.max(2.0,A.distanceTo(B)*3.0);
-    const origin=mid.clone().addScaledVector(outward,-span);
-    const hits=filteredBodyHitsV344(origin,outward,allowedZones);
-
-    if(hits.length>=2){
-      const h0=hits[0];
-      let h1=null;
-      for(let i=1;i<hits.length;i++){
-        if(hits[i].point.distanceTo(h0.point)>.01){h1=hits[i];break}
-      }
-      if(h1){
-        const p0=h0.point.clone(),p1=h1.point.clone();
-        return {
-          center:p1.clone().lerp(p0,.40),
-          outward,
-          surfaceNear:p1.clone(),
-          surfaceFar:p0.clone(),
-          thickness:p0.distanceTo(p1),
-          valid:true
-        };
-      }
-    }
-
-    return {
-      center:mid.clone().addScaledVector(outward,-.08),
-      outward,surfaceNear:null,surfaceFar:null,thickness:0,valid:false
-    };
-  }catch(err){
-    console.error('[V3.4.5a] radial-center fallback',err);
-    return {
-      center:frame.mid.clone().addScaledVector(frame.projectionAxis,-.08),
-      outward:frame.projectionAxis.clone(),
-      surfaceNear:null,surfaceFar:null,thickness:0,valid:false
-    };
-  }
-}
-function radialSurfaceHitV344(candidate,center,allowedZones){
-  const dir=candidate.clone().sub(center);
-  if(dir.lengthSq()<1e-12)return null;
-  dir.normalize();
-
-  const hits=filteredBodyHitsV344(center,dir,allowedZones);
-  if(!hits.length)return null;
-
-  // Raycaster sortiert nach Distanz:
-  // der erste erlaubte Treffer ist die Austrittsoberfläche auf dieser Seite.
-  const h=hits[0];
-  return {
-    point:h.point.clone(),
-    normal:worldNormal(h).clone().normalize(),
-    distance:h.point.distanceTo(candidate)
-  };
-}
-function projectionHits(candidate,axis,sign,allowedZones=null){
-  const dir=axis.clone().normalize().multiplyScalar(sign);
-  const origin=candidate.clone().addScaledVector(dir,-1.20);
-  return filteredBodyHitsV344(origin,dir,allowedZones).slice(0,14).map(h=>({
-    point:h.point.clone(),normal:worldNormal(h).clone().normalize(),distance:h.point.distanceTo(candidate)
-  })).sort((a,b)=>a.distance-b.distance);
-}
-function chooseProjectionHitGlobal(candidate,axis,sign,prevPoint=null,allowedZones=null){
-  const hits=projectionHits(candidate,axis,sign,allowedZones);
-  if(!hits.length)return null;
-  if(!prevPoint)return hits[0];
-
+function localZoneSurfaceHitV346(candidate,allowedZones,prevPoint,preferredNormal){
+  const pref=preferredNormal.clone().normalize();
+  const dirs=[pref.clone(),pref.clone().negate(),new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),
+    new THREE.Vector3(0,1,0),new THREE.Vector3(0,-1,0),new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)];
   let best=null,bestScore=Infinity;
-  for(const h of hits){
-    const score=h.distance*.30+h.point.distanceTo(prevPoint)*.70;
-    if(score<bestScore){bestScore=score;best=h}
+  for(const d of dirs){
+    const origin=candidate.clone().addScaledVector(d,1.8);raycaster.set(origin,d.clone().negate());
+    for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,10)){
+      if(allowedZones&&!allowedZones.has(classifyBodyZoneWorldPoint(h.point)))continue;
+      const n=worldNormal(h).clone().normalize(),dist=h.point.distanceTo(candidate);
+      let score=dist;
+      if(prevPoint){const step=h.point.distanceTo(prevPoint);score+=step*.22;if(step>.30)score+=2.5}
+      score+=Math.max(0,.05-n.dot(pref))*.06;
+      if(score<bestScore){bestScore=score;best={point:h.point.clone(),normal:n,distance:dist}}
+    }
   }
   return best;
 }
-
 function projectedChordSamplesStrip(s,{lift=0}={}){
-  const frame=rigidStrapGuideFrame(s);if(!frame)return [];
-  const {A,B,side,projectionAxis}=frame;
-  const allowedZones=allowedZonesForStrap(s);
-  const radialInfo=radialProjectionCenterV344(s,frame);
-  const radialCenter=radialInfo.center;
-  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.025),8,80);
-  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
-  const route=[];
-  let prevL=null,prevR=null,radialFallbacks=0;
-
-  for(let i=0;i<=segments;i++){
-    const t=i/segments;
-    const center=A.clone().lerp(B,t);
-    const nominalLeft=center.clone().addScaledVector(side,-halfW);
-    const nominalRight=center.clone().addScaledVector(side,halfW);
-    let lh=radialSurfaceHitV344(nominalLeft,radialCenter,allowedZones);
-    let rh=radialSurfaceHitV344(nominalRight,radialCenter,allowedZones);
-    if(!lh||!rh){
-      radialFallbacks++;
-      const outward=center.clone().sub(radialCenter).normalize();
-      const sign=outward.dot(projectionAxis)>=0?1:-1;
-      if(!lh)lh=chooseProjectionHitGlobal(nominalLeft,projectionAxis,sign,prevL,allowedZones);
-      if(!rh)rh=chooseProjectionHitGlobal(nominalRight,projectionAxis,sign,prevR,allowedZones);
-    }
-    if(!lh||!rh)continue;
-    const left=lh.point.clone().addScaledVector(lh.normal,lift);
-    const right=rh.point.clone().addScaledVector(rh.normal,lift);
+  const frames=splineFrameSamplesV346(s);if(!frames.length)return [];
+  const allowedZones=allowedZonesForStrap(s),route=[];let prevL=null,prevR=null,misses=0;
+  for(const g of frames){
+    const lh=localZoneSurfaceHitV346(g.nominalLeft,allowedZones,prevL,g.normal);
+    const rh=localZoneSurfaceHitV346(g.nominalRight,allowedZones,prevR,g.normal);
+    if(!lh||!rh){misses++;continue}
+    const left=lh.point.clone().addScaledVector(lh.normal,lift),right=rh.point.clone().addScaledVector(rh.normal,lift);
     prevL=left;prevR=right;
-    let normal=lh.normal.clone().lerp(rh.normal,.5);
-    if(normal.lengthSq()<1e-10)normal=projectionAxis.clone();
-    normal.normalize();
-    route.push({t,center,normal,side:side.clone(),nominalLeft,nominalRight,leftHit:lh.point.clone(),rightHit:rh.point.clone(),leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),stripLeft:left,stripRight:right,radialCenter:radialCenter.clone()});
+    let normal=lh.normal.clone().lerp(rh.normal,.5);if(normal.lengthSq()<1e-10)normal=g.normal.clone();normal.normalize();
+    route.push({...g,leftHit:lh.point.clone(),rightHit:rh.point.clone(),leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),stripLeft:left,stripRight:right});
   }
-  s.routingDebug={mode:'radial',zones:[...allowedZones],radialCenter:radialCenter.clone(),
-    radialCenterValid:!!radialInfo.valid,radialThickness:radialInfo.thickness||0,
-    radialSurfaceNear:radialInfo.surfaceNear?.clone?.()||null,
-    radialSurfaceFar:radialInfo.surfaceFar?.clone?.()||null,
-    radialFlip:!!s.radialFlip,radialFallbacks,
-    frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}};
-  return route;
+  s.routingDebug={mode:'spline-nearest',zones:[...allowedZones],misses};return route;
+}
+function buildStripMethodRoute(s,samples,lift){
+  if(!samples?.length)return [];
+  const out=samples.map(g=>({...g,stripLeft:g.stripLeft.clone(),stripRight:g.stripRight.clone()}));
+  if(out.length>=3){
+    const blend=(i0,i1,node)=>{const g0=out[i0],g1=out[i1],mid=g1.stripLeft.clone().lerp(g1.stripRight,.5),center=visibleEndpoint(node,mid),n=nodeWorldNormal(node);let side=g0.stripRight.clone().sub(g0.stripLeft);if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();side.normalize();const hw=Math.max(.0003,s.widthMM*.0037*.5),target=center.clone().addScaledVector(n,lift),L=target.clone().addScaledVector(side,-hw),R=target.clone().addScaledVector(side,hw);g0.stripLeft=L;g0.stripRight=R;g1.stripLeft=g1.stripLeft.clone().lerp(L,.18);g1.stripRight=g1.stripRight.clone().lerp(R,.18)};
+    blend(0,1,nodes.get(s.a));blend(out.length-1,out.length-2,nodes.get(s.b));
+  }
+  s.debugTrace={endpoints:[out[0].center.clone(),out[out.length-1].center.clone()],
+    nominalLeft:samples.map(g=>g.nominalLeft.clone()),nominalRight:samples.map(g=>g.nominalRight.clone()),
+    nominalCenters:samples.map(g=>g.center.clone()),routingDebug:s.routingDebug||null,
+    routingGuide:s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null,
+    probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:g.leftHit.clone()})),
+    probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:g.rightHit.clone()})),
+    projectedLeft:samples.map(g=>g.stripLeft.clone()),projectedRight:samples.map(g=>g.stripRight.clone()),
+    finalLeft:out.map(g=>g.stripLeft.clone()),finalRight:out.map(g=>g.stripRight.clone())};
+  return out;
 }
 function projectEdgeCandidateToBody(candidate,preferredNormal){
   // Compatibility for the conservative smoothing pass only.
@@ -456,13 +370,13 @@ function methodRouteToControls(s,route,maxControls){
   keep.push(route[route.length-1]);return keep;
 }
 const STRAP_DEBUG_STEPS=[
-  ['Direkte Verbindung','Direkte Verbindung zwischen den sichtbaren Anschlussstellen der Ringe.'],
-  ['Starre Hilfslinien','Weiße direkte A→B-Linie plus zwei echte parallele Außenlinien. Der optionale dritte Körperpunkt bestimmt nur die Ebene dieses Linienpaares; ohne ihn wird die Ebene einmal aus den Ringlagen bestimmt.'],
-  ['Radiale Projektion','Weißer Punkt = lokales Zentrum innerhalb des Körpers. Von dort laufen die Strahlen nach außen; pro Strahl zählt ausschließlich der erste Treffer in einer erlaubten Körperzone.'],
-  ['Projizierte Punkte','Unabhängig berechnete Körperkontaktpunkte der linken und rechten Außenkante.'],
-  ['Rohe Außenkanten','Projizierte Punkte direkt miteinander verbunden – vor der leichten Glättung.'],
-  ['Finale Außenkanten','Tatsächlich für den Riemen verwendete linke und rechte Außenkante.'],
-  ['Triangulation','Dreiecksnetz zwischen den beiden finalen Außenkanten.']
+  ['Ringausrichtung','Start und Ende sowie die aus den Ringen abgeleiteten Start-/Endrichtungen.'],
+  ['Spline + 2 Offsets','Weiße Leit-Spline sowie rote und blaue versetzte Kopie. Der optionale dritte Punkt formt direkt diese Spline.'],
+  ['Surface-Suche','Kurze Suchwege von den Offset-Splines zur nächsten erlaubten Körperoberfläche.'],
+  ['Projizierte Punkte','Gefundene Körperkontaktpunkte beider Außenkanten.'],
+  ['Rohe Außenkanten','Kontaktpunkte direkt verbunden – ohne zusätzlichen Pfadfinder.'],
+  ['Finale Außenkanten','Tatsächlich verwendete linke und rechte Außenkante.'],
+  ['Triangulation','Dreiecksnetz zwischen den finalen Außenkanten.']
 ];
 function clearStrapMethodDebug(s){
   if(!s?.controlGroup)return;
@@ -516,18 +430,8 @@ function updateStrapMethodDebug(s,route){
   }
   if(show(2)){
     if(d.routingGuide)strapDebugPoints(s,[d.routingGuide],0xffd54a,10);
-    if(d.radialCenter){
-      strapDebugPoints(s,[d.radialCenter],d.radialCenterValid?0xffffff:0xff3333,10);
-      if(d.radialSurfaceNear&&d.radialSurfaceFar){
-        strapDebugPoints(s,[d.radialSurfaceNear,d.radialSurfaceFar],0x00ff88,8);
-        strapDebugLine(s,[d.radialSurfaceFar,d.radialSurfaceNear],0x00ff88,.85);
-      }
-      strapDebugLine(s,d.probesLeft.map(q=>[d.radialCenter,q.to]),0xff6b6b,.72,true);
-      strapDebugLine(s,d.probesRight.map(q=>[d.radialCenter,q.to]),0x6ba8ff,.72,true);
-    }else{
-      strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
-      strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
-    }
+    strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
+    strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
   }
   if(show(3)){
     strapDebugPoints(s,d.projectedLeft,0xff6b6b,5);
@@ -595,10 +499,12 @@ function closeStrapDebugMode(s=selected){
 }
 function strapRouteLooksPlausible(route){if(!route||route.length<2)return false;for(let i=1;i<route.length;i++){const a=route[i-1],b=route[i],sa=a.stripRight.clone().sub(a.stripLeft),sb=b.stripRight.clone().sub(b.stripLeft);if(a.stripLeft.distanceTo(b.stripLeft)>.34||a.stripRight.distanceTo(b.stripRight)>.34)return false;if(segmentCutsBody(a.stripLeft,b.stripLeft)||segmentCutsBody(a.stripRight,b.stripRight))return false;if(sa.lengthSq()>1e-10&&sb.lengthSq()>1e-10&&sa.dot(sb)<0)return false}return true}
 function rebuildAutoProjection(s){
-  if(!s)return;s.autoProject=true;s.autoMethod='strip';s.previewMode=false;const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
-  let samples=projectedChordSamplesStrip(s,{lift});if(samples.length<2){updateStrapGeometry(s);return}let route=buildStripMethodRoute(s,samples,lift);
-  if(!strapRouteLooksPlausible(route)){samples=projectedChordSamplesStrip(s,{lift});route=buildStripMethodRoute(s,samples,lift)}
-  const deleted=s.deletedStripTs||[];if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));s.methodRoute=route;s.controls=[];s.surfaceLevel=0;updateStrapGeometry(s);updateStrapMethodDebug(s,route);
+  if(!s)return;s.autoProject=true;s.autoMethod='spline-nearest';s.previewMode=false;
+  const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
+  const samples=projectedChordSamplesStrip(s,{lift});if(samples.length<2){updateStrapGeometry(s);return}
+  let route=buildStripMethodRoute(s,samples,lift);
+  const deleted=s.deletedStripTs||[];if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
+  s.methodRoute=route;s.controls=[];s.surfaceLevel=0;updateStrapGeometry(s);updateStrapMethodDebug(s,route);
 }
 function projectChordPointToBody(s,t,lift=0){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
