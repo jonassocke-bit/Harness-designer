@@ -1,10 +1,10 @@
 // ============================================================================
-// V3.3.2b DUPLICATE FIX
+// V3.3.3 DIRECT + GUIDED
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.3.2b DUPLICATE FIX',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.3.3 DIRECT + GUIDED',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
     build:{title:'1 · Build / Start',instruction:'Unten muss V3.3.2 · Projection Continuity stehen.',golden:'pass'},

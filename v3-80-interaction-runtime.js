@@ -125,8 +125,11 @@ function interactiveHit(x,y){
     if(nh.distance<=bodyDistance+.075)return {kind:'node',id:nh.object.userData.id};
   }
 
-  // Strap ray hits use the same restored touch ray. No visibility helper is
-  // called between this point and the strap intersection.
+  setPointer(x,y);
+  const guideMeshes=[...straps.values()].map(s=>s.guideHandle).filter(Boolean);
+  const ghits=raycaster.intersectObjects(guideMeshes,false);
+  if(ghits.length)return {kind:'strapGuide',id:ghits[0].object.userData.id};
+
   setPointer(x,y);
   const meshes=[...straps.values()].map(s=>s.mesh);
   const shits=raycaster.intersectObjects(meshes,false);
@@ -332,6 +335,8 @@ canvas.addEventListener('pointerdown',e=>{
     const n=nodes.get(hit.id);selectObject(n);
   }else if(hit?.kind==='strap'){
     selectObject(straps.get(hit.id));
+  }else if(hit?.kind==='strapGuide'){
+    const s=straps.get(hit.id);selectObject(s);single.guideDrag=true;
   }
 });
 canvas.addEventListener('pointermove',e=>{
@@ -354,6 +359,15 @@ canvas.addEventListener('pointermove',e=>{
     single.lx=e.clientX;single.ly=e.clientY;
     return;
   }
+  if(single.guideDrag&&single.hit?.kind==='strapGuide'){
+    const s=straps.get(single.hit.id);
+    if(s){
+      const hit=bodyHit(e.clientX,e.clientY);
+      const p=hit?.point||screenPlanePoint(e.clientX,e.clientY,strapGuideWorld(s));
+      if(p){s.guidePoint=p.toArray();s.guideActive=true;s.routeMode='guided';rebuildAutoProjection(s);updateControlHandles(s)}
+    }
+    single.lx=e.clientX;single.ly=e.clientY;return;
+  }
   if(single.hit?.kind==='node'){
     const activeId=single.activeNodeId||single.hit.id;
     const n=nodes.get(activeId);
@@ -371,6 +385,9 @@ canvas.addEventListener('pointerup',e=>{
   if(!single){return}
   const was=single;single=null;setGenericMergeHoverWarning(false);
 
+  if(was.guideDrag&&was.hit?.kind==='strapGuide'){
+    const s=straps.get(was.hit.id);if(s){rebuildAutoProjection(s);updateControlHandles(s);showSelection();commitHistory()}return;
+  }
   if(was.waypointPlacement){
     const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
     // A drag was camera navigation. Stay in placement mode and wait for a tap.

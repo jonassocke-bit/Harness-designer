@@ -1,5 +1,15 @@
 # Patchnotes
 
+## V3.3.3 – Direct + Guided
+- Direct bleibt Standard.
+- Ausgewählter Riemen zeigt einen weißen Mittelpunkt-Griff.
+- Erst Ziehen dieses Griffs konvertiert genau diesen Riemen zu Guided.
+- Griff snappt auf die Körperoberfläche und wird cyan.
+- Guided verwendet A→M→B als explizite Routenvorgabe.
+- M bestimmt zugleich die Riemenausrichtung relativ zur Direktverbindung A→B.
+- Keine automatische Entscheidung „Schulter oder Seite“ und keine automatische kürzeste Route.
+- Bestehende App-Module bleiben erhalten.
+
 ## V3.3.2b – Duplicate Function Fix
 - Konkreter Runtime-Fehler gefunden: `projectedChordSamplesStrip()` war zweimal vorhanden.
 - Die spätere alte V3.3.1-Surface-Walker-Version überschieb die neue Projection-Continuity-Version.

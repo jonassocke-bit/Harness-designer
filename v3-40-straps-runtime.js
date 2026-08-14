@@ -30,6 +30,10 @@ function makeStrap(data={}){
     deletedStripTs:historyClone(data.deletedStripTs||[]),
     methodRoute:null,
     previewMode:false,
+    routeMode:data.routeMode||'direct',
+    guidePoint:data.guidePoint?historyClone(data.guidePoint):null,
+    guideActive:!!data.guideActive,
+    guideHandle:null,
     group:new THREE.Group(),mesh:null,geometry:initStrapGeometry(),
     controlGroup:new THREE.Group()
   };
@@ -281,9 +285,17 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
 function updateAttachedStraps(nodeId){
   for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){s.previewMode=true;updateStrapGeometry(s)}
 }
+function strapGuideWorld(s){
+  if(s.guidePoint)return new THREE.Vector3().fromArray(s.guidePoint);
+  const f=strapFrame(s);return f.A.clone().lerp(f.B,.5).addScaledVector(f.normal,.045);
+}
 function updateControlHandles(s){
-  // V1.1: generated curve points are internal only.
-  s.controlGroup.clear();
+  s.controlGroup.clear();s.guideHandle=null;
+  if(selected?.id!==s.id)return;
+  const geo=new THREE.SphereGeometry(.027,14,10);
+  const mat=new THREE.MeshBasicMaterial({color:s.guideActive?0x00d8ff:0xffffff,depthTest:false,transparent:true,opacity:.92});
+  const h=new THREE.Mesh(geo,mat);h.position.copy(strapGuideWorld(s));h.renderOrder=80;
+  h.userData={kind:'strapGuide',id:s.id};s.controlGroup.add(h);s.guideHandle=h;
 }
 function rebuildWrapsForNode(n){
   n.wrapGroup.clear();

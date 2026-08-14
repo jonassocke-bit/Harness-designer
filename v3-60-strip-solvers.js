@@ -217,13 +217,20 @@ function lockedNominalFrames(s,count){
   const A=visibleEndpoint(a,B0),B=visibleEndpoint(b,A0);
   let tangent=B.clone().sub(A);if(tangent.lengthSq()<1e-10)tangent=strapFrame(s).tangent.clone();tangent.normalize();
   const halfW=Math.max(.0003,s.widthMM*.0037*.5),frames=[];let prevSide=null;
+  let guidedSide=null;
+  if(s.guideActive&&s.guidePoint){
+    const M=A.clone().lerp(B,.5),G=new THREE.Vector3().fromArray(s.guidePoint);
+    let guideDir=G.clone().sub(M);guideDir.addScaledVector(tangent,-guideDir.dot(tangent));
+    if(guideDir.lengthSq()>1e-10){guideDir.normalize();guidedSide=new THREE.Vector3().crossVectors(guideDir,tangent).normalize()}
+  }
   for(let i=0;i<=count;i++){
-    const t=i/count,center=A.clone().lerp(B,t);
+    const t=i/count;
+    const center=(s.guideActive&&s.guidePoint)?new THREE.QuadraticBezierCurve3(A,new THREE.Vector3().fromArray(s.guidePoint),B).getPoint(t):A.clone().lerp(B,t);
     let normal=nodeWorldNormal(a).clone().lerp(nodeWorldNormal(b),t);
     normal.addScaledVector(tangent,-normal.dot(tangent));
     if(normal.lengthSq()<1e-10)normal=frames.at(-1)?.normal.clone()||strapFrame(s).normal.clone();
     normal.normalize();
-    let side=new THREE.Vector3().crossVectors(normal,tangent);
+    let side=guidedSide?guidedSide.clone():new THREE.Vector3().crossVectors(normal,tangent);
     if(side.lengthSq()<1e-10)side=prevSide?.clone()||strapFrame(s).side.clone();
     side.normalize();
     if(prevSide&&side.dot(prevSide)<0)side.negate(); // never swap L/R
