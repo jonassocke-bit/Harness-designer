@@ -63,5 +63,5 @@ Edge-first strap solver + visual step debugger. V3.2.2 topology remains the refe
 Continuity-aware Surface-Walker, live/mirrored width, endpoint blending, tester final-page fix.
 
 
-## V3.3.2
-Locked L/R frame plus projection-direction continuity; recursive surface walker removed.
+## V3.4.0
+Rebuilt strap construction from V3.3.1: 2-tap Direct or optional 3-tap Guided, rigid parallel nominal edges, global ± projection.

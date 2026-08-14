@@ -125,11 +125,8 @@ function interactiveHit(x,y){
     if(nh.distance<=bodyDistance+.075)return {kind:'node',id:nh.object.userData.id};
   }
 
-  setPointer(x,y);
-  const guideMeshes=[...straps.values()].map(s=>s.guideHandle).filter(Boolean);
-  const ghits=raycaster.intersectObjects(guideMeshes,false);
-  if(ghits.length)return {kind:'strapGuide',id:ghits[0].object.userData.id};
-
+  // Strap ray hits use the same restored touch ray. No visibility helper is
+  // called between this point and the strap intersection.
   setPointer(x,y);
   const meshes=[...straps.values()].map(s=>s.mesh);
   const shits=raycaster.intersectObjects(meshes,false);
@@ -335,8 +332,6 @@ canvas.addEventListener('pointerdown',e=>{
     const n=nodes.get(hit.id);selectObject(n);
   }else if(hit?.kind==='strap'){
     selectObject(straps.get(hit.id));
-  }else if(hit?.kind==='strapGuide'){
-    const s=straps.get(hit.id);selectObject(s);single.guideDrag=true;
   }
 });
 canvas.addEventListener('pointermove',e=>{
@@ -359,15 +354,6 @@ canvas.addEventListener('pointermove',e=>{
     single.lx=e.clientX;single.ly=e.clientY;
     return;
   }
-  if(single.guideDrag&&single.hit?.kind==='strapGuide'){
-    const s=straps.get(single.hit.id);
-    if(s){
-      const hit=bodyHit(e.clientX,e.clientY);
-      const p=hit?.point||screenPlanePoint(e.clientX,e.clientY,strapGuideWorld(s));
-      if(p){s.guidePoint=p.toArray();s.guideActive=true;s.routeMode='guided';rebuildAutoProjection(s);updateControlHandles(s)}
-    }
-    single.lx=e.clientX;single.ly=e.clientY;return;
-  }
   if(single.hit?.kind==='node'){
     const activeId=single.activeNodeId||single.hit.id;
     const n=nodes.get(activeId);
@@ -385,9 +371,6 @@ canvas.addEventListener('pointerup',e=>{
   if(!single){return}
   const was=single;single=null;setGenericMergeHoverWarning(false);
 
-  if(was.guideDrag&&was.hit?.kind==='strapGuide'){
-    const s=straps.get(was.hit.id);if(s){rebuildAutoProjection(s);updateControlHandles(s);showSelection();commitHistory()}return;
-  }
   if(was.waypointPlacement){
     const s=waypointPlacementStrapId?straps.get(waypointPlacementStrapId):null;
     // A drag was camera navigation. Stay in placement mode and wait for a tap.
@@ -460,14 +443,24 @@ canvas.addEventListener('pointerup',e=>{
 
     selectObject(n);
     if(tool==='connect'){
-      if(!connectStart){connectStart=n.id;refreshMaterials();refreshConnectHints();showToast(`${n.id} gewählt`)}
+      if(!connectStart){
+        connectStart=n.id;connectGuidePoint=null;
+        refreshMaterials();refreshConnectHints();
+        showToast(`${n.id} gewählt · Zielring antippen oder zuerst Körperpunkt wählen`);
+      }
       else if(connectStart!==n.id){
-        const a=nodes.get(connectStart);let s=makeStrap({a:a.id,b:n.id});
+        const a=nodes.get(connectStart);
+        const guide=connectGuidePoint?connectGuidePoint.toArray():null;
+        let s=makeStrap({a:a.id,b:n.id,routingGuide:guide});
         if(mirrorMode){
           const ma=mirrorNode(a),mb=mirrorNode(n);
-          if(ma.id!==a.id||mb.id!==n.id){const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack});s.mirrorId=ms.id;ms.mirrorId=s.id;rememberFormerPartners(s,ms)}
+          if(ma.id!==a.id||mb.id!==n.id){
+            const mirroredGuide=guide?[-guide[0],guide[1],guide[2]]:null;
+            const ms=makeStrap({a:ma.id,b:mb.id,widthMM:s.widthMM,slack:s.slack,routingGuide:mirroredGuide});
+            s.mirrorId=ms.id;ms.mirrorId=s.id;rememberFormerPartners(s,ms)
+          }
         }
-        connectStart=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');
+        connectStart=null;connectGuidePoint=null;tool='ring';connectToggle.classList.remove('active');connectToggle.setAttribute('aria-pressed','false');
         dynReconcileSymmetry({syncProps:true});
         selectObject(s);rebuildAllWraps();refreshAutomaticCrossings();commitHistory();
       }
@@ -476,6 +469,17 @@ canvas.addEventListener('pointerup',e=>{
   }
   if(hit?.kind==='strap'){selectObject(straps.get(hit.id));return}
   if(hit?.kind==='panel'){selectObject(panels.get(hit.id));return}
+
+  // Optional 3rd construction tap: body point between start ring and target ring.
+  if(tool==='connect'&&connectStart){
+    const bh=bodyHit(e.clientX,e.clientY);
+    if(bh){
+      connectGuidePoint=bh.point.clone();
+      showToast('Führungspunkt gesetzt · jetzt Zielring antippen');
+      return;
+    }
+  }
+
   if(tool!=='connect'&&tool!=='panel'&&mode==='build'){
     const bh=bodyHit(e.clientX,e.clientY);if(!bh)return;
     const p=snapAxis(bh.point.clone());

@@ -1,55 +1,21 @@
 # Patchnotes
 
-## V3.3.4 – Rigid Guide Frame
-- A→M→B-Ausgangskurve wieder entfernt.
-- Nominelle Mittellinie ist immer die direkte Gerade A→B.
-- Linke/rechte Hilfslinie verwenden exakt einen einmal bestimmten Breitenvektor.
-- Direct bestimmt diesen Vektor einmal aus den Ring-/Oberflächennormalen.
-- Guided benutzt den Orientierungspunkt nur zum Drehen dieser Ebene.
-- Körpernormalen entlang des Riemens dürfen die nominellen Hilfslinien nicht mehr verdrehen.
-- Debug Schritt 2 zeigt zusätzlich die weiße Direktmittellinie.
-- Dieser Patch testet bewusst zuerst nur die Ausgangsgeometrie; die Surface-Projektion bleibt für den nächsten Schritt sichtbar, aber unverändert.
-
-## V3.3.3 – Direct + Guided
-- Direct bleibt Standard.
-- Ausgewählter Riemen zeigt einen weißen Mittelpunkt-Griff.
-- Erst Ziehen dieses Griffs konvertiert genau diesen Riemen zu Guided.
-- Griff snappt auf die Körperoberfläche und wird cyan.
-- Guided verwendet A→M→B als explizite Routenvorgabe.
-- M bestimmt zugleich die Riemenausrichtung relativ zur Direktverbindung A→B.
-- Keine automatische Entscheidung „Schulter oder Seite“ und keine automatische kürzeste Route.
-- Bestehende App-Module bleiben erhalten.
-
-## V3.3.2b – Duplicate Function Fix
-- Konkreter Runtime-Fehler gefunden: `projectedChordSamplesStrip()` war zweimal vorhanden.
-- Die spätere alte V3.3.1-Surface-Walker-Version überschieb die neue Projection-Continuity-Version.
-- Diese alte Funktion rief `edgeFirstNominalSample()` auf, die in V3.3.2 absichtlich entfernt wurde.
-- Folge: Riemen-Rebuild brach direkt nach der billigen Direktvorschau ab; `methodRoute` und `debugTrace` wurden nie erzeugt.
-- Alte Doppeldefinition vollständig entfernt.
-- Es existiert jetzt genau eine `projectedChordSamplesStrip()`-Definition.
-- Keine Referenz auf `edgeFirstNominalSample()` mehr.
-- Projection-Continuity-Logik selbst unverändert.
-
-## V3.3.2a – Projection Hotfix
-- Reiner Runtime-Hotfix auf V3.3.2.
-- Die Glättungsstufe verwendete weiterhin `projectEdgeCandidateToBody()`, die beim Umbau auf Projection Continuity versehentlich entfernt worden war.
-- Dadurch brach `rebuildAutoProjection()` beim Riemenbau ab; deshalb wurden weder Riemen noch Debug-Trace fertig erzeugt.
-- Die Hilfsfunktion ist wieder vorhanden.
-- Keine Schwellenwerte, L/R-Frame-Regeln, Winkelkontinuität, Triangulation oder Debuglogik geändert.
-
-## V3.3.2 – Projection Continuity
-- Surface-Walker aus V3.3.1 entfernt; keine rekursive Pfadsuche mehr.
-- L/R-Außenkanten besitzen eine feste Identität und dürfen nicht mehr die Seiten tauschen.
-- Die nominelle Seitenrichtung darf sich kontinuierlich drehen; abrupte Frame-Flips werden verhindert.
-- Surface-Hits werden primär nach Kontinuität des Projektionsvektors bewertet, Distanz ist nur sekundär.
-- Referenz ist der gleitende Mittelwert der letzten bis zu vier Projektionsvektoren.
-- Debug Schritt 2 zeigt den L/R Frame Lock.
-- Debug Schritt 3 zeigt Winkelabweichungen: normal, >25° gelb, >60° rot; stark abweichende verworfene Kandidaten schwach rot.
-- Kein rekursiver Retry im Problemfall; der Kopf-Stresstest sollte dadurch erheblich günstiger werden.
-- Live-/Mirror-Breite, Triangulation, Screenshot-Reihe und Abschlussseite bleiben unverändert.
+## V3.4.0 – Strap Routing Rebuild
+- Bewusster Rücksprung auf V3.3.1 als funktionale Riemenbasis.
+- V3.3.2 bis V3.3.4 Solver-Experimente nicht weitergepatcht.
+- Direct: Verbinden → Ring A → Ring B.
+- Guided: Verbinden → Ring A → Körperpunkt → Ring B.
+- Der optionale Körperpunkt erzeugt keinen Ring und ist keine zusätzliche Kurvenstütze.
+- Er bestimmt ausschließlich einmal die Orientierungsebene der beiden nominellen Außenlinien.
+- Nominelle Mittellinie bleibt immer die direkte Gerade A→B.
+- Beide nominellen Außenlinien verwenden einen konstanten Breitenvektor und sind mathematisch parallel.
+- Surface-Projektion wird als zwei komplette globale Hypothesen (+ / −) gelöst.
+- Linke und rechte Außenkante eines Riemens können dadurch niemals unterschiedliche Projektionsseiten wählen.
+- Route-Scoring: harte Gültigkeits-/Breitenkohärenz zuerst, danach Gesamtpfadlänge.
+- Mirror-Guided spiegelt auch den optionalen Körperpunkt.
+- Guided-Routing wird in Undo/Redo gespeichert.
 
 ## V3.3.1 – Strap Stabilization
-
 - Surface-Walker bewertet jeden neuen Außenkantenpunkt gegen vorherigen Punkt, Normale und erwarteten Fortschritt.
 - Segmente durch das Mannequin werden stark bestraft; bei Sprüngen wird die gegenüberliegende Trefferfamilie geprüft.
 - Links/rechts dürfen ihre Orientierung nicht spontan vertauschen; problematische Segmente werden lokal weiter unterteilt.

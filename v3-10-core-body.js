@@ -88,7 +88,7 @@ let selectionColorHex=localStorage.getItem('hd:selectionColor')||'#00d8ff';
 let ringDefaults=(()=>{try{return {...{diameterMM:40,thicknessMM:6},...JSON.parse(localStorage.getItem('hd:ringDefaults')||'{}')}}catch{return {diameterMM:40,thicknessMM:6}}})();
 let strapDefaults=(()=>{try{return {...{widthMM:30,slack:8},...JSON.parse(localStorage.getItem('hd:strapDefaults')||'{}')}}catch{return {widthMM:30,slack:8}}})();
 let panelDefaults=(()=>{try{return {...{offsetMM:1},...JSON.parse(localStorage.getItem('hd:panelDefaults')||'{}')}}catch{return {offsetMM:1}}})();
-let selected=null,connectStart=null;
+let selected=null,connectStart=null,connectGuidePoint=null;
 let waypointPlacementStrapId=null;
 let waypointGuideSamples=null;
 let nextNodeId=1,nextStrapId=1,nextPanelId=1;

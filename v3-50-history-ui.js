@@ -59,7 +59,9 @@ function serialize(){
       dynEditStamp:s.dynEditStamp||0,
       previousPartnerId:s.previousPartnerId||null,
       manualUnlinked:!!s.manualUnlinked,
-      autoProject:!!s.autoProject
+      autoProject:!!s.autoProject,
+      routingGuide:s.routingGuide?historyClone(s.routingGuide):null,
+      routingMode:s.routingMode||'direct'
     })),
     panels:[...panels.values()].map(p=>({
       id:p.id,
@@ -81,7 +83,7 @@ function restore(snap){
   try{
     waypointPlacementStrapId=null;
     clearWaypointGuide();
-    connectStart=null;
+    connectStart=null;connectGuidePoint=null;
     single=null;
     gesture=null;
     pendingDrag=null;
@@ -290,14 +292,14 @@ setupParam('globalAnchorSize',globalAnchorSizeSlider,$('globalAnchorSizeTools'),
 function setTool(t){
   if(t==='connect'){
     tool=tool==='connect'?'ring':'connect';
-    connectStart=null;
+    connectStart=null;connectGuidePoint=null;
     panelBuildNodes=[];
   }else if(t==='panel'){
     tool=tool==='panel'?'ring':'panel';
-    connectStart=null;
+    connectStart=null;connectGuidePoint=null;
     panelBuildNodes=[];
   }else{
-    tool='ring';connectStart=null;panelBuildNodes=[];
+    tool='ring';connectStart=null;connectGuidePoint=null;panelBuildNodes=[];
   }
   connectToggle.classList.toggle('active',tool==='connect');
   connectToggle.setAttribute('aria-pressed',String(tool==='connect'));

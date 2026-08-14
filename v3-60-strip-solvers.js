@@ -176,133 +176,162 @@ function simplifyProjectedRoute(samples,maxPoints=9){
 function edgeSurfaceCandidates(candidate,preferredNormal){
   const pref=preferredNormal.clone().normalize(),out=[];
   for(const sign of [1,-1]){
-    const origin=candidate.clone().addScaledVector(pref,sign*1.35);
-    raycaster.set(origin,pref.clone().multiplyScalar(-sign));
-    const hits=raycaster.intersectObjects(bodyMeshes,true);
-    for(const h of hits.slice(0,8))out.push({
-      point:h.point.clone(),normal:worldNormal(h).clone().normalize(),
-      raySign:sign,distance:h.point.distanceTo(candidate)
-    });
-  }
-  out.sort((x,y)=>x.distance-y.distance);return out;
+    const origin=candidate.clone().addScaledVector(pref,sign*1.35),dir=pref.clone().multiplyScalar(-sign);raycaster.set(origin,dir);
+    for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,8)){
+      const n=worldNormal(h).clone().normalize(),align=n.dot(pref),dist=h.point.distanceTo(candidate);
+      out.push({point:h.point.clone(),normal:n,baseScore:dist+(align<-.2?.9:(1-Math.max(0,align))*.08),raySign:sign});
+    }
+  } out.sort((a,b)=>a.baseScore-b.baseScore);return out;
 }
-function projectEdgeCandidateToBody(candidate,preferredNormal){
-  // Compatibility helper still used by the smoothing stage.
-  // It deliberately performs a simple local projection only; continuity
-  // decisions are handled earlier by chooseProjectionHit().
-  const cands=edgeSurfaceCandidates(candidate,preferredNormal);
-  return cands.length?cands[0]:null;
+function segmentCutsBody(a,b){return bodyOccludesWorldPoint(a.clone().lerp(b,.5),.006)}
+function continuityScore(h,ctx,candidate){
+  let score=h.baseScore;if(!ctx)return score;
+  if(ctx.expected)score+=h.point.distanceTo(ctx.expected)*1.6;
+  if(ctx.prevPoint){score+=h.point.distanceTo(ctx.prevPoint)*.45;if(segmentCutsBody(ctx.prevPoint,h.point))score+=4}
+  if(ctx.prevNormal){const d=THREE.MathUtils.clamp(h.normal.dot(ctx.prevNormal),-1,1);score+=(1-d)*.22;if(d<-.1)score+=1.2}
+  return score;
 }
-function projectionVector(candidate,hit){return hit.point.clone().sub(candidate)}
-function projectionAngleDeg(a,b){
-  if(!a||!b||a.lengthSq()<1e-12||b.lengthSq()<1e-12)return 0;
-  return THREE.MathUtils.radToDeg(a.angleTo(b));
-}
-function chooseProjectionHit(candidate,preferredNormal,referenceVector=null){
-  const cands=edgeSurfaceCandidates(candidate,preferredNormal);
-  if(!cands.length)return null;
-  if(!referenceVector)return {...cands[0],angleDeg:0,rejected:[]};
-  let best=null,bestScore=Infinity;const rejected=[];
-  for(const h of cands){
-    const v=projectionVector(candidate,h),angle=projectionAngleDeg(referenceVector,v);
-    const score=angle*.018+h.distance*.20; // direction dominates distance
-    const item={...h,angleDeg:angle};
-    if(score<bestScore){if(best)rejected.push(best);best=item;bestScore=score}else rejected.push(item);
-  }
-  return {...best,rejected};
-}
-function lockedNominalFrames(s,count){
-  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];
+function rigidStrapGuideFrame(s){
+  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return null;
   const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
   const A=visibleEndpoint(a,B0),B=visibleEndpoint(b,A0);
 
   let tangent=B.clone().sub(A);
-  if(tangent.lengthSq()<1e-10)tangent=strapFrame(s).tangent.clone();
+  if(tangent.lengthSq()<1e-10)return null;
   tangent.normalize();
 
   const mid=A.clone().lerp(B,.5);
-  let side=null;
+  let planeNormal=null;
 
-  // Guided point defines ONLY orientation around A→B.
-  if(s.guideActive&&s.guidePoint){
-    let guideDir=new THREE.Vector3().fromArray(s.guidePoint).sub(mid);
-    guideDir.addScaledVector(tangent,-guideDir.dot(tangent));
-    if(guideDir.lengthSq()>1e-10){
-      guideDir.normalize();
-      side=new THREE.Vector3().crossVectors(guideDir,tangent);
-    }
+  // Optional third construction tap: orientation only.
+  if(s.routingGuide){
+    let g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
+    g.addScaledVector(tangent,-g.dot(tangent));
+    if(g.lengthSq()>1e-10)planeNormal=g.normalize();
   }
 
-  // Direct uses endpoint surface orientation ONCE.
-  if(!side||side.lengthSq()<1e-10){
-    let refNormal=nodeWorldNormal(a).clone().add(nodeWorldNormal(b));
-    refNormal.addScaledVector(tangent,-refNormal.dot(tangent));
-    if(refNormal.lengthSq()<1e-10){
-      refNormal=nodeWorldNormal(a).clone();
-      refNormal.addScaledVector(tangent,-refNormal.dot(tangent));
+  // Direct strap: choose orientation ONCE from endpoint normals.
+  if(!planeNormal){
+    planeNormal=nodeWorldNormal(a).clone().add(nodeWorldNormal(b));
+    planeNormal.addScaledVector(tangent,-planeNormal.dot(tangent));
+    if(planeNormal.lengthSq()<1e-10){
+      planeNormal=nodeWorldNormal(a).clone();
+      planeNormal.addScaledVector(tangent,-planeNormal.dot(tangent));
     }
-    if(refNormal.lengthSq()<1e-10)refNormal=strapFrame(s).normal.clone();
-    refNormal.normalize();
-    side=new THREE.Vector3().crossVectors(refNormal,tangent);
+    if(planeNormal.lengthSq()<1e-10){
+      planeNormal=strapFrame(s).normal.clone();
+      planeNormal.addScaledVector(tangent,-planeNormal.dot(tangent));
+    }
+    planeNormal.normalize();
   }
 
+  let side=new THREE.Vector3().crossVectors(planeNormal,tangent);
   if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
   side.normalize();
 
+  // Deterministic L/R sign.
   const fs=strapFrame(s).side;
   if(fs.lengthSq()>1e-10&&side.dot(fs)<0)side.negate();
 
-  const normal=new THREE.Vector3().crossVectors(tangent,side).normalize();
-  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
-  const frames=[];
-
-  for(let i=0;i<=count;i++){
-    const t=i/count;
-    const center=A.clone().lerp(B,t);
-    frames.push({
-      t,center,
-      normal:normal.clone(),
-      side:side.clone(),
-      nominalLeft:center.clone().addScaledVector(side,-halfW),
-      nominalRight:center.clone().addScaledVector(side,halfW)
-    });
-  }
-  return frames;
+  const projectionAxis=new THREE.Vector3().crossVectors(tangent,side).normalize();
+  return {A,B,mid,tangent,side,projectionAxis};
 }
+
+function projectionHits(candidate,axis,sign){
+  const dir=axis.clone().normalize().multiplyScalar(sign);
+  const origin=candidate.clone().addScaledVector(dir,-1.20);
+  raycaster.set(origin,dir);
+  return raycaster.intersectObjects(bodyMeshes,true).slice(0,14).map(h=>({
+    point:h.point.clone(),
+    normal:worldNormal(h).clone().normalize(),
+    distance:h.point.distanceTo(candidate)
+  })).sort((a,b)=>a.distance-b.distance);
+}
+
+function chooseProjectionHitGlobal(candidate,axis,sign,prevPoint=null){
+  const hits=projectionHits(candidate,axis,sign);
+  if(!hits.length)return null;
+  if(!prevPoint)return hits[0];
+
+  let best=null,bestScore=Infinity;
+  for(const h of hits){
+    const score=h.distance*.30+h.point.distanceTo(prevPoint)*.70;
+    if(score<bestScore){bestScore=score;best=h}
+  }
+  return best;
+}
+
 function projectedChordSamplesStrip(s,{lift=0}={}){
-  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return [];
-  const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
-  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.030),7,72);
-  const frames=lockedNominalFrames(s,segments),out=[],recentL=[],recentR=[];
-  const rollingRef=arr=>{
-    if(!arr.length)return null;
-    const v=new THREE.Vector3();for(const x of arr.slice(-4))v.add(x.clone().normalize());
-    return v.lengthSq()>1e-12?v.normalize():arr.at(-1).clone().normalize();
-  };
-  for(const f of frames){
-    const lh=chooseProjectionHit(f.nominalLeft,f.normal,rollingRef(recentL));
-    const rh=chooseProjectionHit(f.nominalRight,f.normal,rollingRef(recentR));
-    const lv=lh?projectionVector(f.nominalLeft,lh):f.normal.clone();
-    const rv=rh?projectionVector(f.nominalRight,rh):f.normal.clone();
-    recentL.push(lv);recentR.push(rv);
-    const left=(lh?.point||f.nominalLeft).clone().addScaledVector(lh?.normal||f.normal,lift);
-    const right=(rh?.point||f.nominalRight).clone().addScaledVector(rh?.normal||f.normal,lift);
-    let n=(lh?.normal||f.normal).clone().lerp(rh?.normal||f.normal,.5);if(n.lengthSq()<1e-10)n=f.normal.clone();n.normalize();
-    out.push({...f,normal:n,leftHit:lh?.point?.clone()||null,rightHit:rh?.point?.clone()||null,
-      leftNormal:(lh?.normal||f.normal).clone(),rightNormal:(rh?.normal||f.normal).clone(),
-      leftProjection:lv.clone(),rightProjection:rv.clone(),leftAngle:lh?.angleDeg||0,rightAngle:rh?.angleDeg||0,
-      leftRejected:(lh?.rejected||[]).map(x=>({point:x.point.clone(),angleDeg:x.angleDeg||0})),
-      rightRejected:(rh?.rejected||[]).map(x=>({point:x.point.clone(),angleDeg:x.angleDeg||0})),
-      stripLeft:left,stripRight:right});
-  }
-  return out;
-}
-function edgeFirstSegmentNeedsRefine(a,b){
-  const ml=a.stripLeft.clone().lerp(b.stripLeft,.5);
-  const mr=a.stripRight.clone().lerp(b.stripRight,.5);
-  return bodyOccludesWorldPoint(ml,.008)||bodyOccludesWorldPoint(mr,.008);
-}
+  const frame=rigidStrapGuideFrame(s);if(!frame)return [];
+  const {A,B,side,projectionAxis}=frame;
+  const segments=THREE.MathUtils.clamp(Math.ceil(A.distanceTo(B)/.025),8,80);
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5);
+  const widthTarget=Math.max(.0006,s.widthMM*.0037);
 
+  // IMPORTANT: solve two WHOLE-STRAP hypotheses.
+  // L and R can never choose opposite projection sides.
+  const solveSign=(sign)=>{
+    const route=[];
+    let prevL=null,prevR=null,totalLength=0,invalid=0,widthPenalty=0;
+
+    for(let i=0;i<=segments;i++){
+      const t=i/segments;
+      const center=A.clone().lerp(B,t);
+      const nominalLeft=center.clone().addScaledVector(side,-halfW);
+      const nominalRight=center.clone().addScaledVector(side, halfW);
+
+      const lh=chooseProjectionHitGlobal(nominalLeft,projectionAxis,sign,prevL);
+      const rh=chooseProjectionHitGlobal(nominalRight,projectionAxis,sign,prevR);
+      if(!lh||!rh){invalid+=10;continue}
+
+      const left=lh.point.clone().addScaledVector(lh.normal,lift);
+      const right=rh.point.clone().addScaledVector(rh.normal,lift);
+
+      if(prevL)totalLength+=prevL.distanceTo(left)+prevR.distanceTo(right);
+      prevL=left;prevR=right;
+
+      const width=left.distanceTo(right);
+      const ratio=width/widthTarget;
+      widthPenalty+=Math.abs(Math.log(Math.max(.05,ratio)));
+      if(ratio<.4||ratio>2.5)invalid+=3;
+
+      let normal=lh.normal.clone().lerp(rh.normal,.5);
+      if(normal.lengthSq()<1e-10)normal=projectionAxis.clone().multiplyScalar(sign);
+      normal.normalize();
+
+      route.push({
+        t,center,
+        normal,side:side.clone(),
+        nominalLeft,nominalRight,
+        leftHit:lh.point.clone(),rightHit:rh.point.clone(),
+        leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),
+        stripLeft:left,stripRight:right,
+        projectionSign:sign
+      });
+    }
+
+    const score=invalid*10000+widthPenalty*25+totalLength;
+    return {route,score,invalid,widthPenalty,totalLength,sign};
+  };
+
+  const plus=solveSign(1),minus=solveSign(-1);
+  const chosen=plus.score<=minus.score?plus:minus;
+
+  s.routingDebug={
+    chosenSign:chosen.sign,
+    plus:{score:plus.score,invalid:plus.invalid,totalLength:plus.totalLength,widthPenalty:plus.widthPenalty},
+    minus:{score:minus.score,invalid:minus.invalid,totalLength:minus.totalLength,widthPenalty:minus.widthPenalty},
+    frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}
+  };
+  return chosen.route;
+}
+function projectEdgeCandidateToBody(candidate,preferredNormal){
+  // Compatibility for the conservative smoothing pass only.
+  // Do not perform a new route decision here.
+  raycaster.set(candidate.clone().addScaledVector(preferredNormal,1.0),preferredNormal.clone().negate().normalize());
+  const h=raycaster.intersectObjects(bodyMeshes,true)[0];
+  return h?{point:h.point.clone(),normal:worldNormal(h).clone().normalize()}:null;
+}
 function buildStripMethodRoute(s,samples,lift){
   if(!samples?.length)return [];
   const rawLeft=samples.map(g=>g.stripLeft.clone());
@@ -349,12 +378,9 @@ function buildStripMethodRoute(s,samples,lift){
     nominalLeft:samples.map(g=>g.nominalLeft.clone()),
     nominalRight:samples.map(g=>g.nominalRight.clone()),
     nominalCenters:samples.map(g=>g.center.clone()),
+    routingDebug:s.routingDebug||null,
     probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
     probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
-    projectionAnglesLeft:samples.map(g=>g.leftAngle||0),
-    projectionAnglesRight:samples.map(g=>g.rightAngle||0),
-    rejectedLeft:samples.map(g=>g.leftRejected||[]),
-    rejectedRight:samples.map(g=>g.rightRejected||[]),
     projectedLeft:rawLeft,
     projectedRight:rawRight,
     finalLeft:finalLeft.map(p=>p.clone()),
@@ -374,8 +400,8 @@ function methodRouteToControls(s,route,maxControls){
 }
 const STRAP_DEBUG_STEPS=[
   ['Direkte Verbindung','Direkte Verbindung zwischen den sichtbaren Anschlussstellen der Ringe.'],
-  ['L/R Frame Lock','Nominelle Außenkanten mit fester Links/Rechts-Identität. Sie dürfen sich kontinuierlich drehen, aber niemals die Seiten tauschen.'],
-  ['Projektionsrichtungen','Projektionsvektoren zur Oberfläche. Gelb = >25° Abweichung, Rot = >60°. Schwach rot = stark abweichender verworfener Kandidat.'],
+  ['Starre Hilfslinien','Weiße direkte A→B-Linie plus zwei echte parallele Außenlinien. Der optionale dritte Körperpunkt bestimmt nur die Ebene dieses Linienpaares; ohne ihn wird die Ebene einmal aus den Ringlagen bestimmt.'],
+  ['Globale ± Projektion','Beide Außenkanten werden gemeinsam als komplette + oder komplette − Variante projiziert. Gemischte Richtungen sind ausgeschlossen; gewählt wird nach Gültigkeit/Breitenkohärenz und danach Pfadlänge.'],
   ['Projizierte Punkte','Unabhängig berechnete Körperkontaktpunkte der linken und rechten Außenkante.'],
   ['Rohe Außenkanten','Projizierte Punkte direkt miteinander verbunden – vor der leichten Glättung.'],
   ['Finale Außenkanten','Tatsächlich für den Riemen verwendete linke und rechte Außenkante.'],
@@ -431,16 +457,8 @@ function updateStrapMethodDebug(s,route){
     strapDebugLine(s,d.nominalRight,0x6ba8ff,.98);
   }
   if(show(2)){
-    const draw=(probes,angles,color)=>{
-      const good=[],warn=[],bad=[];
-      probes.forEach((q,i)=>{const a=angles?.[i]||0;(a>60?bad:a>25?warn:good).push([q.from,q.to])});
-      strapDebugLine(s,good,color,.76,true);strapDebugLine(s,warn,0xffd54a,.95,true);strapDebugLine(s,bad,0xff334f,1,true);
-    };
-    draw(d.probesLeft,d.projectionAnglesLeft,0xff6b6b);draw(d.probesRight,d.projectionAnglesRight,0x6ba8ff);
-    const rej=[];
-    for(const [i,list] of (d.rejectedLeft||[]).entries())for(const h of list)if((h.angleDeg||0)>60)rej.push([d.nominalLeft[i],h.point]);
-    for(const [i,list] of (d.rejectedRight||[]).entries())for(const h of list)if((h.angleDeg||0)>60)rej.push([d.nominalRight[i],h.point]);
-    strapDebugLine(s,rej,0xff0033,.28,true);
+    strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
+    strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
   }
   if(show(3)){
     strapDebugPoints(s,d.projectedLeft,0xff6b6b,5);
@@ -504,26 +522,12 @@ function closeStrapDebugMode(s=selected){
   document.getElementById('strapDebugPanel')?.classList.add('hidden');
   strapDebugBtn.classList.remove('active');
 }
-function strapRouteLooksPlausible(route){
-  if(!route||route.length<2)return false;
-  for(let i=1;i<route.length;i++){
-    const a=route[i-1],b=route[i];
-    const sa=a.stripRight.clone().sub(a.stripLeft),sb=b.stripRight.clone().sub(b.stripLeft);
-    if(sa.lengthSq()>1e-10&&sb.lengthSq()>1e-10&&sa.dot(sb)<0)return false;
-  }
-  return true;
-}
+function strapRouteLooksPlausible(route){if(!route||route.length<2)return false;for(let i=1;i<route.length;i++){const a=route[i-1],b=route[i],sa=a.stripRight.clone().sub(a.stripLeft),sb=b.stripRight.clone().sub(b.stripLeft);if(a.stripLeft.distanceTo(b.stripLeft)>.34||a.stripRight.distanceTo(b.stripRight)>.34)return false;if(segmentCutsBody(a.stripLeft,b.stripLeft)||segmentCutsBody(a.stripRight,b.stripRight))return false;if(sa.lengthSq()>1e-10&&sb.lengthSq()>1e-10&&sa.dot(sb)<0)return false}return true}
 function rebuildAutoProjection(s){
-  if(!s)return;
-  s.autoProject=true;s.autoMethod='strip';s.previewMode=false;
-  const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
-  const samples=projectedChordSamplesStrip(s,{lift});
-  if(samples.length<2){updateStrapGeometry(s);return}
-  let route=buildStripMethodRoute(s,samples,lift);
-  const deleted=s.deletedStripTs||[];
-  if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
-  s.methodRoute=route;s.controls=[];s.surfaceLevel=0;
-  updateStrapGeometry(s);updateStrapMethodDebug(s,route);
+  if(!s)return;s.autoProject=true;s.autoMethod='strip';s.previewMode=false;const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
+  let samples=projectedChordSamplesStrip(s,{lift});if(samples.length<2){updateStrapGeometry(s);return}let route=buildStripMethodRoute(s,samples,lift);
+  if(!strapRouteLooksPlausible(route)){samples=projectedChordSamplesStrip(s,{lift});route=buildStripMethodRoute(s,samples,lift)}
+  const deleted=s.deletedStripTs||[];if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));s.methodRoute=route;s.controls=[];s.surfaceLevel=0;updateStrapGeometry(s);updateStrapMethodDebug(s,route);
 }
 function projectChordPointToBody(s,t,lift=0){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);

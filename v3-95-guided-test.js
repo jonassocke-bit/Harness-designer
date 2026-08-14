@@ -1,25 +1,25 @@
 // ============================================================================
-// V3.3.4 RIGID GUIDE FRAME
+// V3.4.0 STRAP ROUTING REBUILD
 // Test-only layer. Golden Harness Designer logic above remains untouched.
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.3.4 RIGID GUIDE FRAME',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.4.0 STRAP ROUTING REBUILD',base:'V3.1.0 MODULAR GOLDEN'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.3.4 · Rigid Guide Frame stehen.',golden:'pass'},
-    direct:{title:'2 · Direct Hilfslinien',instruction:'Debug Schritt 2: weiße Mittellinie und rote/blaue Hilfslinien müssen jeweils gerade sein. Rot/Blau über die ganze Strecke parallel.',golden:'known'},
-    twist:{title:'3 · Keine Drehung',instruction:'Brust/Seite oder Schulter/Torso testen. Die Körperform darf die nominellen Hilfslinien nicht verdrehen.',golden:'known'},
-    guided:{title:'4 · Guided Orientierung',instruction:'Orientierungspunkt ziehen. Weiße A→B-Linie bleibt gerade; nur das gesamte rote/blaue Linienpaar dreht sich als starre Ebene.',golden:'known'},
-    width:{title:'5 · Breite',instruction:'Breite ändern: Rot/Blau dürfen sich nur symmetrisch von Weiß entfernen/annähern, nicht drehen.',golden:'known'},
-    head:{title:'6 · Kopf-Stress nur Schritt 2',instruction:'Kopfproblemfall nachbauen. In Debug Schritt 2 müssen Weiß/Rot/Blau sauber gerade und parallel bleiben.',golden:'known'},
-    proj:{title:'7 · Projektion beobachten',instruction:'Danach Schritt 3 screenshotten. Finalen Riemen noch nicht bewerten; wir wollen nur sehen, was von starren Hilfslinien aus passiert.',golden:'known'},
-    mirror:{title:'8 · Mirror Regression',instruction:'Spiegelriemen kurz prüfen.',golden:'pass'},
-    debug:{title:'9 · Debug schließen',instruction:'Debug schließen: normale Darstellung wiederhergestellt.',golden:'pass'},
-    ui:{title:'10 · UI',instruction:'Orientierungspunkt auswählbar und ziehbar, ohne Kamerasteuerung zu blockieren.',golden:'known'},
-    perf:{title:'11 · Performance',instruction:'Orientierungspunkt/Breite bewegen und Reaktionszeit grob notieren.',golden:'known'},
-    shots:{title:'12 · Screenshots',instruction:'Screenshot-Reihe und Scrollen weiter funktionsfähig.',golden:'pass'},
-    finalPage:{title:'13 · Abschlussseite',instruction:'Nach Beantwortung muss Abschluss-/Exportseite erscheinen.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.0 · Strap Routing Rebuild stehen.',golden:'pass'},
+    direct:{title:'2 · Direct bauen',instruction:'Verbinden → Ring A → Ring B. Kein Körperpunkt. Riemen muss direkt gebaut werden.',golden:'known'},
+    guided:{title:'3 · Guided bauen',instruction:'Verbinden → Ring A → Körperpunkt → Ring B. Der Körperpunkt darf keinen Ring erzeugen; er ist nur die Orientierungsinformation.',golden:'known'},
+    rigid:{title:'4 · Starre Hilfslinien',instruction:'Debug Schritt 2: Weiß/Rot/Blau müssen gerade sein; Rot/Blau über die gesamte Strecke parallel. Körperform darf sie nicht drehen.',golden:'known'},
+    guidedOrient:{title:'5 · Guided Orientierung',instruction:'Zwei ähnliche Guided-Riemen mit unterschiedlich gesetztem Körperpunkt bauen. Nur die Ebene der starren Hilfslinien soll sich ändern.',golden:'known'},
+    globalProjection:{title:'6 · Globale ± Projektion',instruction:'Kopf-/Torso-Stress: beide Außenkanten müssen dieselbe globale Projektionsseite benutzen. Eine Seite vorne und die andere hinten darf nicht mehr vorkommen.',golden:'known'},
+    normal:{title:'7 · Praxisriemen',instruction:'Brust/Schulter/Torso normal testen und mit V3.3.0/3.3.1 vergleichen.',golden:'known'},
+    debug:{title:'8 · Debug 1–7',instruction:'Alle Schritte ansehen. Schritt 2 muss exakt die tatsächlich verwendeten starren Ausgangslinien zeigen.',golden:'known'},
+    width:{title:'9 · Breite',instruction:'Live-Breite aus V3.3.1 regressionsprüfen.',golden:'pass'},
+    mirror:{title:'10 · Mirror',instruction:'Direct und Guided jeweils gespiegelt testen; Guided-Punkt muss auf die andere Körperseite gespiegelt werden.',golden:'known'},
+    ends:{title:'11 · Endpunkte',instruction:'Ringanschlüsse/Körperabstand beobachten.',golden:'known'},
+    perf:{title:'12 · Performance',instruction:'Mehrere Direct/Guided bauen und Reaktionszeit grob notieren.',golden:'known'},
+    finalPage:{title:'13 · Abschlussseite',instruction:'Danach Abschluss-/Exportseite.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

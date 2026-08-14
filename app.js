@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 window.THREE=THREE;
 window.GLTFLoader=GLTFLoader;
 
-const BUILD='V3.3.4 RIGID GUIDE FRAME';
+const BUILD='V3.4.0 STRAP ROUTING REBUILD';
 const FILES=[
   "v3-00-registry.js",
   "v3-01-module-map.js",
@@ -39,7 +39,7 @@ function bootError(message,detail=''){
 async function loadAll(){
   const sources=[];
   for(const file of FILES){
-    const url='./'+file+'?build=334';
+    const url='./'+file+'?build=340';
     let response;
     try{response=await fetch(url,{cache:'no-store'})}
     catch(e){throw new Error('Modul konnte nicht geladen werden: '+file+'\n'+e)}
