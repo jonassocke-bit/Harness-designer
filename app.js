@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 window.THREE=THREE;
 window.GLTFLoader=GLTFLoader;
 
-const BUILD='V3.4.0 STRAP ROUTING REBUILD';
+const BUILD='V3.4.1 GUIDED SIDE LOCK';
 const FILES=[
   "v3-00-registry.js",
   "v3-01-module-map.js",

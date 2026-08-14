@@ -4,7 +4,7 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.4.0 STRAP ROUTING REBUILD',base:'V3.1.0 MODULAR GOLDEN'};
+  const RELEASE={build:'V3.4.1 GUIDED SIDE LOCK',base:'V3.4.0 STRAP ROUTING REBUILD'};
 
   const TESTS={
     build:{title:'1 · Build',instruction:'Unten muss V3.4.0 · Strap Routing Rebuild stehen.',golden:'pass'},
@@ -181,7 +181,7 @@
   function mount(){
     const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
     const g=document.createElement('div');g.id='v3Guide';
-    g.innerHTML='<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><input class="note" placeholder="Kommentar / Fehlerbeschreibung…"><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>';
+    g.innerHTML='<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><textarea class="note" rows="4" placeholder="Kommentar / Fehlerbeschreibung…"></textarea><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>';
     const summary=document.createElement('div');summary.id='v3GuideSummary';
     document.body.append(btn,g,summary);
     const $=q=>g.querySelector(q);

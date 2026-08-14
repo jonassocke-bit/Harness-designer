@@ -315,10 +315,19 @@ function projectedChordSamplesStrip(s,{lift=0}={}){
   };
 
   const plus=solveSign(1),minus=solveSign(-1);
-  const chosen=plus.score<=minus.score?plus:minus;
+  // Guided: the construction point chooses the projection hemisphere once.
+  // It is NOT a waypoint and is never part of the solved route.
+  let guidedSign=null;
+  if(s.routingGuide){
+    const gp=new THREE.Vector3().fromArray(s.routingGuide);
+    const rel=gp.clone().sub(frame.mid);
+    const d=rel.dot(frame.projectionAxis);
+    if(Math.abs(d)>1e-7)guidedSign=d>=0?1:-1;
+  }
+  const chosen=guidedSign===1?plus:guidedSign===-1?minus:(plus.score<=minus.score?plus:minus);
 
   s.routingDebug={
-    chosenSign:chosen.sign,
+    chosenSign:chosen.sign,guidedSign,
     plus:{score:plus.score,invalid:plus.invalid,totalLength:plus.totalLength,widthPenalty:plus.widthPenalty},
     minus:{score:minus.score,invalid:minus.invalid,totalLength:minus.totalLength,widthPenalty:minus.widthPenalty},
     frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}
@@ -379,6 +388,7 @@ function buildStripMethodRoute(s,samples,lift){
     nominalRight:samples.map(g=>g.nominalRight.clone()),
     nominalCenters:samples.map(g=>g.center.clone()),
     routingDebug:s.routingDebug||null,
+    routingGuide:s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null,
     probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
     probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
     projectedLeft:rawLeft,
@@ -452,11 +462,13 @@ function updateStrapMethodDebug(s,route){
 
   if(show(0))strapDebugLine(s,d.endpoints,0xffffff,.95);
   if(show(1)){
+    if(d.routingGuide)strapDebugPoints(s,[d.routingGuide],0xffd54a,10);
     strapDebugLine(s,d.nominalCenters,0xffffff,.72);
     strapDebugLine(s,d.nominalLeft,0xff6b6b,.98);
     strapDebugLine(s,d.nominalRight,0x6ba8ff,.98);
   }
   if(show(2)){
+    if(d.routingGuide)strapDebugPoints(s,[d.routingGuide],0xffd54a,10);
     strapDebugLine(s,d.probesLeft.map(q=>[q.from,q.to]),0xff6b6b,.72,true);
     strapDebugLine(s,d.probesRight.map(q=>[q.from,q.to]),0x6ba8ff,.72,true);
   }

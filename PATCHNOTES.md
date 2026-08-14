@@ -1,3 +1,12 @@
+# V3.4.1 GUIDED SIDE LOCK
+
+- Guided-Zwischenpunkt entscheidet jetzt eindeutig die Projektions-/Extrusionsseite.
+- Guided-Punkt bleibt reine Orientierungsinformation und ist kein dauerhafter Wegpunkt.
+- Nach Ringbewegungen wird der Riemen neu berechnet, ohne durch den alten Guide-Punkt gezwungen zu werden.
+- Guide-Punkt ist im Riemen-Debug sichtbar.
+- Test-Kommentarfeld ist mehrzeilig.
+- Direct-Routing behält die automatische globale ± Auswahl.
+
 # Patchnotes
 
 ## V3.4.0 – Strap Routing Rebuild
