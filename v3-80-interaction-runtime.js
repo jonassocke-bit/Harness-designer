@@ -660,6 +660,6 @@ function initV344Tools(){
   document.body.appendChild(el);
   const z=el.querySelector('#v344Zones'),h=el.querySelector('#v344Hitboxes');
   z.onclick=()=>{setBodyZoneDebug(!bodyZoneDebug);z.classList.toggle('active',bodyZoneDebug)};
-  h.onclick=()=>{setHitboxDebug(!hitboxDebug);h.classList.toggle('active',hitboxDebug)};
+  h.onclick=()=>{setHitboxOverlayDebugV344(!hitboxOverlayDebugV344);h.classList.toggle('active',hitboxOverlayDebugV344)};
 }
 setTimeout(safeInitV344Tools,0);

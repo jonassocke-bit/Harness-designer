@@ -4,7 +4,7 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.4.4a START HOTFIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
+  const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
     build:{title:'1 · Build',instruction:'Unten muss V3.4.4 · Zones + Radial stehen.',golden:'pass'},

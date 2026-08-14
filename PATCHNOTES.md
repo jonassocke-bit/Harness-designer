@@ -1,5 +1,12 @@
 # Patchnotes
 
+## V3.4.4b – Boot Fix
+- Tatsächlichen Startfehler gefunden: V3.4.4 deklarierte `hitboxDebug` ein zweites Mal.
+- `v3-20-nodes-routing.js` besitzt bereits das bestehende Hitbox-Debugsystem; die neue V3.4.4-Visualisierung kollidierte damit im gemeinsamen globalen JavaScript-Scope.
+- Die neue Gesamt-Hitbox-Visualisierung besitzt jetzt eindeutig benannte V3.4.4-Variablen/Funktionen und kollidiert nicht mehr mit dem vorhandenen Ring-Hitbox-Debug.
+- Build-Cache-Key auf 344b erhöht.
+- Keine Solver-/Zonenänderungen gegenüber V3.4.4.
+
 ## V3.4.4a – Start Hotfix
 - Kritischen Loader-Fehler behoben: `app.js` lud alle Module trotz V3.4.4 weiterhin mit `?build=340`.
 - Sämtliche Module werden jetzt konsistent mit `?build=344a` angefordert; dadurch kann GitHub Pages keine alten V3.4.0-Module mehr mit V3.4.4-Code mischen.

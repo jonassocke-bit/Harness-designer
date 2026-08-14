@@ -616,15 +616,15 @@ function rebuildBodyZoneDebug(){
 function setBodyZoneDebug(v){bodyZoneDebug=!!v;rebuildBodyZoneDebug()}
 
 const HITBOX_COLORS={node:0x00e5ff,strap:0xffd54a,guide:0xff4fd8,panel:0x52ef7d,snap:0xff7a21};
-let hitboxDebug=false,hitboxDebugGroup=null;
+let hitboxOverlayDebugV344=false,hitboxDebugGroupV344=null;
 function clearHitboxDebug(){
-  if(!hitboxDebugGroup)return;
-  helperRoot.remove(hitboxDebugGroup);
-  hitboxDebugGroup.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.()});
-  hitboxDebugGroup=null;
+  if(!hitboxDebugGroupV344)return;
+  helperRoot.remove(hitboxDebugGroupV344);
+  hitboxDebugGroupV344.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.()});
+  hitboxDebugGroupV344=null;
 }
 function rebuildHitboxDebug(){
-  clearHitboxDebug();if(!hitboxDebug)return;
+  clearHitboxDebug();if(!hitboxOverlayDebugV344)return;
   const group=new THREE.Group();group.renderOrder=125;
   const sphere=(p,r,color,opacity)=>{const o=new THREE.Mesh(new THREE.SphereGeometry(r,12,8),new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity,depthTest:false,depthWrite:false}));o.position.copy(p);o.renderOrder=125;group.add(o)};
   const boxFor=(obj,color,opacity)=>{const box=new THREE.Box3().setFromObject(obj);if(box.isEmpty())return;const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());const o=new THREE.Mesh(new THREE.BoxGeometry(Math.max(size.x,.01),Math.max(size.y,.01),Math.max(size.z,.01)),new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity,depthTest:false,depthWrite:false}));o.position.copy(center);o.renderOrder=125;group.add(o)};
@@ -637,6 +637,6 @@ function rebuildHitboxDebug(){
     if(s.guideHandle)sphere(s.guideHandle.position,.05,HITBOX_COLORS.guide,.65);
   }
   for(const p of panels.values())if(p.mesh)boxFor(p.mesh,HITBOX_COLORS.panel,.38);
-  helperRoot.add(group);hitboxDebugGroup=group;
+  helperRoot.add(group);hitboxDebugGroupV344=group;
 }
-function setHitboxDebug(v){hitboxDebug=!!v;rebuildHitboxDebug()}
+function setHitboxOverlayDebugV344(v){hitboxOverlayDebugV344=!!v;rebuildHitboxDebug()}

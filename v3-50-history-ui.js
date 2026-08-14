@@ -15,7 +15,7 @@ function commitHistory(){
   redoStack=[];
   updateHistoryButtons();
   try{localStorage.setItem('harnessDesignerV1',sig)}catch{}
-  if(typeof hitboxDebug!=='undefined'&&hitboxDebug)rebuildHitboxDebug();
+  if(typeof hitboxOverlayDebugV344!=='undefined'&&hitboxOverlayDebugV344)rebuildHitboxDebug();
 }
 
 function serialize(){
