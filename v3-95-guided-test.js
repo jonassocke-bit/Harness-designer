@@ -7,21 +7,21 @@
   const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.4 · Zones + Radial stehen.',golden:'pass'},
-    zones:{title:'2 · Körperzonen beurteilen',instruction:'Zonen einschalten. Bitte Torso/Kopf/Arme/Beine beurteilen – besonders Schulter, Achsel, Hals und Becken. Screenshot bei jeder Grenze, die du anders ziehen würdest.',golden:'known'},
-    torso:{title:'3 · Torso → Torso',instruction:'Zwei Ringe am Torso verbinden. Projektion darf nicht auf Arme, Kopf oder Beine springen.',golden:'known'},
-    cross:{title:'4 · Torso → Arm',instruction:'Torso mit einem Arm verbinden. Solver darf nur beteiligte Endzonen und ggf. explizite Guide-Zone benutzen.',golden:'known'},
-    radial:{title:'5 · Radiale Abstandslinien',instruction:'Debug Schritt 3: Abstandslinien sollen von einem gemeinsamen lokalen Zentrum auffächern und nicht parallel am Körper entlanglaufen.',golden:'known'},
-    ring:{title:'6 · Ringanschlüsse',instruction:'Flache Ringe unterschiedlich positionieren. Prüfen, ob Start/Ende nachvollziehbar aus der Ringlage kommen.',golden:'known'},
-    guide:{title:'7 · Guide Schulter → Achsel',instruction:'Guide verschieben und finalen Solve prüfen. Route soll nachvollziehbar reagieren.',golden:'known'},
-    hitbox:{title:'8 · Hitboxen',instruction:'Hitboxen einschalten: Cyan Ringe, Gelb Riemen, Magenta Guide, Grün Flächen, Orange Snap/Merge. Durch Mannequin sichtbar.',golden:'known'},
-    zoom:{title:'9 · Deep Zoom',instruction:'Sehr weit hineinzoomen. Alte Nahgrenze darf nicht mehr stoppen.',golden:'known'},
-    save:{title:'10 · Save / Load',instruction:'Design speichern, verändern, wieder laden. Zustand muss zurückkehren.',golden:'known'},
-    code:{title:'11 · Design-Code',instruction:'Code kopieren, Design verändern, Code laden. Konstruktion muss wiederhergestellt werden.',golden:'known'},
-    backPan:{title:'12 · Zwei-Finger-Pan Rückseite',instruction:'Vorder-/Rückseite prüfen: links/rechts soll aus Bildschirmsicht gleich reagieren.',golden:'known'},
-    regression:{title:'13 · Riemen Regression',instruction:'Mehrere normale Direct-/Guided-Riemen bauen und Stabilität mit V3.4.3 vergleichen.',golden:'known'},
-    perf:{title:'14 · Performance',instruction:'Zonen/Hitboxen ausschalten und mehrere Riemen bauen.',golden:'known'},
-    finalPage:{title:'15 · Abschluss',instruction:'Report mit Gesamtkommentar exportieren.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.4c stehen.',golden:'pass'},
+    zones:{title:'2 · Zonen',instruction:'Zonen einschalten. Rote Grenzen prüfen: Halsbasis, Schulter→Achsel, flaches V über den Oberschenkeln.',golden:'known'},
+    radial:{title:'3 · Radialrichtung',instruction:'Weißes Zentrum muss innen liegen. Rays gehen von dort nach außen zur nahen erlaubten Oberfläche, niemals auf die Gegenseite.',golden:'known'},
+    torso:{title:'4 · Torso→Torso',instruction:'Nur Torso als Trefferfläche.',golden:'known'},
+    arm:{title:'5 · Torso→Arm',instruction:'Schulterkappe und diagonale Armgrenze prüfen.',golden:'known'},
+    pelvis:{title:'6 · Becken/Bein',instruction:'Becken/Schritt bleibt Torso; Beine beginnen erst unterhalb der V-Grenze.',golden:'known'},
+    guide:{title:'7 · Guided',instruction:'Guide Schulter/Achsel testen. Keine Projektion auf Gegenseite.',golden:'known'},
+    fallback:{title:'8 · Fallback',instruction:'Problemstelle provozieren. Fallback darf Hemisphäre nicht wechseln.',golden:'known'},
+    regression:{title:'9 · Normalriemen',instruction:'Mehrere normale Riemen testen.',golden:'known'},
+    hitbox:{title:'10 · Hitboxen',instruction:'Hitbox-Toggle regressionsprüfen.',golden:'pass'},
+    save:{title:'11 · Save/Load',instruction:'Save/Load regressionsprüfen.',golden:'pass'},
+    code:{title:'12 · Design-Code',instruction:'Design-Code regressionsprüfen.',golden:'pass'},
+    zoom:{title:'13 · Zoom/Pan',instruction:'Deep Zoom und Zwei-Finger-Pan prüfen.',golden:'pass'},
+    perf:{title:'14 · Performance',instruction:'Performance beurteilen.',golden:'known'},
+    finalPage:{title:'15 · Abschluss',instruction:'Report exportieren.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

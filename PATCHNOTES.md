@@ -1,5 +1,14 @@
 # Patchnotes
 
+## V3.4.4c – Radial + Zone Fix
+- Radialzentrum wird auf die Innenseite gelegt.
+- Jeder Radial-Ray läuft von dort nach außen; nur der erste erlaubte Surface-Treffer zählt.
+- Keine freie +/- Entscheidung mehr im radialen Solve.
+- Paralleler Fallback bleibt auf derselben Außenseite.
+- Zonen an die Nutzerreferenz angepasst: tiefere Halsbasis, diagonale Schulter→Achsel-Grenzen, Schulterkappe zum Arm, Becken/Schritt zum Torso, flache V-Grenze zu den Beinen.
+- Zonen-Debug zeigt kräftige rote Grenzlinien.
+- Save/Load, Design-Code, Hitboxen und Zoom unverändert.
+
 ## V3.4.4b – Boot Fix
 - Tatsächlichen Startfehler gefunden: V3.4.4 deklarierte `hitboxDebug` ein zweites Mal.
 - `v3-20-nodes-routing.js` besitzt bereits das bestehende Hitbox-Debugsystem; die neue V3.4.4-Visualisierung kollidierte damit im gemeinsamen globalen JavaScript-Scope.

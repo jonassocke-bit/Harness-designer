@@ -248,23 +248,42 @@ function filteredBodyHitsV344(origin,dir,allowedZones){
 }
 function radialProjectionCenterV344(s,frame){
   const {A,B,mid,projectionAxis}=frame;
-  let inward=projectionAxis.clone().normalize();
+  let outward=projectionAxis.clone().normalize();
+
   if(s.routingGuide){
     const g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
-    if(g.dot(inward)>0)inward.negate();
+    if(g.lengthSq()>1e-10){
+      g.normalize();
+      if(outward.dot(g)<0)outward.negate();
+    }
+  }else{
+    const avg=nodeWorldNormal(nodes.get(s.a)).clone().add(nodeWorldNormal(nodes.get(s.b)));
+    if(avg.lengthSq()>1e-10){
+      avg.normalize();
+      if(outward.dot(avg)<0)outward.negate();
+    }
   }
+
   const depth=THREE.MathUtils.clamp(A.distanceTo(B)*.34,.10,.45);
-  return mid.clone().addScaledVector(inward,-depth);
+  // Zentrum bewusst auf die Innenseite setzen.
+  return mid.clone().addScaledVector(outward,-depth);
 }
 function radialSurfaceHitV344(candidate,center,allowedZones){
   const dir=candidate.clone().sub(center);
   if(dir.lengthSq()<1e-12)return null;
   dir.normalize();
+
   const hits=filteredBodyHitsV344(center,dir,allowedZones);
   if(!hits.length)return null;
-  let best=null,bd=Infinity;
-  for(const h of hits){const d=h.point.distanceTo(candidate);if(d<bd){best=h;bd=d}}
-  return best?{point:best.point.clone(),normal:worldNormal(best).clone().normalize(),distance:bd}:null;
+
+  // Raycaster sortiert nach Distanz:
+  // der erste erlaubte Treffer ist die Austrittsoberfläche auf dieser Seite.
+  const h=hits[0];
+  return {
+    point:h.point.clone(),
+    normal:worldNormal(h).clone().normalize(),
+    distance:h.point.distanceTo(candidate)
+  };
 }
 function projectionHits(candidate,axis,sign,allowedZones=null){
   const dir=axis.clone().normalize().multiplyScalar(sign);
@@ -303,8 +322,13 @@ function projectedChordSamplesStrip(s,{lift=0}={}){
     const nominalRight=center.clone().addScaledVector(side,halfW);
     let lh=radialSurfaceHitV344(nominalLeft,radialCenter,allowedZones);
     let rh=radialSurfaceHitV344(nominalRight,radialCenter,allowedZones);
-    if(!lh){radialFallbacks++;lh=chooseProjectionHitGlobal(nominalLeft,projectionAxis,1,prevL,allowedZones)||chooseProjectionHitGlobal(nominalLeft,projectionAxis,-1,prevL,allowedZones)}
-    if(!rh){radialFallbacks++;rh=chooseProjectionHitGlobal(nominalRight,projectionAxis,1,prevR,allowedZones)||chooseProjectionHitGlobal(nominalRight,projectionAxis,-1,prevR,allowedZones)}
+    if(!lh||!rh){
+      radialFallbacks++;
+      const outward=center.clone().sub(radialCenter).normalize();
+      const sign=outward.dot(projectionAxis)>=0?1:-1;
+      if(!lh)lh=chooseProjectionHitGlobal(nominalLeft,projectionAxis,sign,prevL,allowedZones);
+      if(!rh)rh=chooseProjectionHitGlobal(nominalRight,projectionAxis,sign,prevR,allowedZones);
+    }
     if(!lh||!rh)continue;
     const left=lh.point.clone().addScaledVector(lh.normal,lift);
     const right=rh.point.clone().addScaledVector(rh.normal,lift);
@@ -395,7 +419,7 @@ function methodRouteToControls(s,route,maxControls){
 const STRAP_DEBUG_STEPS=[
   ['Direkte Verbindung','Direkte Verbindung zwischen den sichtbaren Anschlussstellen der Ringe.'],
   ['Starre Hilfslinien','Weiße direkte A→B-Linie plus zwei echte parallele Außenlinien. Der optionale dritte Körperpunkt bestimmt nur die Ebene dieses Linienpaares; ohne ihn wird die Ebene einmal aus den Ringlagen bestimmt.'],
-  ['Globale ± Projektion','Beide Außenkanten werden gemeinsam als komplette + oder komplette − Variante projiziert. Gemischte Richtungen sind ausgeschlossen; gewählt wird nach Gültigkeit/Breitenkohärenz und danach Pfadlänge.'],
+  ['Radiale Projektion','Weißer Punkt = lokales Zentrum innerhalb des Körpers. Von dort laufen die Strahlen nach außen; pro Strahl zählt ausschließlich der erste Treffer in einer erlaubten Körperzone.'],
   ['Projizierte Punkte','Unabhängig berechnete Körperkontaktpunkte der linken und rechten Außenkante.'],
   ['Rohe Außenkanten','Projizierte Punkte direkt miteinander verbunden – vor der leichten Glättung.'],
   ['Finale Außenkanten','Tatsächlich für den Riemen verwendete linke und rechte Außenkante.'],

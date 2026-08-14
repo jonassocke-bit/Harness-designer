@@ -573,10 +573,22 @@ let bodyZoneDebug=false,bodyZoneDebugGroup=null;
 function getBodyBoundsV344(){const b=new THREE.Box3();for(const m of bodyMeshes)b.expandByObject(m);return b}
 function classifyBodyZoneWorldPoint(p){
   const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
-  const x=(p.x-c.x)/(sz.x||1),y=(p.y-c.y)/(sz.y||1);
-  if(y>.305)return 'head';
-  if(y>-.165&&Math.abs(x)>.235)return x<0?'armL':'armR';
-  if(y<=-.165)return x<0?'legL':'legR';
+  const x=(p.x-c.x)/(sz.x||1),y=(p.y-c.y)/(sz.y||1),ax=Math.abs(x);
+
+  // Kopf/Hals endet an der tieferen Halsbasis.
+  if(y>.285)return 'head';
+
+  // Schulterkappe gehört zum Arm; Grenze diagonal Schulter -> Achsel.
+  const armBoundary=THREE.MathUtils.lerp(
+    .17,.235,
+    THREE.MathUtils.clamp((y-.03)/(.235-.03),0,1)
+  );
+  if(y>.03&&ax>armBoundary)return x<0?'armL':'armR';
+
+  // Becken + Schritt bleiben Torso; Beine beginnen erst unter flachem V.
+  const legCut=-.205+THREE.MathUtils.clamp(ax,0,.30)*.10;
+  if(y<legCut)return x<0?'legL':'legR';
+
   return 'torso';
 }
 function zoneForNode(n){return n?classifyBodyZoneWorldPoint(nodeWorldPosition(n)):'torso'}
@@ -611,6 +623,28 @@ function rebuildBodyZoneDebug(){
       const cloud=new THREE.Points(g,mat);cloud.renderOrder=120;group.add(cloud);
     }
   }
+  const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
+  const X=n=>c.x+n*sz.x,Y=n=>c.y+n*sz.y,Z=n=>c.z+n*sz.z;
+  const mkBoundary=pts=>{
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    const l=new THREE.Line(
+      g,
+      new THREE.LineBasicMaterial({color:0xff3344,depthTest:false,transparent:true,opacity:.98})
+    );
+    l.renderOrder=122;group.add(l);
+  };
+  // Halsbasis
+  mkBoundary([new THREE.Vector3(X(-.18),Y(.285),Z(.31)),new THREE.Vector3(X(.18),Y(.285),Z(.31))]);
+  // Schulter -> Achsel
+  mkBoundary([new THREE.Vector3(X(-.235),Y(.235),Z(.31)),new THREE.Vector3(X(-.17),Y(.03),Z(.31))]);
+  mkBoundary([new THREE.Vector3(X(.235),Y(.235),Z(.31)),new THREE.Vector3(X(.17),Y(.03),Z(.31))]);
+  // Becken -> Beine
+  mkBoundary([
+    new THREE.Vector3(X(-.30),Y(-.175),Z(.31)),
+    new THREE.Vector3(X(0),Y(-.205),Z(.31)),
+    new THREE.Vector3(X(.30),Y(-.175),Z(.31))
+  ]);
+
   helperRoot.add(group);bodyZoneDebugGroup=group;
 }
 function setBodyZoneDebug(v){bodyZoneDebug=!!v;rebuildBodyZoneDebug()}
