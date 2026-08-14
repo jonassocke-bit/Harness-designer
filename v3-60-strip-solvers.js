@@ -247,65 +247,56 @@ function filteredBodyHitsV344(origin,dir,allowedZones){
   return allowedZones?hits.filter(h=>allowedZones.has(classifyBodyZoneWorldPoint(h.point))):hits;
 }
 function radialProjectionCenterV344(s,frame){
-  const {A,B,mid,projectionAxis}=frame;
-  const allowedZones=allowedZonesForStrap(s);
+  try{
+    const {A,B,mid,projectionAxis}=frame;
+    const allowedZones=allowedZonesForStrap(s);
+    let outward=projectionAxis.clone().normalize();
 
-  let outward=projectionAxis.clone().normalize();
+    if(s.routingGuide){
+      const g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
+      if(g.lengthSq()>1e-10){g.normalize();if(outward.dot(g)<0)outward.negate()}
+    }else{
+      const avg=nodeWorldNormal(nodes.get(s.a)).clone().add(nodeWorldNormal(nodes.get(s.b)));
+      if(avg.lengthSq()>1e-10){avg.normalize();if(outward.dot(avg)<0)outward.negate()}
+    }
 
-  if(s.routingGuide){
-    const g=new THREE.Vector3().fromArray(s.routingGuide).sub(mid);
-    if(g.lengthSq()>1e-10){
-      g.normalize();
-      if(outward.dot(g)<0)outward.negate();
+    if(s.radialFlip)outward.negate();
+
+    const span=Math.max(2.0,A.distanceTo(B)*3.0);
+    const origin=mid.clone().addScaledVector(outward,-span);
+    const hits=filteredBodyHitsV344(origin,outward,allowedZones);
+
+    if(hits.length>=2){
+      const h0=hits[0];
+      let h1=null;
+      for(let i=1;i<hits.length;i++){
+        if(hits[i].point.distanceTo(h0.point)>.01){h1=hits[i];break}
+      }
+      if(h1){
+        const p0=h0.point.clone(),p1=h1.point.clone();
+        return {
+          center:p1.clone().lerp(p0,.40),
+          outward,
+          surfaceNear:p1.clone(),
+          surfaceFar:p0.clone(),
+          thickness:p0.distanceTo(p1),
+          valid:true
+        };
+      }
     }
-  }else{
-    const avg=nodeWorldNormal(nodes.get(s.a)).clone().add(nodeWorldNormal(nodes.get(s.b)));
-    if(avg.lengthSq()>1e-10){
-      avg.normalize();
-      if(outward.dot(avg)<0)outward.negate();
-    }
+
+    return {
+      center:mid.clone().addScaledVector(outward,-.08),
+      outward,surfaceNear:null,surfaceFar:null,thickness:0,valid:false
+    };
+  }catch(err){
+    console.error('[V3.4.5a] radial-center fallback',err);
+    return {
+      center:frame.mid.clone().addScaledVector(frame.projectionAxis,-.08),
+      outward:frame.projectionAxis.clone(),
+      surfaceNear:null,surfaceFar:null,thickness:0,valid:false
+    };
   }
-
-  if(s.radialFlip)outward.negate();
-
-  // Cast through the mannequin along the local radial axis.
-  const span=Math.max(2.0,A.distanceTo(B)*3.0);
-  const origin=mid.clone().addScaledVector(outward,-span);
-  const hits=filteredBodyHitsV344(origin,outward,allowedZones);
-
-  if(hits.length>=2){
-    const h0=hits[0];
-    let h1=null;
-    for(let i=1;i<hits.length;i++){
-      if(hits[i].point.distanceTo(h0.point)>.01){h1=hits[i];break}
-    }
-    if(h1){
-      const p0=h0.point.clone(),p1=h1.point.clone();
-      const thickness=p0.distanceTo(p1);
-
-      // p1 is the outward-side intersection along the cast direction.
-      // Move 40% inward from that outer surface.
-      const center=p1.clone().lerp(p0,.40);
-
-      return {
-        center,outward,
-        surfaceNear:p1.clone(),
-        surfaceFar:p0.clone(),
-        thickness,
-        valid:true
-      };
-    }
-  }
-
-  // Explicit invalid fallback, visible in Debug.
-  return {
-    center:mid.clone().addScaledVector(outward,-.08),
-    outward,
-    surfaceNear:null,
-    surfaceFar:null,
-    thickness:0,
-    valid:false
-  };
 }
 function radialSurfaceHitV344(candidate,center,allowedZones){
   const dir=candidate.clone().sub(center);
@@ -378,18 +369,12 @@ function projectedChordSamplesStrip(s,{lift=0}={}){
     normal.normalize();
     route.push({t,center,normal,side:side.clone(),nominalLeft,nominalRight,leftHit:lh.point.clone(),rightHit:rh.point.clone(),leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),stripLeft:left,stripRight:right,radialCenter:radialCenter.clone()});
   }
-  s.routingDebug={
-    mode:'radial',
-    zones:[...allowedZones],
-    radialCenter:radialCenter.clone(),
-    radialCenterValid:!!radialInfo.valid,
-    radialThickness:radialInfo.thickness||0,
+  s.routingDebug={mode:'radial',zones:[...allowedZones],radialCenter:radialCenter.clone(),
+    radialCenterValid:!!radialInfo.valid,radialThickness:radialInfo.thickness||0,
     radialSurfaceNear:radialInfo.surfaceNear?.clone?.()||null,
     radialSurfaceFar:radialInfo.surfaceFar?.clone?.()||null,
-    radialFlip:!!s.radialFlip,
-    radialFallbacks,
-    frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}
-  };
+    radialFlip:!!s.radialFlip,radialFallbacks,
+    frame:{A:A.clone(),B:B.clone(),side:side.clone(),projectionAxis:projectionAxis.clone()}};
   return route;
 }
 function projectEdgeCandidateToBody(candidate,preferredNormal){
@@ -448,10 +433,8 @@ function buildStripMethodRoute(s,samples,lift){
     routingDebug:s.routingDebug||null,
     radialCenter:s.routingDebug?.radialCenter?.clone?.()||null,
     radialCenterValid:!!s.routingDebug?.radialCenterValid,
-    radialThickness:s.routingDebug?.radialThickness||0,
     radialSurfaceNear:s.routingDebug?.radialSurfaceNear?.clone?.()||null,
     radialSurfaceFar:s.routingDebug?.radialSurfaceFar?.clone?.()||null,
-    radialFlip:!!s.routingDebug?.radialFlip,
     routingGuide:s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null,
     probesLeft:samples.map(g=>({from:g.nominalLeft.clone(),to:(g.leftHit||g.stripLeft).clone()})),
     probesRight:samples.map(g=>({from:g.nominalRight.clone(),to:(g.rightHit||g.stripRight).clone()})),
@@ -582,12 +565,6 @@ function setStrapDebugBodyMode(active){
   }
 }
 function refreshStrapDebugPanel(s){
-  const radialBtn=document.getElementById('radialFlipBtn');
-  if(radialBtn){
-    radialBtn.textContent=`Radial ${s?.radialFlip?'B':'A'} · 180°`;
-    radialBtn.classList.toggle('active',!!s?.radialFlip);
-  }
-
   const panel=document.getElementById('strapDebugPanel');
   if(!panel)return;
   const step=THREE.MathUtils.clamp(s?.debugStep||0,0,STRAP_DEBUG_STEPS.length-1);
@@ -602,27 +579,6 @@ function openStrapDebugMode(s){
   setStrapDebugBodyMode(true);
   updateStrapMethodDebug(s,s.methodRoute||[]);
   refreshStrapDebugPanel(s);
-  let flipBtn=document.getElementById('radialFlipBtn');
-  if(!flipBtn){
-    flipBtn=document.createElement('button');
-    flipBtn.id='radialFlipBtn';
-    flipBtn.type='button';
-    flipBtn.style.marginTop='8px';
-    const panel=document.getElementById('strapDebugPanel');
-    panel?.appendChild(flipBtn);
-    flipBtn.addEventListener('click',()=>{
-      const ss=selected;
-      if(!ss||ss.kind!=='strap')return;
-      ss.radialFlip=!ss.radialFlip;
-      rebuildAutoProjection(ss);
-      refreshStrapDebugPanel(ss);
-      updateStrapMethodDebug(ss,ss.methodRoute||[]);
-      flipBtn.classList.toggle('active',!!ss.radialFlip);
-      showToast(ss.radialFlip?'Radial B aktiv':'Radial A aktiv');
-    });
-  }
-  flipBtn.textContent=`Radial ${s.radialFlip?'B':'A'} · 180°`;
-  flipBtn.classList.toggle('active',!!s.radialFlip);
   strapDebugBtn.classList.add('active');
   updateControlHandles(s);
 }

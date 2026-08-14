@@ -7,21 +7,13 @@
   const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.5 · Radial Center stehen.',golden:'pass'},
-    center:{title:'2 · Radialzentrum innen',instruction:'Debug Projektion: weißer Punkt muss zwischen zwei grünen Surface-Punkten liegen. Rot bedeutet ungültiger Fallback – dann Screenshot.',golden:'known'},
-    thickness:{title:'3 · Körperdicke',instruction:'Brust, Seite, Hals und Arm testen. Grüne Linie muss den lokalen Körperquerschnitt markieren.',golden:'known'},
-    radialA:{title:'4 · Radial A',instruction:'A testen. Rays müssen vom inneren Zentrum zur nahen gewünschten Oberfläche laufen.',golden:'known'},
-    flip:{title:'5 · Radial 180°',instruction:'Radial-A/B-Button drücken. B muss sofort die komplette Richtung um 180° auf die Gegenseite drehen.',golden:'known'},
-    flipBack:{title:'6 · Zurück zu A',instruction:'Noch einmal drücken. A muss exakt zurückkommen.',golden:'known'},
-    guide:{title:'7 · Guided',instruction:'Guide Schulter/Achsel setzen und A/B vergleichen. Welche Variante entspricht deiner Intention?',golden:'known'},
-    direct:{title:'8 · Direct',instruction:'Normale Direct-Riemen testen. Zentrum soll aus realer lokaler Körperdicke entstehen.',golden:'known'},
-    zones:{title:'9 · Zonen Regression',instruction:'Zonen kurz prüfen; in dieser Version unverändert.',golden:'pass'},
-    hitbox:{title:'10 · Hitboxen',instruction:'Hitboxen regressionsprüfen.',golden:'pass'},
-    save:{title:'11 · Save/Load',instruction:'Save/Load inklusive Radial A/B prüfen.',golden:'known'},
-    code:{title:'12 · Design-Code',instruction:'Design-Code inklusive Radial A/B prüfen.',golden:'known'},
-    zoom:{title:'13 · Zoom/Pan',instruction:'Zoom/Pan regressionsprüfen.',golden:'pass'},
-    perf:{title:'14 · Performance',instruction:'Mehrere Riemen + A/B Umschalten testen.',golden:'known'},
-    finalPage:{title:'15 · Abschluss',instruction:'Report exportieren.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.5a SAFE RADIAL TEST stehen.',golden:'pass'},
+    center:{title:'2 · Zentrum',instruction:'Debug: Weiß zwischen zwei grünen Surface-Punkten = gültig; Rot = Fallback.',golden:'known'},
+    flip:{title:'3 · A/B 180°',instruction:'Riemen auswählen und den festen Radial-A/B-Button unten rechts drücken. Richtung muss sofort wechseln.',golden:'known'},
+    flipBack:{title:'4 · Zurück',instruction:'Noch einmal drücken; ursprüngliche Seite muss zurückkommen.',golden:'known'},
+    normal:{title:'5 · Normalriemen',instruction:'Mehrere normale Riemen testen.',golden:'known'},
+    zones:{title:'6 · Zonen',instruction:'Zonen unverändert regressionsprüfen.',golden:'pass'},
+    finalPage:{title:'7 · Abschluss',instruction:'Report exportieren.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

@@ -1,16 +1,13 @@
 # Patchnotes
 
-## V3.4.5 – Radial Center
-- Geschätzten Radialabstand vollständig entfernt.
-- Radialzentrum wird aus zwei tatsächlichen Oberflächenschnitten entlang der lokalen Projektionsachse bestimmt.
-- Das Zentrum liegt zwischen beiden Surface-Treffern und damit geometrisch im lokalen Körperquerschnitt.
-- Zentrum liegt 40 % von der gewünschten Außenseite nach innen.
-- Falls keine zwei plausiblen Treffer existieren, wird ein klar erkennbarer ungültiger Fallback verwendet.
-- Debug: Weiß = gültiges Zentrum, Rot = ungültiger Fallback, Grün = gemessener Körperquerschnitt.
-- Neuer Debug-Button `Radial A/B · 180°`.
-- A/B invertiert die gesamte Radialseite sofort und berechnet den ausgewählten Riemen neu.
-- Radial A/B wird im Riemenstatus und in Undo/Redo gespeichert.
-- Körperzonen bleiben gegenüber V3.4.4c unverändert.
+## V3.4.5a – Safe Radial Test
+- Neu auf der nachweislich startenden V3.4.4c aufgebaut.
+- Nur Radialzentrum und 180°-Debugtest geändert.
+- Keine Änderungen an Strap-Datenmodell, History/Undo, Save/Load oder frühem App-Bootstrap.
+- Radialzentrum versucht zwei echte Oberflächenschnitte zu finden und liegt 40 % von der Außenseite im lokalen Körperquerschnitt.
+- Weiß = gültiges Zentrum, Rot = Fallback, Grün = gemessener Querschnitt.
+- `Radial A/B · 180°` wird erst nach vollständigem Appstart als spätes Debug-Control erzeugt.
+- Alle neuen Radialpfade sind mit Fehler-Fallbacks gekapselt, damit ein Fehler dort die App nicht am Start hindert.
 
 ## V3.4.4c – Radial + Zone Fix
 - Radialzentrum wird auf die Innenseite gelegt.
