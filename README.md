@@ -69,3 +69,7 @@ Rebuilt strap construction from V3.3.1: 2-tap Direct or optional 3-tap Guided, r
 
 ## V3.4.2
 Unified strap guide: every selected strap gets a midpoint guide handle; explicit drag locks routing direction, debug is read-only, and surface offset 0 is near-contact.
+
+
+## V3.4.3
+Stable guide editing: cheap live route/width preview while dragging, one full solve on release, and guide-aware ring endpoint orientation.

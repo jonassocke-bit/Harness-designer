@@ -195,7 +195,10 @@ function continuityScore(h,ctx,candidate){
 function rigidStrapGuideFrame(s){
   const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return null;
   const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
-  const A=visibleEndpoint(a,B0),B=visibleEndpoint(b,A0);
+  const guideTarget=s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null;
+  // A guided strap must reorient its ring attachments toward the chosen route.
+  // The guide is still NOT a waypoint in the surface solve.
+  const A=visibleEndpoint(a,guideTarget||B0),B=visibleEndpoint(b,guideTarget||A0);
 
   let tangent=B.clone().sub(A);
   if(tangent.lengthSq()<1e-10)return null;

@@ -4,23 +4,23 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.4.2 UNIFIED STRAP GUIDE',base:'V3.4.1 GUIDED SIDE LOCK'};
+  const RELEASE={build:'V3.4.3 GUIDE PREVIEW STABILITY',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.2 · Unified Strap Guide stehen.',golden:'pass'},
-    direct:{title:'2 · Direct',instruction:'Ring A → Ring B. Mehrere normale Direct-Riemen bauen. Verlauf und Orientierung prüfen.',golden:'known'},
-    guidedSide:{title:'3 · Guided Richtung',instruction:'Ring A → Körperpunkt → Ring B. Die Projektionsvektoren müssen jetzt ZUM Körper zeigen, nicht davon weg.',golden:'known'},
-    guideMarker:{title:'4 · Guide sichtbar',instruction:'Beim Setzen des Körperpunkts muss bis zum Zielring ein gelber Marker sichtbar bleiben.',golden:'known'},
-    handle:{title:'5 · Mittlerer Guide-Handle',instruction:'Einen Direct-Riemen auswählen: cyanfarbener mittlerer Handle. Ziehen auf dem Körper muss den Riemen in einen explizit geführten Riemen umwandeln.',golden:'known'},
-    handleMove:{title:'6 · Richtung nachziehen',instruction:'Guide-Handle auf eine andere Körperseite ziehen. Riemen soll seine Orientierung entsprechend neu berechnen und nicht durch den alten Punkt gezwungen werden.',golden:'known'},
-    debugLock:{title:'7 · Debug Read-only',instruction:'Debug öffnen. Kamera bewegen und anderen Riemen auswählen muss gehen. Ringe/Riemen verschieben, neue Ringe setzen oder neue Verbindungen bauen darf im Debug NICHT gehen.',golden:'known'},
-    debugGuide:{title:'8 · Debug Guide',instruction:'Im Debug muss der gespeicherte Guide-Punkt gelb sichtbar sein; starre Hilfslinien bleiben gerade und parallel.',golden:'known'},
-    contact0:{title:'9 · Körperabstand 0',instruction:'Globalen Körperabstand auf 0 setzen. Riemen soll nahezu aufliegen; nur minimale Anti-Z-Fighting-Luft ist erlaubt.',golden:'known'},
-    width:{title:'10 · Breiten-Stress',instruction:'Riemen schrittweise sehr breit machen. Prüfen, wann/ob die Außenkanten instabil werden; Screenshot bei erstem Fehler.',golden:'known'},
-    mirror:{title:'11 · Mirror + Guide',instruction:'Spiegelriemen auswählen und Guide-Handle ziehen. Partner muss Guide und Richtung gespiegelt übernehmen.',golden:'known'},
-    endpoints:{title:'12 · Endpunkte',instruction:'Ringanschlüsse bei Abstand 0 prüfen. Kein sichtbarer zusätzlicher Knick durch versteckten Lift.',golden:'known'},
-    perf:{title:'13 · Performance',instruction:'Mehrere Direct-Riemen erstellen und Guide-Handles ziehen. Lade-/Reaktionszeit notieren.',golden:'known'},
-    finalPage:{title:'14 · Abschlussseite',instruction:'Abschlussseite muss erscheinen; Gesamtkommentar ist mehrzeilig editierbar und wird exportiert.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.3 · Guide Preview Stability stehen.',golden:'pass'},
+    direct:{title:'2 · Direct Regression',instruction:'Mehrere Direct-Riemen bauen. V3.4.2-Funktion darf nicht schlechter geworden sein.',golden:'pass'},
+    preview:{title:'3 · Guide Live-Preview',instruction:'Riemen auswählen und mittleren Handle ziehen. Während des Ziehens darf der fertige Riemen NICHT wild neu berechnet werden. Stattdessen müssen eine weiße ungefähre Route und zwei gelbe Breitenlinien live folgen.',golden:'known'},
+    previewWidth:{title:'4 · Preview Breite',instruction:'Riemenbreite ändern und erneut Handle ziehen. Abstand der beiden gelben Preview-Linien muss ungefähr der aktuellen Breite entsprechen.',golden:'known'},
+    release:{title:'5 · Solve erst beim Loslassen',instruction:'Handle länger über den Körper ziehen. Während Drag flüssige Preview; beim Loslassen genau eine sichtbare finale Neuberechnung.',golden:'known'},
+    shoulderArmpit:{title:'6 · Schulter → Achsel',instruction:'Guide eines Schulterverlaufs deutlich Richtung Achsel ziehen. Nach Loslassen muss sich nicht nur die Mitte, sondern auch die Anschlussorientierung an BEIDEN Ringen sichtbar in Richtung der neuen Route ändern.',golden:'known'},
+    notWaypoint:{title:'7 · Guide bleibt Orientierung',instruction:'Nach dem Solve Ringe verschieben. Der Riemen darf nicht künstlich durch die alte Guide-Koordinate gezwungen werden; Guide bestimmt Orientierung/Routenseite, nicht einen harten Kurvenpunkt.',golden:'known'},
+    stability:{title:'8 · Eskalations-Stress',instruction:'Guide 10× zwischen deutlich verschiedenen Körperregionen verschieben. Kein explodierender Riemen, keine riesigen Dimensionen, kein dauerhafter Geometriefehler.',golden:'known'},
+    mirror:{title:'9 · Mirror Preview',instruction:'Spiegelpaar: Master-Guide ziehen. Preview nur am gezogenen Master; nach Loslassen muss der Partner einmal sauber gespiegelt neu berechnet werden.',golden:'known'},
+    endpoints:{title:'10 · Ring-Endpunkte',instruction:'Mehrere Guided-Riemen mit stark unterschiedlicher Richtung prüfen. Ringanschlüsse müssen jeweils zur gewählten Route zeigen.',golden:'known'},
+    contact:{title:'11 · Körperabstand',instruction:'Abstand 0 regressionsprüfen: weiterhin annähernd aufliegend.',golden:'pass'},
+    debug:{title:'12 · Debug Regression',instruction:'Debug bleibt read-only und zeigt Guide/Hilfslinien weiterhin korrekt.',golden:'pass'},
+    performance:{title:'13 · Drag Performance',instruction:'Guide langsam und schnell ziehen. Preview soll deutlich flüssiger als V3.4.2 sein; finale Berechnung darf kurz dauern.',golden:'known'},
+    finalPage:{title:'14 · Abschluss',instruction:'Abschlussseite, mehrzeiliger Gesamtkommentar und Export prüfen.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

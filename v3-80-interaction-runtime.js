@@ -151,6 +151,7 @@ function snapAxis(p){if(Math.abs(p.x)<AXIS_SNAP_IN)p.x=0;return p}
 
 let pointers=new Map(),gesture=null,single=null,dragRaf=0,pendingDrag=null;
 let connectGuideVisual=null;
+let strapGuidePreview=null;
 function activeDebugStrap(){return [...straps.values()].find(s=>s.debugRoute)||null}
 function clearConnectGuideVisual(){
   if(!connectGuideVisual)return;
@@ -165,6 +166,39 @@ function showConnectGuideVisual(p){
     new THREE.MeshBasicMaterial({color:0xffd54a,depthTest:false,depthWrite:false})
   );
   connectGuideVisual.position.copy(p);connectGuideVisual.renderOrder=60;helperRoot.add(connectGuideVisual);
+}
+function clearStrapGuidePreview(){
+  if(!strapGuidePreview)return;
+  helperRoot.remove(strapGuidePreview);
+  strapGuidePreview.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.()});
+  strapGuidePreview=null;
+}
+function previewLine(points,color,opacity=1){
+  const geo=new THREE.BufferGeometry().setFromPoints(points);
+  const mat=new THREE.LineBasicMaterial({color,transparent:opacity<1,opacity,depthTest:false,depthWrite:false});
+  const line=new THREE.Line(geo,mat);line.renderOrder=70;return line;
+}
+function showStrapGuidePreview(s,guidePoint){
+  clearStrapGuidePreview();
+  const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return;
+  const A=visibleEndpoint(a,guidePoint),B=visibleEndpoint(b,guidePoint),G=guidePoint.clone();
+  let chord=B.clone().sub(A);if(chord.lengthSq()<1e-10)return;chord.normalize();
+  let plane=G.clone().sub(A.clone().lerp(B,.5));plane.addScaledVector(chord,-plane.dot(chord));
+  if(plane.lengthSq()<1e-10)plane=nodeWorldNormal(a).clone();
+  plane.normalize();
+  let side=new THREE.Vector3().crossVectors(plane,chord);if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();side.normalize();
+  const hw=Math.max(.0003,s.widthMM*.0037*.5);
+  const center=[A,G,B];
+  const left=center.map(p=>p.clone().addScaledVector(side,-hw));
+  const right=center.map(p=>p.clone().addScaledVector(side,hw));
+  strapGuidePreview=new THREE.Group();
+  // White center = approximate requested route; rails = approximate strap width.
+  strapGuidePreview.add(previewLine(center,0xffffff,.95));
+  strapGuidePreview.add(previewLine(left,0xffd54a,.9));
+  strapGuidePreview.add(previewLine(right,0xffd54a,.9));
+  const marker=new THREE.Mesh(new THREE.SphereGeometry(.038,12,8),new THREE.MeshBasicMaterial({color:0xffd54a,depthTest:false,depthWrite:false}));
+  marker.position.copy(G);marker.renderOrder=71;strapGuidePreview.add(marker);
+  helperRoot.add(strapGuidePreview);
 }
 
 
@@ -364,6 +398,8 @@ canvas.addEventListener('pointerdown',e=>{
     sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,
     moved:false,hit,activeNodeId:hit?.kind==='node'?hit.id:null,
     guideStrapId:hit?.kind==='strapGuideHandle'?hit.id:null,
+    guidePreviewPoint:null,
+    guideOriginal:hit?.kind==='strapGuideHandle'&&straps.get(hit.id)?.routingGuide?historyClone(straps.get(hit.id).routingGuide):null,
     waypointDragState:hit?.kind==='node'?captureEndpointWaypointDragState(hit.id):null
   };
   if(hit?.kind==='node'){
@@ -395,13 +431,9 @@ canvas.addEventListener('pointermove',e=>{
     const s=straps.get(single.guideStrapId);
     const bh=bodyHit(e.clientX,e.clientY);
     if(s&&bh){
-      s.routingGuide=bh.point.toArray();s.routingMode='guided';
-      rebuildAutoProjection(s);updateControlHandles(s);
-      const ps=pairOfStrap(s);
-      if(ps){
-        ps.routingGuide=[-bh.point.x,bh.point.y,bh.point.z];
-        ps.routingMode='guided';rebuildAutoProjection(ps);
-      }
+      // Drag is deliberately cheap/stable: preview only. Full surface solve happens once on release.
+      single.guidePreviewPoint=bh.point.clone();
+      showStrapGuidePreview(s,bh.point);
     }
     single.lx=e.clientX;single.ly=e.clientY;
     return;
@@ -446,7 +478,17 @@ canvas.addEventListener('pointerup',e=>{
 
   if(was.guideStrapId){
     const s=straps.get(was.guideStrapId);
-    if(s){selectObject(s);commitHistory();showToast('Riemenrichtung gespeichert')}
+    const gp=was.guidePreviewPoint;
+    clearStrapGuidePreview();
+    if(s&&gp){
+      s.routingGuide=gp.toArray();s.routingMode='guided';
+      rebuildAutoProjection(s);
+      const ps=pairOfStrap(s);
+      if(ps){
+        ps.routingGuide=[-gp.x,gp.y,gp.z];ps.routingMode='guided';rebuildAutoProjection(ps);
+      }
+      selectObject(s);commitHistory();showToast('Riemenrichtung berechnet');
+    }else if(s){selectObject(s);updateControlHandles(s)}
     return;
   }
 

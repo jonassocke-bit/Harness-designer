@@ -1,5 +1,16 @@
 # Patchnotes
 
+## V3.4.3 – Guide Preview Stability
+- Guide-Drag führt während des Ziehens keinen vollständigen Surface-Solve mehr aus.
+- Stattdessen erscheint eine schnelle Live-Vorschau: weiße ungefähre Route Ring A → Guide → Ring B plus zwei gelbe Breitenkanten.
+- Der vollständige Riemen wird erst einmalig beim Loslassen neu berechnet.
+- Dadurch kann ein instabiler Zwischenzustand des Solvers nicht mehr bei jedem Pointer-Move die Geometrie aufschaukeln.
+- Guided-Riemen bestimmen ihre sichtbaren Ringanschlusspunkte jetzt relativ zum Guide statt ausschließlich relativ zum jeweils anderen Ring.
+- Ein Wechsel Schulter → Achsel kann damit die Anschlussorientierung an beiden Ringen tatsächlich verändern.
+- Der Guide bleibt weiterhin Orientierungsinformation und wird nicht als harter Surface-Waypoint in die finale Route eingefügt.
+- Spiegelpartner werden während des Drags nicht teuer live berechnet; sie werden einmalig beim Loslassen mit gespiegelt gesetztem Guide aktualisiert.
+- Guided-Test auf Preview, Endpoint-Reorientation, Stabilität und Drag-Performance fokussiert.
+
 ## V3.4.2 – Unified Strap Guide
 - Guided-Projektionsrichtung aus V3.4.1 invertiert: der gespeicherte Guide lockt jetzt die gegenüberliegende globale ± Hypothese.
 - Jeder ausgewählte Riemen besitzt einen mittleren Guide-Handle.
