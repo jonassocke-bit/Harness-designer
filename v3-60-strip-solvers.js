@@ -222,9 +222,8 @@ function splineEndpointTangentV346(node,from,to,fallback){
 }
 function splineGuideFrameV346(s){
   const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)return null;
-  const A0=nodeWorldPosition(a),B0=nodeWorldPosition(b);
+  const A=nodeWorldPosition(a),B=nodeWorldPosition(b);
   const guide=s.routingGuide?new THREE.Vector3().fromArray(s.routingGuide):null;
-  const A=visibleEndpoint(a,guide||B0),B=visibleEndpoint(b,guide||A0);
   const chord=B.clone().sub(A),length=chord.length();if(length<1e-10)return null;
   const chordDir=chord.clone().normalize();
   const targetA=guide||B;
@@ -247,37 +246,90 @@ function splineGuideFrameV346(s){
 function splineFrameSamplesV346(s){
   const f=splineGuideFrameV346(s);if(!f)return [];
   const count=THREE.MathUtils.clamp(Math.ceil(f.length/.022),10,90);
-  const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];let prevSide=null;
+  const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];
+
+  // Initial frame reference comes from ring A surface normal.
+  let prevSide=null;
+  const startNormal=nodeWorldNormal(nodes.get(s.a)).clone().normalize();
+
   for(let i=0;i<=count;i++){
     const t=i/count,p=f.curve.getPoint(t);
-    const p0=f.curve.getPoint(Math.max(0,t-1/count)),p1=f.curve.getPoint(Math.min(1,t+1/count));
-    let tangent=p1.clone().sub(p0);if(tangent.lengthSq()<1e-10)tangent=f.B.clone().sub(f.A);tangent.normalize();
-    let normal=nodeWorldNormal(nodes.get(s.a)).clone().lerp(nodeWorldNormal(nodes.get(s.b)),t);
-    normal.addScaledVector(tangent,-normal.dot(tangent));
-    if(normal.lengthSq()<1e-10)normal=strapFrame(s).normal.clone();normal.normalize();
-    let side=new THREE.Vector3().crossVectors(normal,tangent);
-    if(side.lengthSq()<1e-10)side=prevSide?.clone()||strapFrame(s).side.clone();
-    side.normalize();if(prevSide&&side.dot(prevSide)<0)side.negate();prevSide=side.clone();
-    out.push({t,center:p.clone(),tangent,normal,side,
+    const p0=f.curve.getPoint(Math.max(0,t-1/count));
+    const p1=f.curve.getPoint(Math.min(1,t+1/count));
+
+    let tangent=p1.clone().sub(p0);
+    if(tangent.lengthSq()<1e-10)tangent=f.B.clone().sub(f.A);
+    tangent.normalize();
+
+    // Build width direction orthogonal to tangent from a transported reference.
+    let refNormal;
+    if(i===0)refNormal=startNormal.clone();
+    else refNormal=out[i-1].normal.clone();
+
+    let side=new THREE.Vector3().crossVectors(refNormal,tangent);
+    if(side.lengthSq()<1e-10){
+      side=prevSide?.clone()||new THREE.Vector3(1,0,0);
+      side.addScaledVector(tangent,-side.dot(tangent));
+    }
+    if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
+    side.normalize();
+
+    if(prevSide&&side.dot(prevSide)<0)side.negate();
+
+    // Search normal is mathematically orthogonal to BOTH tangent and width.
+    let normal=new THREE.Vector3().crossVectors(tangent,side);
+    if(normal.lengthSq()<1e-10)normal=refNormal.clone();
+    normal.normalize();
+
+    // Keep the transported frame from flipping.
+    if(i>0&&normal.dot(out[i-1].normal)<0){
+      normal.negate();
+      side.negate();
+    }
+
+    prevSide=side.clone();
+
+    out.push({
+      t,center:p.clone(),tangent,normal,side,
       nominalLeft:p.clone().addScaledVector(side,-halfW),
-      nominalRight:p.clone().addScaledVector(side,halfW)});
+      nominalRight:p.clone().addScaledVector(side, halfW)
+    });
   }
   return out;
 }
-function localZoneSurfaceHitV346(candidate,allowedZones,prevPoint,preferredNormal){
-  const pref=preferredNormal.clone().normalize();
-  const dirs=[pref.clone(),pref.clone().negate(),new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),
-    new THREE.Vector3(0,1,0),new THREE.Vector3(0,-1,0),new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)];
+function localZoneSurfaceHitV346(candidate,allowedZones,prevPoint,searchNormal){
+  // V3.4.8: exactly ONE local search axis, orthogonal to the current
+  // spline tangent + width direction. Search both signs only.
+  let n=searchNormal.clone();
+  if(n.lengthSq()<1e-10)return null;
+  n.normalize();
+
+  const dirs=[n.clone(),n.clone().negate()];
   let best=null,bestScore=Infinity;
+
   for(const d of dirs){
-    const origin=candidate.clone().addScaledVector(d,1.8);raycaster.set(origin,d.clone().negate());
-    for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,10)){
+    const origin=candidate.clone().addScaledVector(d,1.8);
+    raycaster.set(origin,d.clone().negate());
+
+    for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,12)){
       if(allowedZones&&!allowedZones.has(classifyBodyZoneWorldPoint(h.point)))continue;
-      const n=worldNormal(h).clone().normalize(),dist=h.point.distanceTo(candidate);
+
+      const surfN=worldNormal(h).clone().normalize();
+      const dist=h.point.distanceTo(candidate);
+
+      // Primary criterion: shortest orthogonal correction from the spline.
+      // Continuity only rejects absurd jumps.
       let score=dist;
-      if(prevPoint){const step=h.point.distanceTo(prevPoint);score+=step*.22;if(step>.30)score+=2.5}
-      score+=Math.max(0,.05-n.dot(pref))*.06;
-      if(score<bestScore){bestScore=score;best={point:h.point.clone(),normal:n,distance:dist}}
+      if(prevPoint){
+        const step=h.point.distanceTo(prevPoint);
+        if(step>.34)score+=3.0;
+        else score+=step*.08;
+      }
+
+      if(score<bestScore){
+        bestScore=score;
+        best={point:h.point.clone(),normal:surfN,distance:dist,dir:d.clone()};
+      }
     }
   }
   return best;

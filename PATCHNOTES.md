@@ -1,5 +1,25 @@
 # Patchnotes
 
+## V3.4.8 – Ortho Surface
+- Konstruktions-Spline startet und endet jetzt exakt im geometrischen Ringzentrum.
+- `visibleEndpoint()` beeinflusst die Leit-Spline nicht mehr und kann sie dadurch nicht seitlich vom Ring versetzen.
+- Rot/Blau entstehen ausschließlich symmetrisch als ± halbe Riemenbreite um die weiße Mittelspline.
+- Surface-Suche vollständig vereinfacht:
+  - keine 8 globalen Suchrichtungen mehr,
+  - pro Sample nur die lokale Normalachse der Riemenebene,
+  - Suche ausschließlich in +N / −N,
+  - Suchachse = `Tangente × Breitenrichtung`.
+- Dadurch sind die Debug-Suchstrahlen mathematisch orthogonal zur lokalen Riemenebene und drehen kontrolliert mit der Spline mit.
+- Kontinuität ist nur noch schwacher Tie-Breaker; extreme Sprünge werden bestraft.
+- Körperzonen von festen Whole-Body-Prozentwerten auf Landmark-basierte Ableitung umgestellt:
+  - Halsbasis aus dem oberen Breitenprofil,
+  - Schulter-/Achselgrenze aus dem realen oberen Körperprofil,
+  - Leisten-/Beinübergang aus dem unteren Breitenprofil.
+- Rote Zonen-Debuglinien verwenden exakt dieselben live berechneten Landmark-Werte wie der Solver.
+- Zonen-Landmarks werden bei Zonen-Debug / Modellwechsel neu berechnet.
+- Guided-Test wieder vollständig versionsspezifisch mit 15 gezielten Fragen, Vor/Zurück, Kommentaren, Screenshots, Abschlussseite, Copy und Report-Export.
+- Patchnotes bleiben ab jetzt wieder konsequent vollständig, neueste Version oben.
+
 ## V3.4.7 – Tangent + Zones
 - V3.4.6 Spline-Prototyp bleibt Grundlage; keine neue Surface-/Pfadfinderlogik.
 - Ringnormalen werden nicht mehr als direkte Flugrichtung der Spline interpretiert.

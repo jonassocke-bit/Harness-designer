@@ -7,21 +7,21 @@
   const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.7 TANGENT + ZONES stehen.',golden:'pass'},
-    startAngle:{title:'2 · Startwinkel',instruction:'Debug Schritt 2: Läuft die Spline direkt an Ring A tangential aus der Ringebene statt entlang der Ringnormalen?',golden:'known'},
-    endAngle:{title:'3 · Endwinkel',instruction:'Dasselbe an Ring B: tangential hineinlaufen.',golden:'known'},
-    reference:{title:'4 · Referenzkurve',instruction:'Den Fall vom letzten Screenshot nachbauen. Nähert sich die weiße Spline jetzt deiner roten Referenzkurve an?',golden:'known'},
-    offsets:{title:'5 · Drei Hilfslinien',instruction:'Rot/Blau müssen der weißen Spline folgen und dürfen sich an den Ringen nicht verdrehen.',golden:'known'},
-    guide:{title:'6 · Guided',instruction:'Dritter Punkt: Endtangenten bleiben ringgeführt, Mitte folgt dem Guide.',golden:'known'},
-    zones:{title:'7 · Zonen',instruction:'Zonen einschalten. Halsbasis, Schulter→Achsel und Leisten-V mit deinen Markierungen vergleichen.',golden:'known'},
-    shoulder:{title:'8 · Schulter',instruction:'Schulterkappe = Arm; zentraler Schultergürtel = Torso.',golden:'known'},
-    pelvis:{title:'9 · Becken/Bein',instruction:'Becken/Schritt = Torso; Beine beginnen direkt unter der Leisten-V-Grenze.',golden:'known'},
-    toolboxMove:{title:'10 · Toolbox verschieben',instruction:'Am Header ziehen. Toolbox frei verschiebbar und am Bildschirm begrenzt.',golden:'known'},
-    toolboxCollapse:{title:'11 · Toolbox einklappen',instruction:'− einklappen, + ausklappen. Nach Reload Position/Zustand prüfen.',golden:'known'},
-    surface:{title:'12 · Surface-Suche',instruction:'Schritt 3: lokale Suchwege von den Offset-Splines zur Oberfläche.',golden:'known'},
-    regression:{title:'13 · Regression',instruction:'Mirror, Save/Load, Zoom/Pan kurz prüfen.',golden:'pass'},
-    perf:{title:'14 · Performance',instruction:'Mehrere Riemen bauen und Performance beurteilen.',golden:'known'},
-    finalPage:{title:'15 · Abschluss',instruction:'Report exportieren.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.8 ORTHO SURFACE stehen.',golden:'pass'},
+    centerA:{title:'2 · Ring A zentriert',instruction:'Debug Schritt 1/2: Weiße Leit-Spline muss exakt im geometrischen Zentrum von Ring A starten. Screenshot bei sichtbarem Versatz.',golden:'known'},
+    centerB:{title:'3 · Ring B zentriert',instruction:'Weiße Leit-Spline muss exakt im Zentrum von Ring B enden. Kein seitliches Andocken.',golden:'known'},
+    symmetry:{title:'4 · Offset-Symmetrie',instruction:'Rot/Blau müssen direkt am Ring symmetrisch ± halbe Riemenbreite um Weiß liegen.',golden:'known'},
+    tangentA:{title:'5 · Tangente A',instruction:'Spline muss tangential aus der Ringebene laufen und trotzdem zentriert bleiben.',golden:'known'},
+    tangentB:{title:'6 · Tangente B',instruction:'Dasselbe am Endring.',golden:'known'},
+    ortho:{title:'7 · Orthogonale Surface-Suche',instruction:'Debug Schritt 3: Jede Suchlinie muss lokal orthogonal zur aktuellen Riemenebene / den drei Hilfslinien stehen. Keine plötzlich seitlich kippenden Rays.',golden:'known'},
+    orthoStress:{title:'8 · Orthogonal-Stress',instruction:'Brust/Seite/Schulter testen. Wenn die Spline stark dreht, müssen die Suchstrahlen sauber mitdrehen.',golden:'known'},
+    zones:{title:'9 · Landmark-Zonen',instruction:'Zonen einschalten. Rote Grenzen prüfen: Halsbasis, Schulter→Achsel und Leisten-V sollen jetzt aus dem tatsächlichen Modellprofil abgeleitet sein.',golden:'known'},
+    zoneTorso:{title:'10 · Torso→Torso',instruction:'Torso-Riemen darf nur Torso treffen.',golden:'known'},
+    zoneArm:{title:'11 · Torso→Arm',instruction:'Schulterkappe = Arm, zentraler Schultergürtel = Torso. Übergang testen.',golden:'known'},
+    guide:{title:'12 · Guided',instruction:'Dritten Punkt setzen. Mitte folgt Guide, Ringzentrierung + Orthogonalität bleiben erhalten.',golden:'known'},
+    mirror:{title:'13 · Mirror / Save / UI',instruction:'Spiegelriemen, Save/Load, Toolbox und Zoom/Pan kurz regressionsprüfen.',golden:'pass'},
+    perf:{title:'14 · Performance',instruction:'Mehrere Riemen bauen und Debug wechseln. Performance beurteilen.',golden:'known'},
+    finalPage:{title:'15 · Abschluss',instruction:'Abschlussseite muss erscheinen. Kommentare korrigierbar, Screenshots horizontal, Gesamtkommentar mehrzeilig, Log kopierbar und Report exportierbar.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);

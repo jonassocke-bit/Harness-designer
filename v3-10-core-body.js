@@ -571,21 +571,92 @@ function ringTube(n){return Math.max(.001,(n.thicknessMM*.0037)*.5)}
 const BODY_ZONE_COLORS={torso:0x32c7ff,head:0xff5fc8,armL:0xff9638,armR:0xffd84a,legL:0x75e06e,legR:0x31b85a};
 let bodyZoneDebug=false,bodyZoneDebugGroup=null;
 function getBodyBoundsV344(){const b=new THREE.Box3();for(const m of bodyMeshes)b.expandByObject(m);return b}
+
+let bodyZoneLandmarksV348=null;
+function computeBodyZoneLandmarksV348(){
+  if(bodyZoneLandmarksV348)return bodyZoneLandmarksV348;
+
+  const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
+  const samples=[];
+
+  // Gather world vertices as normalized x/y.
+  for(const m of bodyMeshes){
+    const pos=m.geometry?.attributes?.position;
+    if(!pos)continue;
+    const step=Math.max(1,Math.floor(pos.count/24000));
+    for(let i=0;i<pos.count;i+=step){
+      const p=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld);
+      samples.push({
+        x:(p.x-c.x)/(sz.x||1),
+        y:(p.y-c.y)/(sz.y||1)
+      });
+    }
+  }
+
+  // Width profile by y bins.
+  const bins=80,prof=Array.from({length:bins},()=>[]);
+  for(const s of samples){
+    const bi=THREE.MathUtils.clamp(Math.floor((s.y+.5)*bins),0,bins-1);
+    prof[bi].push(Math.abs(s.x));
+  }
+  const widthAt=i=>{
+    const arr=prof[i];if(!arr?.length)return 0;
+    arr.sort((a,b)=>a-b);
+    return arr[Math.floor(arr.length*.92)]||0;
+  };
+  const ys=i=>(i+.5)/bins-.5;
+  const widths=prof.map((_,i)=>widthAt(i));
+
+  // Neck base: first strong width increase while scanning downward from head.
+  let neckY=.245;
+  for(let i=bins-3;i>Math.floor(bins*.55);i--){
+    const w=widths[i],w2=widths[Math.max(0,i-3)];
+    if(w>.12 && w>w2*1.18){neckY=ys(i);break}
+  }
+
+  // Groin/leg split: find local narrowing/central split region below pelvis.
+  // Keep conservative torso pelvis, but derive around actual mesh profile.
+  let groinY=-.12;
+  let best=Infinity,bestY=groinY;
+  for(let i=Math.floor(bins*.18);i<Math.floor(bins*.44);i++){
+    const w=widths[i];
+    if(w>0 && w<best){best=w;bestY=ys(i)}
+  }
+  if(Number.isFinite(bestY))groinY=bestY+.025;
+
+  // Shoulder/armpit band: use widest upper torso band and derive diagonal.
+  let shoulderY=.20,shoulderX=.20;
+  let maxW=0;
+  for(let i=Math.floor(bins*.52);i<Math.floor(bins*.75);i++){
+    if(widths[i]>maxW){maxW=widths[i];shoulderY=ys(i);shoulderX=widths[i]}
+  }
+  const armpitY=shoulderY-.17;
+  const armpitX=Math.max(.13,shoulderX*.68);
+
+  bodyZoneLandmarksV348={
+    neckY,
+    shoulderY,
+    shoulderX:Math.min(.24,Math.max(.18,shoulderX*.82)),
+    armpitY,
+    armpitX,
+    groinY
+  };
+  return bodyZoneLandmarksV348;
+}
 function classifyBodyZoneWorldPoint(p){
   const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
   const x=(p.x-c.x)/(sz.x||1),y=(p.y-c.y)/(sz.y||1),ax=Math.abs(x);
+  const lm=computeBodyZoneLandmarksV348();
 
-  // User-marked anatomy: head/neck ends at neck base.
-  if(y>.245)return 'head';
+  if(y>lm.neckY)return 'head';
 
-  // Shoulder cap = arm. Boundary runs diagonally shoulder -> armpit.
-  const armTopY=.205,armBottomY=.015;
-  const k=THREE.MathUtils.clamp((y-armBottomY)/(armTopY-armBottomY),0,1);
-  const armBoundary=THREE.MathUtils.lerp(.145,.205,k);
-  if(y>.005&&ax>armBoundary)return x<0?'armL':'armR';
+  // Diagonal shoulder -> armpit based on actual mannequin landmarks.
+  const k=THREE.MathUtils.clamp((y-lm.armpitY)/(lm.shoulderY-lm.armpitY),0,1);
+  const armBoundary=THREE.MathUtils.lerp(lm.armpitX,lm.shoulderX,k);
+  if(y>lm.armpitY-.01 && ax>armBoundary)return x<0?'armL':'armR';
 
-  // Pelvis/crotch remains torso. Legs start directly below shallow groin V.
-  const legCut=THREE.MathUtils.lerp(-.125,-.095,THREE.MathUtils.clamp(ax/.30,0,1));
+  // Pelvis/crotch remains torso. Shallow V around measured groin height.
+  const legCut=lm.groinY + THREE.MathUtils.clamp(ax/.30,0,1)*.025;
   if(y<legCut)return x<0?'legL':'legR';
 
   return 'torso';
@@ -605,6 +676,7 @@ function clearBodyZoneDebug(){
   bodyZoneDebugGroup=null;
 }
 function rebuildBodyZoneDebug(){
+  bodyZoneLandmarksV348=null;
   clearBodyZoneDebug();if(!bodyZoneDebug)return;
   const group=new THREE.Group();group.renderOrder=120;
   for(const m of bodyMeshes){
@@ -632,14 +704,24 @@ function rebuildBodyZoneDebug(){
     );
     l.renderOrder=122;group.add(l);
   };
-  // Red boundaries use the same parameters as the classifier.
-  mkBoundary([new THREE.Vector3(X(-.16),Y(.245),Z(.31)),new THREE.Vector3(X(.16),Y(.245),Z(.31))]);
-  mkBoundary([new THREE.Vector3(X(-.205),Y(.205),Z(.31)),new THREE.Vector3(X(-.145),Y(.005),Z(.31))]);
-  mkBoundary([new THREE.Vector3(X(.205),Y(.205),Z(.31)),new THREE.Vector3(X(.145),Y(.005),Z(.31))]);
+  const lm=computeBodyZoneLandmarksV348();
+  // Red boundaries from the SAME live landmark values as the classifier.
   mkBoundary([
-    new THREE.Vector3(X(-.30),Y(-.095),Z(.31)),
-    new THREE.Vector3(X(0),Y(-.125),Z(.31)),
-    new THREE.Vector3(X(.30),Y(-.095),Z(.31))
+    new THREE.Vector3(X(-.16),Y(lm.neckY),Z(.31)),
+    new THREE.Vector3(X(.16),Y(lm.neckY),Z(.31))
+  ]);
+  mkBoundary([
+    new THREE.Vector3(X(-lm.shoulderX),Y(lm.shoulderY),Z(.31)),
+    new THREE.Vector3(X(-lm.armpitX),Y(lm.armpitY),Z(.31))
+  ]);
+  mkBoundary([
+    new THREE.Vector3(X(lm.shoulderX),Y(lm.shoulderY),Z(.31)),
+    new THREE.Vector3(X(lm.armpitX),Y(lm.armpitY),Z(.31))
+  ]);
+  mkBoundary([
+    new THREE.Vector3(X(-.30),Y(lm.groinY+.025),Z(.31)),
+    new THREE.Vector3(X(0),Y(lm.groinY),Z(.31)),
+    new THREE.Vector3(X(.30),Y(lm.groinY+.025),Z(.31))
   ]);
   helperRoot.add(group);bodyZoneDebugGroup=group;
 }
