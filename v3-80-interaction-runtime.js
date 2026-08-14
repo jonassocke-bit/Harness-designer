@@ -215,11 +215,9 @@ function setGenericMergeHoverWarning(active){
   }
 }
 
-function requestNodeDrag(n,x,y){
-  pendingDrag={n,x,y};
-  if(dragRaf)return;
-  dragRaf=requestAnimationFrame(()=>{
-    dragRaf=0;const q=pendingDrag;pendingDrag=null;if(!q)return;
+function performNodeDragV350(q){
+  if(!q)return;
+
 
     // Generic ring-on-ring merge: host stays fixed; drag far enough to restore guest.
     if(q.n.snapMergeState&&single?.genericMergeThisGesture===q.n.id){
@@ -343,8 +341,28 @@ function requestNodeDrag(n,x,y){
     // Preserve the user's manual route while the endpoint moves.
     // This is only weighted translation + the existing cheap geometry update.
     if(single?.waypointDragState)updateEndpointWaypointDragState(single.waypointDragState);
+    if(single?.solvedRouteDragState)updateSolvedRoutePreviewV350(single.solvedRouteDragState);
     updatePanelsForNode(q.n.id);
     const qp=pairOfNode(q.n);if(qp)updatePanelsForNode(qp.id);
+
+}
+function flushPendingNodeDragV350(){
+  if(dragRaf){
+    cancelAnimationFrame(dragRaf);
+    dragRaf=0;
+  }
+  const q=pendingDrag;
+  pendingDrag=null;
+  if(q)performNodeDragV350(q);
+}
+function requestNodeDrag(n,x,y){
+  pendingDrag={n,x,y};
+  if(dragRaf)return;
+  dragRaf=requestAnimationFrame(()=>{
+    dragRaf=0;
+    const q=pendingDrag;
+    pendingDrag=null;
+    performNodeDragV350(q);
   });
 }
 function screenPlanePoint(x,y,point){
@@ -357,6 +375,60 @@ function updateManualControlFromWorld(s,index,world){
   const c=s.controls[index],f=strapFrame(s),base=f.A.clone().lerp(f.B,c.t),d=world.clone().sub(base);
   c.side=d.dot(f.side);c.normal=d.dot(f.normal);c.drop=d.dot(WORLD_UP);
   updateStrapGeometry(s);
+}
+
+
+// ============================================================
+// V3.5.0 · SOLVED-ROUTE LIVE PREVIEW
+// During ring dragging, deform the last solved strip with the endpoint deltas.
+// No body raycasts while dragging; final solve still happens on pointer-up.
+// ============================================================
+function captureSolvedRoutePreviewV350(nodeId){
+  const state=[];
+  const seen=new Set();
+  for(const s0 of straps.values()){
+    if(s0.a!==nodeId&&s0.b!==nodeId)continue;
+    const s=pairOfStrap(s0)?pairMasterStrap(s0):s0;
+    if(seen.has(s.id)||!s.methodRoute?.length)continue;
+    seen.add(s.id);
+    const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)continue;
+    state.push({
+      strapId:s.id,
+      startA:nodeWorldPosition(a).toArray(),
+      startB:nodeWorldPosition(b).toArray(),
+      route:s.methodRoute.map(g=>({
+        t:g.t,
+        fields:Object.fromEntries(
+          ['center','nominalLeft','nominalRight','leftHit','rightHit','stripLeft','stripRight']
+            .filter(k=>g[k]?.isVector3)
+            .map(k=>[k,g[k].toArray()])
+        )
+      }))
+    });
+  }
+  return state;
+}
+function updateSolvedRoutePreviewV350(state){
+  if(!state?.length)return;
+  const pointFields=['center','nominalLeft','nominalRight','leftHit','rightHit','stripLeft','stripRight'];
+  for(const d of state){
+    const s=straps.get(d.strapId);if(!s)continue;
+    const a=nodes.get(s.a),b=nodes.get(s.b);if(!a||!b)continue;
+    const dA=nodeWorldPosition(a).sub(new THREE.Vector3().fromArray(d.startA));
+    const dB=nodeWorldPosition(b).sub(new THREE.Vector3().fromArray(d.startB));
+    for(let i=0;i<s.methodRoute.length&&i<d.route.length;i++){
+      const g=s.methodRoute[i],src=d.route[i];
+      const t=THREE.MathUtils.clamp(src.t??g.t??0,0,1);
+      const delta=dA.clone().multiplyScalar(1-t).addScaledVector(dB,t);
+      for(const k of pointFields){
+        if(src.fields[k])g[k]=new THREE.Vector3().fromArray(src.fields[k]).add(delta);
+      }
+    }
+    s.previewMode=false;
+    updateStrapGeometry(s,{skipPairMirror:true});
+    const mate=pairOfStrap(s);
+    if(mate)mirrorStrapMeshFromMaster(s,mate);
+  }
 }
 
 canvas.addEventListener('pointerdown',e=>{
@@ -400,7 +472,8 @@ canvas.addEventListener('pointerdown',e=>{
     guideStrapId:hit?.kind==='strapGuideHandle'?hit.id:null,
     guidePreviewPoint:null,
     guideOriginal:hit?.kind==='strapGuideHandle'&&straps.get(hit.id)?.routingGuide?historyClone(straps.get(hit.id).routingGuide):null,
-    waypointDragState:hit?.kind==='node'?captureEndpointWaypointDragState(hit.id):null
+    waypointDragState:hit?.kind==='node'?captureEndpointWaypointDragState(hit.id):null,
+    solvedRouteDragState:hit?.kind==='node'?captureSolvedRoutePreviewV350(hit.id):null
   };
   if(hit?.kind==='node'){
     const n=nodes.get(hit.id);selectObject(n);
@@ -467,6 +540,10 @@ canvas.addEventListener('pointerup',e=>{
   pointers.delete(e.pointerId);
   if(pointers.size<2)gesture=null;
   if(!single){return}
+  // V3.5.0: the last throttled pointermove MUST be applied before final solving.
+  // Otherwise pointer-up can solve the penultimate position and a queued drag
+  // then puts the strap back into preview mode.
+  flushPendingNodeDragV350();
   const was=single;single=null;setGenericMergeHoverWarning(false);
 
   if(was.debugReadOnly){
@@ -667,6 +744,10 @@ function initV344Tools(){
       <button id="v344Save">Save</button>
       <button id="v344Load">Load</button>
       <button id="v344Code">Design-Code</button>
+      <div class="v350ZoneCal">
+        <button id="v350ZoneCalToggle" type="button">Zonen kalibrieren</button>
+        <div id="v350ZoneCalBody" class="hidden"></div>
+      </div>
       <div class="v344Legend">
         <span style="color:#32c7ff">Torso</span> ·
         <span style="color:#ff5fc8">Kopf</span> ·
@@ -728,5 +809,29 @@ function initV344Tools(){
   const z=el.querySelector('#v344Zones'),h=el.querySelector('#v344Hitboxes');
   z.onclick=()=>{setBodyZoneDebug(!bodyZoneDebug);z.classList.toggle('active',bodyZoneDebug)};
   h.onclick=()=>{setHitboxOverlayDebugV344(!hitboxOverlayDebugV344);h.classList.toggle('active',hitboxOverlayDebugV344)};
+
+  const calBody=el.querySelector('#v350ZoneCalBody');
+  const calToggle=el.querySelector('#v350ZoneCalToggle');
+  const defs=[
+    ['Hals Y','neck',-.12,.12,.005],
+    ['Schulter Y','shoulderY',-.12,.12,.005],
+    ['Schulter X','shoulderX',-.12,.12,.005],
+    ['Achsel Y','armpitY',-.12,.12,.005],
+    ['Achsel X','armpitX',-.12,.12,.005],
+    ['Leiste Y','groin',-.15,.15,.005],
+    ['V-Tiefe','vDepth',-.05,.08,.005]
+  ];
+  for(const [label,key,min,max,step] of defs){
+    const row=document.createElement('label');row.className='v350CalRow';
+    const val=document.createElement('span');
+    const input=document.createElement('input');input.type='range';input.min=min;input.max=max;input.step=step;input.value=bodyZoneCalibrationV350[key]||0;
+    val.textContent=Number(input.value).toFixed(3);
+    input.oninput=()=>{bodyZoneCalibrationV350[key]=Number(input.value);val.textContent=Number(input.value).toFixed(3);saveBodyZoneCalibrationV350()};
+    row.append(document.createTextNode(label),input,val);calBody.append(row);
+  }
+  const reset=document.createElement('button');reset.textContent='Zonen Reset';
+  reset.onclick=()=>{for(const k of Object.keys(bodyZoneCalibrationV350))bodyZoneCalibrationV350[k]=0;saveBodyZoneCalibrationV350();el.remove();initV344Tools()};
+  calBody.append(reset);
+  calToggle.onclick=()=>calBody.classList.toggle('hidden');
 }
 setTimeout(safeInitV344Tools,0);

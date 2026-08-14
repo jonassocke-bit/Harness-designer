@@ -1,5 +1,33 @@
 # Patchnotes
 
+## V3.5.0 – Stability + Report
+- Ringdrag-Lifecycle an der Ursache repariert:
+  - der letzte per `requestAnimationFrame` wartende Drag wird auf `pointerup` synchron geflusht,
+  - erst danach läuft der finale Riemen-Solve,
+  - verhindert den bekannten Zustand „Riemen bleibt in Preview und wird erst beim zweiten Bewegen korrekt“.
+- Live-Preview neu:
+  - während Ringdrag wird die zuletzt gelöste `methodRoute` billig mit den Endpunkt-Deltas deformiert,
+  - keine Body-Raycasts während des Drags,
+  - kein Rückfall mehr auf die alte einfache Legacy-Kurve, die häufig durchs Mannequin clippt,
+  - auf `pointerup` wird weiterhin der vollständige Ortho-Solver ausgeführt.
+- Mirror-Debug repariert:
+  - Spiegelpartner erhält jetzt nicht nur das gerenderte Mesh, sondern auch gespiegelte `methodRoute` und `debugTrace`,
+  - Left/Right wird bei Spiegelung bewusst getauscht, damit die Band-Handedness korrekt bleibt,
+  - Debug auf dem Slave löst nicht mehr eigenständig eine andere Route.
+- Körperzonen:
+  - automatische Landmark-Werte bleiben Startpunkt,
+  - neu: live kalibrierbare Offsets für Hals, Schulter X/Y, Achsel X/Y, Leiste und V-Tiefe,
+  - Einstellungen werden lokal gespeichert,
+  - rote Debuggrenzen und Solver verwenden dieselben kalibrierten Werte.
+- Guided Test / Report:
+  - tatsächliche Release-Kennung endlich auf V3.5.0 aktualisiert (alte Reports trugen fälschlich weiter „V3.4.4b“),
+  - Zurück / REPORT / Weiter sitzen fest im oberen Header,
+  - REPORT ist jederzeit erreichbar, auch mit unbeantworteten Fragen,
+  - letzte Frage benötigt keinen Status mehr, um Summary zu öffnen,
+  - „Alles kopieren + Bilder“ versucht Rich Clipboard (`text/html` mit eingebetteten Screenshots + `text/plain` Fallback),
+  - HTML-Report mit eingebetteten Bildern bleibt als garantierter Exportweg erhalten.
+- Keine neue Routingmathematik: Spline + orthogonale Surface-Suche aus V3.4.8/V3.4.9 bleibt unverändert.
+
 ## V3.4.9 – Visible Straps
 - Gelöste Spline-Riemen sind jetzt auch außerhalb des Debugmodus als normale gefüllte Riemengeometrie sichtbar.
 - Ursache gefunden: V3.4.8 setzt `autoMethod = 'spline-nearest'`, die normale Renderlogik akzeptierte aber nur `autoMethod === 'strip'`.

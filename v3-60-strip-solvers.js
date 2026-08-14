@@ -551,7 +551,13 @@ function refreshStrapDebugPanel(s){
   document.getElementById('strapDebugAllBtn').classList.toggle('active',!!s?.debugAll);
 }
 function openStrapDebugMode(s){
-  if(!s?.debugTrace)rebuildAutoProjection(s);
+  const ps=pairOfStrap(s);
+  if(ps){
+    const master=pairMasterStrap(s);
+    const slave=master===s?ps:s;
+    if(!master.debugTrace)rebuildAutoProjection(master);
+    mirrorStrapMeshFromMaster(master,slave);
+  }else if(!s?.debugTrace)rebuildAutoProjection(s);
   s.debugRoute=true;s.debugStep=THREE.MathUtils.clamp(s.debugStep||0,0,STRAP_DEBUG_STEPS.length-1);
   document.getElementById('strapDebugPanel')?.classList.remove('hidden');
   setStrapDebugBodyMode(true);

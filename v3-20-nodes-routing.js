@@ -111,11 +111,51 @@ function forceMirrorNodeFromMaster(master,slave,{visualProps=false}={}){
   }
   syncNodeTransform(slave);
 }
+
+function mirrorDebugVecV350(v){return v?.isVector3?new THREE.Vector3(-v.x,v.y,v.z):v}
+function mirrorRouteSampleV350(g){
+  if(!g)return g;
+  const o={...g};
+  for(const k of ['center','tangent','normal','side','nominalLeft','nominalRight','leftHit','rightHit','leftNormal','rightNormal','stripLeft','stripRight']){
+    if(g[k]?.isVector3)o[k]=mirrorDebugVecV350(g[k]);
+  }
+  // Reflection changes handedness. Swap visual left/right so width orientation stays coherent.
+  [o.nominalLeft,o.nominalRight]=[o.nominalRight,o.nominalLeft];
+  [o.leftHit,o.rightHit]=[o.rightHit,o.leftHit];
+  [o.leftNormal,o.rightNormal]=[o.rightNormal,o.leftNormal];
+  [o.stripLeft,o.stripRight]=[o.stripRight,o.stripLeft];
+  return o;
+}
+function mirrorDebugTraceV350(d){
+  if(!d)return null;
+  const arr=k=>(d[k]||[]).map(mirrorDebugVecV350);
+  const probes=k=>(d[k]||[]).map(q=>({from:mirrorDebugVecV350(q.from),to:mirrorDebugVecV350(q.to)}));
+  return {
+    ...d,
+    endpoints:arr('endpoints'),
+    nominalCenters:arr('nominalCenters'),
+    nominalLeft:arr('nominalRight'),
+    nominalRight:arr('nominalLeft'),
+    routingGuide:d.routingGuide?mirrorDebugVecV350(d.routingGuide):null,
+    probesLeft:probes('probesRight'),
+    probesRight:probes('probesLeft'),
+    projectedLeft:arr('projectedRight'),
+    projectedRight:arr('projectedLeft'),
+    finalLeft:arr('finalRight'),
+    finalRight:arr('finalLeft')
+  };
+}
+
 function mirrorStrapMeshFromMaster(master,slave){
   if(!master||!slave||master===slave)return;
   slave.widthMM=master.widthMM;
   slave.slack=master.slack;
   slave.surfaceLevel=master.surfaceLevel||0;
+  slave.autoMethod=master.autoMethod;
+  slave.autoProject=master.autoProject;
+  slave.previewMode=master.previewMode;
+  slave.methodRoute=master.methodRoute?.map(mirrorRouteSampleV350)||null;
+  slave.debugTrace=mirrorDebugTraceV350(master.debugTrace);
 
   // Keep materialized waypoint state ready for a future unlink, but do not
   // independently project it while the pair is linked.

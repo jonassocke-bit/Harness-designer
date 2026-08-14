@@ -309,3 +309,15 @@ white-space:pre-wrap;display:none}
 #v344Tools .v344Legend{grid-column:1/-1}
 #v344Tools.collapsed{width:auto;min-width:116px}
 #v344Tools.collapsed .v344Body{display:none}
+
+#v344Tools .v350ZoneCal{grid-column:1/-1}
+#v350ZoneCalBody{display:grid;gap:5px;margin-top:5px}
+#v350ZoneCalBody.hidden{display:none}
+.v350CalRow{display:grid;grid-template-columns:62px 1fr 40px;align-items:center;gap:4px;font-size:9px}
+.v350CalRow input{width:100%}
+.v350CalRow span{text-align:right;font-variant-numeric:tabular-nums}
+
+#v3Guide .head{display:grid!important;grid-template-columns:34px auto 1fr auto 34px 34px;gap:5px;align-items:center;position:sticky;top:0;z-index:3}
+#v3Guide .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#v3Guide .head .prev,#v3Guide .head .next,#v3Guide .head .report,#v3Guide .head .close{position:static!important}
+#v3Guide .nav{display:flex;justify-content:flex-end!important}

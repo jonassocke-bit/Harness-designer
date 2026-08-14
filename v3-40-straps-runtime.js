@@ -288,7 +288,12 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   }
 }
 function updateAttachedStraps(nodeId){
-  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){s.previewMode=true;updateStrapGeometry(s)}
+  for(const s of straps.values())if(s.a===nodeId||s.b===nodeId){
+    // Keep the last solved strip visible during drag. V3.5.0's drag state
+    // deforms it cheaply; do not drop back to the old body-clipping chord.
+    s.previewMode=false;
+    updateStrapGeometry(s);
+  }
 }
 function strapGuideHandlePosition(s){
   if(s.routingGuide)return new THREE.Vector3().fromArray(s.routingGuide);

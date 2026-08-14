@@ -572,6 +572,16 @@ const BODY_ZONE_COLORS={torso:0x32c7ff,head:0xff5fc8,armL:0xff9638,armR:0xffd84a
 let bodyZoneDebug=false,bodyZoneDebugGroup=null;
 function getBodyBoundsV344(){const b=new THREE.Box3();for(const m of bodyMeshes)b.expandByObject(m);return b}
 
+
+const BODY_ZONE_CAL_KEY_V350='HD_BODY_ZONE_CAL_V350';
+let bodyZoneCalibrationV350={neck:0,shoulderY:0,shoulderX:0,armpitY:0,armpitX:0,groin:0,vDepth:0};
+try{Object.assign(bodyZoneCalibrationV350,JSON.parse(localStorage.getItem(BODY_ZONE_CAL_KEY_V350)||'{}'))}catch{}
+function saveBodyZoneCalibrationV350(){
+  try{localStorage.setItem(BODY_ZONE_CAL_KEY_V350,JSON.stringify(bodyZoneCalibrationV350))}catch{}
+  bodyZoneLandmarksV348=null;
+  if(bodyZoneDebug)rebuildBodyZoneDebug();
+}
+
 let bodyZoneLandmarksV348=null;
 function computeBodyZoneLandmarksV348(){
   if(bodyZoneLandmarksV348)return bodyZoneLandmarksV348;
@@ -634,12 +644,13 @@ function computeBodyZoneLandmarksV348(){
   const armpitX=Math.max(.13,shoulderX*.68);
 
   bodyZoneLandmarksV348={
-    neckY,
-    shoulderY,
-    shoulderX:Math.min(.24,Math.max(.18,shoulderX*.82)),
-    armpitY,
-    armpitX,
-    groinY
+    neckY:neckY+bodyZoneCalibrationV350.neck,
+    shoulderY:shoulderY+bodyZoneCalibrationV350.shoulderY,
+    shoulderX:Math.min(.30,Math.max(.10,shoulderX*.82+bodyZoneCalibrationV350.shoulderX)),
+    armpitY:armpitY+bodyZoneCalibrationV350.armpitY,
+    armpitX:Math.min(.28,Math.max(.08,armpitX+bodyZoneCalibrationV350.armpitX)),
+    groinY:groinY+bodyZoneCalibrationV350.groin,
+    vDepth:.025+bodyZoneCalibrationV350.vDepth
   };
   return bodyZoneLandmarksV348;
 }
@@ -656,7 +667,7 @@ function classifyBodyZoneWorldPoint(p){
   if(y>lm.armpitY-.01 && ax>armBoundary)return x<0?'armL':'armR';
 
   // Pelvis/crotch remains torso. Shallow V around measured groin height.
-  const legCut=lm.groinY + THREE.MathUtils.clamp(ax/.30,0,1)*.025;
+  const legCut=lm.groinY + THREE.MathUtils.clamp(ax/.30,0,1)*lm.vDepth;
   if(y<legCut)return x<0?'legL':'legR';
 
   return 'torso';
@@ -719,9 +730,9 @@ function rebuildBodyZoneDebug(){
     new THREE.Vector3(X(lm.armpitX),Y(lm.armpitY),Z(.31))
   ]);
   mkBoundary([
-    new THREE.Vector3(X(-.30),Y(lm.groinY+.025),Z(.31)),
+    new THREE.Vector3(X(-.30),Y(lm.groinY+lm.vDepth),Z(.31)),
     new THREE.Vector3(X(0),Y(lm.groinY),Z(.31)),
-    new THREE.Vector3(X(.30),Y(lm.groinY+.025),Z(.31))
+    new THREE.Vector3(X(.30),Y(lm.groinY+lm.vDepth),Z(.31))
   ]);
   helperRoot.add(group);bodyZoneDebugGroup=group;
 }

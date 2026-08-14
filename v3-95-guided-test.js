@@ -4,24 +4,24 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
+  const RELEASE={build:'V3.5.0 STABILITY + REPORT',base:'V3.4.9 VISIBLE STRAPS'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.9 VISIBLE STRAPS stehen.',golden:'pass'},
-    visible:{title:'2 · Sichtbarer Riemen',instruction:'Normalen Riemen bauen und Debug schließen. Das gelöste Band muss außerhalb des Debugmodus sichtbar bleiben.',golden:'known'},
-    exact:{title:'3 · Debug = Normalansicht',instruction:'Debug finale Außenkanten/Orange-Band mit der Normalansicht vergleichen. Geometrie muss 1:1 dieselbe Route zeigen.',golden:'known'},
-    center:{title:'4 · Ringanschluss sichtbar',instruction:'Ringzentrierung in Normalansicht prüfen. Fehler des Solvers dürfen nicht durch eine zweite Rendergeometrie versteckt werden.',golden:'known'},
-    width:{title:'5 · Breite',instruction:'Breite live ändern. Sichtbarer Riemen muss sofort aus den neuen finalen Außenkanten aufgebaut werden.',golden:'known'},
-    guide:{title:'6 · Guide',instruction:'Guide verschieben und loslassen. Sichtbarer Riemen muss die neu gelöste Route übernehmen.',golden:'known'},
-    mirror:{title:'7 · Mirror',instruction:'Spiegelpaar bauen/ändern. Beide sichtbaren Meshes müssen gekoppelt aktualisieren.',golden:'known'},
-    ortho:{title:'8 · Ortho Regression',instruction:'Debug Schritt 3: orthogonale Suchstrahlen aus V3.4.8 unverändert prüfen.',golden:'pass'},
-    zones:{title:'9 · Zonen Regression',instruction:'Zonen unverändert prüfen.',golden:'known'},
-    selection:{title:'10 · Auswahl',instruction:'Sichtbaren Riemen direkt antippen. Riemeneditor muss weiterhin öffnen.',golden:'known'},
-    undo:{title:'11 · Undo / Redo',instruction:'Riemen ändern und Undo/Redo testen. Sichtbares Mesh muss korrekt zurückkehren.',golden:'known'},
-    save:{title:'12 · Save / Load',instruction:'Mehrere sichtbare Riemen speichern und laden.',golden:'known'},
-    perf:{title:'13 · Performance',instruction:'Mehrere sichtbare Riemen bauen und Breite ändern. Zusätzliche Darstellung darf keinen deutlichen Lag erzeugen.',golden:'known'},
-    report:{title:'14 · Report',instruction:'Reportfunktion und bisherige Kommentare/Screenshots kurz regressionsprüfen.',golden:'known'},
-    finalPage:{title:'15 · Abschluss',instruction:'HTML-Report exportieren.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.5.0 STABILITY + REPORT stehen.',golden:'pass'},
+    dragFinalize:{title:'2 · Final-Solve nach Ringdrag',instruction:'Ring mehrfach schnell ziehen und sofort loslassen. Der Riemen muss jedes Mal auf der finalen Ringposition fertig berechnet sein – kein zweites Antippen nötig.',golden:'known'},
+    dragStress:{title:'3 · Drag-Stresstest',instruction:'10–20 kurze Ringbewegungen hintereinander. Prüfen, ob irgendein Riemen in einem Preview-Zustand hängen bleibt.',golden:'known'},
+    preview:{title:'4 · Live Preview',instruction:'Während Ringdrag beobachten: Die Vorschau soll den zuletzt gelösten Riemen weich mitverformen statt als einfache Linie durch das Mannequin zu clippen.',golden:'known'},
+    previewFinal:{title:'5 · Preview → Final',instruction:'Beim Loslassen muss die deformierte Preview sofort durch den echten Ortho-Solve ersetzt werden.',golden:'known'},
+    mirrorNormal:{title:'6 · Mirror normal',instruction:'Spiegelriemen bewegen und Breite ändern. Normalansicht beider Seiten gekoppelt.',golden:'known'},
+    mirrorDebug:{title:'7 · Mirror Debug',instruction:'Debug auf MASTER und anschließend auf gespiegeltem Riemen öffnen. Hilfslinien, Suchstrahlen und finale Kanten müssen tatsächlich gespiegelt auf der richtigen Seite erscheinen.',golden:'known'},
+    zones:{title:'8 · Zonen Kalibrierung',instruction:'Zonen einschalten und Toolbox → Zonen kalibrieren öffnen. Hals, Schulter/Achsel und Leiste live auf deine gewünschten Grenzen einstellen.',golden:'known'},
+    zonePersist:{title:'9 · Zonen speichern',instruction:'Zonenslider einstellen, Reload. Kalibrierung und rote Grenzen müssen erhalten bleiben.',golden:'known'},
+    zoneSolver:{title:'10 · Zonen im Solver',instruction:'Nach Kalibrierung Torso→Torso und Torso→Arm testen. Solver darf nur die sichtbaren erlaubten Zonen treffen.',golden:'known'},
+    reportAnytime:{title:'11 · REPORT jederzeit',instruction:'Von einer beliebigen Frage aus REPORT oben drücken. Summary muss sofort erscheinen – unabhängig von unbeantworteten Fragen.',golden:'known'},
+    topNav:{title:'12 · Navigation oben',instruction:'← / REPORT / → bleiben immer oben an derselben Position, auch bei langen Kommentaren und mehreren Screenshots.',golden:'known'},
+    richCopy:{title:'13 · Alles kopieren',instruction:'Report mit Kommentar + mehreren Screenshots öffnen und „Alles kopieren + Bilder“ drücken. In ChatGPT/Notizen einfügen und prüfen, ob Rich-Clipboard inklusive Bilder übernommen wird.',golden:'known'},
+    htmlExport:{title:'14 · HTML Export',instruction:'HTML Report + Bilder exportieren. Alle Texte und eingebetteten Screenshots müssen enthalten sein.',golden:'pass'},
+    finalPage:{title:'15 · Abschluss',instruction:'Mit → auf letzter Frage oder REPORT in die Abschlussansicht wechseln. Kein Status-Zwang.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -153,6 +153,35 @@
     return blob;
   }
 
+
+  async function richReportHtml(){
+    let body=`<h1>${escapeHtml(RELEASE.build)}</h1><pre>${escapeHtml(logText())}</pre>`;
+    if(run.overallNote)body+=`<h2>Gesamtkommentar</h2><p>${escapeHtml(run.overallNote).replace(/\n/g,'<br>')}</p>`;
+    for(const id of QUEUE){
+      const t=TESTS[id],r=run.results[id],shots=await listShots(id);
+      body+=`<section><h2>${escapeHtml(t.title)}</h2><p><b>Status:</b> ${escapeHtml(r?.status||'ungetestet')}</p>`;
+      if(r?.note)body+=`<p><b>Kommentar:</b> ${escapeHtml(r.note)}</p>`;
+      for(const sh of shots)body+=`<img src="${await dataUrl(sh.blob)}" style="max-width:100%;height:auto" alt="Screenshot">`;
+      body+='</section>';
+    }
+    return body;
+  }
+  async function copyRichReport(){
+    const plain=logText()+(run.overallNote?'\n\nGesamtkommentar:\n'+run.overallNote:'');
+    try{
+      if(navigator.clipboard?.write && window.ClipboardItem){
+        const rich=await richReportHtml();
+        const item=new ClipboardItem({
+          'text/plain':new Blob([plain],{type:'text/plain'}),
+          'text/html':new Blob([rich],{type:'text/html'})
+        });
+        await navigator.clipboard.write([item]);
+        return 'rich';
+      }
+    }catch(e){console.warn('Rich clipboard failed',e)}
+    return await copyText(plain)?'text':false;
+  }
+
   async function exportReport(){
     let sections='';
     for(const id of QUEUE){
@@ -183,7 +212,7 @@
   function mount(){
     const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
     const g=document.createElement('div');g.id='v3Guide';
-    g.innerHTML='<div class="head"><span class="count"></span><span class="title"></span><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><textarea class="note" rows="4" placeholder="Kommentar / Fehlerbeschreibung…"></textarea><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="prev">← Zurück</button><button class="next">Weiter →</button><button class="shot">📷 Screenshot</button></div>';
+    g.innerHTML='<div class="head"><button class="prev">←</button><span class="count"></span><span class="title"></span><button class="report">REPORT</button><button class="next">→</button><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><textarea class="note" rows="4" placeholder="Kommentar / Fehlerbeschreibung…"></textarea><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="shot">📷 Screenshot</button></div>';
     const summary=document.createElement('div');summary.id='v3GuideSummary';
     document.body.append(btn,g,summary);
     const $=q=>g.querySelector(q);
@@ -195,7 +224,7 @@
       const id=QUEUE[index],t=TESTS[id],r=run.results[id]||{};
       $('.count').textContent=(index+1)+'/'+QUEUE.length;$('.title').textContent=t.title;$('.instruction').textContent=t.instruction;
       $('.known').textContent=t.known||'';$('.known').style.display=t.known?'block':'none';
-      $('.note').value=r.note||'';$('.prev').disabled=index===0;$('.next').disabled=index===QUEUE.length-1;
+      $('.note').value=r.note||'';$('.prev').disabled=index===0;$('.next').disabled=false;
       ['pass','fail','skip'].forEach(k=>$('.'+k).classList.toggle('activeAnswer',r.status===k));
 
       for(const u of previewUrls)URL.revokeObjectURL(u);previewUrls=[];
@@ -231,12 +260,12 @@
 
     async function showSummary(){
       g.style.display='none';run.complete=true;save();saveHistory();
-      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="copy">Log kopieren</button><button class="export">Report + Bilder</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
+      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="copy">Alles kopieren + Bilder</button><button class="export">HTML Report + Bilder</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
       summary.querySelector('.log').textContent=logText();
       summary.querySelector('.overallNote').value=run.overallNote||'';
       summary.querySelector('.overallNote').oninput=e=>{run.overallNote=e.target.value;save();summary.querySelector('.log').textContent=logText()};
       summary.style.display='block';
-      summary.querySelector('.copy').onclick=async()=>{const ok=await copyText(logText());summary.querySelector('.copy').textContent=ok?'✓ Kopiert':'Kopieren fehlgeschlagen'};
+      summary.querySelector('.copy').onclick=async()=>{const mode=await copyRichReport();summary.querySelector('.copy').textContent=mode==='rich'?'✓ Text + Bilder kopiert':mode==='text'?'✓ Text kopiert (Bilder von iOS blockiert)':'Kopieren fehlgeschlagen'};
       summary.querySelector('.export').onclick=async()=>{summary.querySelector('.export').textContent='Export…';try{await exportReport();summary.querySelector('.export').textContent='✓ Exportiert'}catch(e){summary.querySelector('.export').textContent='Export fehlgeschlagen'}};
       summary.querySelector('.back').onclick=()=>{index=QUEUE.length-1;render()};
       summary.querySelector('.closeSum').onclick=()=>summary.style.display='none';
@@ -244,8 +273,9 @@
 
     $('.pass').onclick=()=>record('pass');$('.fail').onclick=()=>record('fail');$('.skip').onclick=()=>record('skip');
     $('.note').onchange=()=>{const id=QUEUE[index],r=run.results[id]||{};run.results[id]={...r,note:$('.note').value.trim()};save()};
-    $('.prev').onclick=()=>{index=(index-1+QUEUE.length)%QUEUE.length;saveIndex();render()};
-    $('.next').onclick=()=>{index=(index+1)%QUEUE.length;saveIndex();render()};
+    $('.prev').onclick=()=>{index=Math.max(0,index-1);saveIndex();render()};
+    $('.next').onclick=()=>{if(index>=QUEUE.length-1){showSummary();return}index++;saveIndex();render()};
+    $('.report').onclick=()=>showSummary();
     $('.close').onclick=()=>{
       const id=QUEUE[index],r=run.results[id]||{};
       run.results[id]={...r,note:$('.note').value.trim()};save();saveIndex();g.style.display='none';
@@ -267,7 +297,7 @@
       saveIndex();render();
     };
 
-    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport};
+    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport,copyRichReport,showSummary};
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
