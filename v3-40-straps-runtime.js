@@ -143,8 +143,14 @@ function updateStrapGeometry(s,{skipPairMirror=false}={}){
   }
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);if(!aNode||!bNode)return;
 
-  if(!s.previewMode&&s.autoMethod==='strip'&&s.methodRoute?.length){
-    if(updateDirectStripGeometry(s)){updateStrapMethodDebug(s,s.methodRoute);if(!skipPairMirror)reconcileMirrorStrapPair(s);return}
+  if(!s.previewMode&&(s.autoMethod==='strip'||s.autoMethod==='spline-nearest')&&s.methodRoute?.length){
+    // V3.4.9: render the EXACT solved final strip edges in normal view too.
+    // updateDirectStripGeometry already triangulates stripLeft/stripRight into the normal strap mesh.
+    if(updateDirectStripGeometry(s)){
+      updateStrapMethodDebug(s,s.methodRoute);
+      if(!skipPairMirror)reconcileMirrorStrapPair(s);
+      return;
+    }
   }
 
   const surfaceMode=(s.surfaceLevel||0)>0;

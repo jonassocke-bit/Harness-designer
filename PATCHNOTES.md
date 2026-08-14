@@ -1,5 +1,16 @@
 # Patchnotes
 
+## V3.4.9 – Visible Straps
+- Gelöste Spline-Riemen sind jetzt auch außerhalb des Debugmodus als normale gefüllte Riemengeometrie sichtbar.
+- Ursache gefunden: V3.4.8 setzt `autoMethod = 'spline-nearest'`, die normale Renderlogik akzeptierte aber nur `autoMethod === 'strip'`.
+- Dadurch wurde außerhalb des Debugmodus bislang die alte Legacy-Riemengeometrie gerendert, obwohl der Debugmodus bereits die neue gelöste Route zeigte.
+- Die normale Darstellung verwendet jetzt denselben `updateDirectStripGeometry()`-Pfad für `strip` und `spline-nearest`.
+- Damit werden exakt `stripLeft` und `stripRight` der aktuellen gelösten Route trianguliert.
+- Keine neue Routing-, Surface-, Zonen- oder Glättungslogik.
+- Debugmodus bleibt unverändert und dient weiterhin zum Vergleich der Konstruktions- und finalen Außenkanten.
+- Guided-Test bleibt vollständig aktiv und wurde auf sichtbare Riemengeometrie angepasst.
+- Patchnotes weiterhin neueste Version oben.
+
 ## V3.4.8 – Ortho Surface
 - Konstruktions-Spline startet und endet jetzt exakt im geometrischen Ringzentrum.
 - `visibleEndpoint()` beeinflusst die Leit-Spline nicht mehr und kann sie dadurch nicht seitlich vom Ring versetzen.

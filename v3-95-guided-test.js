@@ -7,21 +7,21 @@
   const RELEASE={build:'V3.4.4b BOOT FIX',base:'V3.4.2 UNIFIED STRAP GUIDE'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.4.8 ORTHO SURFACE stehen.',golden:'pass'},
-    centerA:{title:'2 · Ring A zentriert',instruction:'Debug Schritt 1/2: Weiße Leit-Spline muss exakt im geometrischen Zentrum von Ring A starten. Screenshot bei sichtbarem Versatz.',golden:'known'},
-    centerB:{title:'3 · Ring B zentriert',instruction:'Weiße Leit-Spline muss exakt im Zentrum von Ring B enden. Kein seitliches Andocken.',golden:'known'},
-    symmetry:{title:'4 · Offset-Symmetrie',instruction:'Rot/Blau müssen direkt am Ring symmetrisch ± halbe Riemenbreite um Weiß liegen.',golden:'known'},
-    tangentA:{title:'5 · Tangente A',instruction:'Spline muss tangential aus der Ringebene laufen und trotzdem zentriert bleiben.',golden:'known'},
-    tangentB:{title:'6 · Tangente B',instruction:'Dasselbe am Endring.',golden:'known'},
-    ortho:{title:'7 · Orthogonale Surface-Suche',instruction:'Debug Schritt 3: Jede Suchlinie muss lokal orthogonal zur aktuellen Riemenebene / den drei Hilfslinien stehen. Keine plötzlich seitlich kippenden Rays.',golden:'known'},
-    orthoStress:{title:'8 · Orthogonal-Stress',instruction:'Brust/Seite/Schulter testen. Wenn die Spline stark dreht, müssen die Suchstrahlen sauber mitdrehen.',golden:'known'},
-    zones:{title:'9 · Landmark-Zonen',instruction:'Zonen einschalten. Rote Grenzen prüfen: Halsbasis, Schulter→Achsel und Leisten-V sollen jetzt aus dem tatsächlichen Modellprofil abgeleitet sein.',golden:'known'},
-    zoneTorso:{title:'10 · Torso→Torso',instruction:'Torso-Riemen darf nur Torso treffen.',golden:'known'},
-    zoneArm:{title:'11 · Torso→Arm',instruction:'Schulterkappe = Arm, zentraler Schultergürtel = Torso. Übergang testen.',golden:'known'},
-    guide:{title:'12 · Guided',instruction:'Dritten Punkt setzen. Mitte folgt Guide, Ringzentrierung + Orthogonalität bleiben erhalten.',golden:'known'},
-    mirror:{title:'13 · Mirror / Save / UI',instruction:'Spiegelriemen, Save/Load, Toolbox und Zoom/Pan kurz regressionsprüfen.',golden:'pass'},
-    perf:{title:'14 · Performance',instruction:'Mehrere Riemen bauen und Debug wechseln. Performance beurteilen.',golden:'known'},
-    finalPage:{title:'15 · Abschluss',instruction:'Abschlussseite muss erscheinen. Kommentare korrigierbar, Screenshots horizontal, Gesamtkommentar mehrzeilig, Log kopierbar und Report exportierbar.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.4.9 VISIBLE STRAPS stehen.',golden:'pass'},
+    visible:{title:'2 · Sichtbarer Riemen',instruction:'Normalen Riemen bauen und Debug schließen. Das gelöste Band muss außerhalb des Debugmodus sichtbar bleiben.',golden:'known'},
+    exact:{title:'3 · Debug = Normalansicht',instruction:'Debug finale Außenkanten/Orange-Band mit der Normalansicht vergleichen. Geometrie muss 1:1 dieselbe Route zeigen.',golden:'known'},
+    center:{title:'4 · Ringanschluss sichtbar',instruction:'Ringzentrierung in Normalansicht prüfen. Fehler des Solvers dürfen nicht durch eine zweite Rendergeometrie versteckt werden.',golden:'known'},
+    width:{title:'5 · Breite',instruction:'Breite live ändern. Sichtbarer Riemen muss sofort aus den neuen finalen Außenkanten aufgebaut werden.',golden:'known'},
+    guide:{title:'6 · Guide',instruction:'Guide verschieben und loslassen. Sichtbarer Riemen muss die neu gelöste Route übernehmen.',golden:'known'},
+    mirror:{title:'7 · Mirror',instruction:'Spiegelpaar bauen/ändern. Beide sichtbaren Meshes müssen gekoppelt aktualisieren.',golden:'known'},
+    ortho:{title:'8 · Ortho Regression',instruction:'Debug Schritt 3: orthogonale Suchstrahlen aus V3.4.8 unverändert prüfen.',golden:'pass'},
+    zones:{title:'9 · Zonen Regression',instruction:'Zonen unverändert prüfen.',golden:'known'},
+    selection:{title:'10 · Auswahl',instruction:'Sichtbaren Riemen direkt antippen. Riemeneditor muss weiterhin öffnen.',golden:'known'},
+    undo:{title:'11 · Undo / Redo',instruction:'Riemen ändern und Undo/Redo testen. Sichtbares Mesh muss korrekt zurückkehren.',golden:'known'},
+    save:{title:'12 · Save / Load',instruction:'Mehrere sichtbare Riemen speichern und laden.',golden:'known'},
+    perf:{title:'13 · Performance',instruction:'Mehrere sichtbare Riemen bauen und Breite ändern. Zusätzliche Darstellung darf keinen deutlichen Lag erzeugen.',golden:'known'},
+    report:{title:'14 · Report',instruction:'Reportfunktion und bisherige Kommentare/Screenshots kurz regressionsprüfen.',golden:'known'},
+    finalPage:{title:'15 · Abschluss',instruction:'HTML-Report exportieren.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);
