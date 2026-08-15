@@ -243,28 +243,65 @@ function splineGuideFrameV346(s){
   }
   return {A,B,TA,TB,guide,curve,length};
 }
-function splineFrameSamplesV346(s){
+// ============================================================
+// V3.5.1 · SOLVER QUALITY
+// Expensive surface sample count is independent from render tessellation.
+// ============================================================
+const STRAP_SOLVER_QUALITY_KEY_V351='HD_STRAP_SOLVER_QUALITY_V351';
+let strapSolverQualityV351=(()=>{
+  const q=localStorage.getItem(STRAP_SOLVER_QUALITY_KEY_V351)||'adaptive';
+  return ['fast','adaptive','high'].includes(q)?q:'adaptive';
+})();
+function setStrapSolverQualityV351(q,{rebuild=true}={}){
+  if(!['fast','adaptive','high'].includes(q))q='adaptive';
+  strapSolverQualityV351=q;
+  localStorage.setItem(STRAP_SOLVER_QUALITY_KEY_V351,q);
+  if(rebuild){
+    const done=new Set();
+    for(const s of straps.values()){
+      const master=pairOfStrap(s)?pairMasterStrap(s):s;
+      if(done.has(master.id))continue;
+      done.add(master.id);
+      rebuildAutoProjection(master,{forceQuality:q});
+      if(pairOfStrap(master))reconcileMirrorStrapPair(master);
+    }
+  }
+}
+function uniformTsV351(count){
+  return Array.from({length:count+1},(_,i)=>i/count);
+}
+function solverBaseTsV351(f,quality){
+  if(quality==='high'){
+    const count=THREE.MathUtils.clamp(Math.ceil(f.length/.022),10,90);
+    return uniformTsV351(count);
+  }
+  if(quality==='fast'){
+    const count=THREE.MathUtils.clamp(Math.ceil(f.length/.105),5,10);
+    return uniformTsV351(count);
+  }
+  const count=THREE.MathUtils.clamp(Math.ceil(f.length/.085),6,12);
+  return uniformTsV351(count);
+}
+function splineFrameSamplesV346(s,ts=null){
   const f=splineGuideFrameV346(s);if(!f)return [];
-  const count=THREE.MathUtils.clamp(Math.ceil(f.length/.022),10,90);
+  if(!ts)ts=solverBaseTsV351(f,strapSolverQualityV351);
+  ts=[...new Set(ts.map(t=>THREE.MathUtils.clamp(t,0,1)).sort((a,b)=>a-b))];
   const halfW=Math.max(.0003,s.widthMM*.0037*.5),out=[];
 
-  // Initial frame reference comes from ring A surface normal.
   let prevSide=null;
   const startNormal=nodeWorldNormal(nodes.get(s.a)).clone().normalize();
 
-  for(let i=0;i<=count;i++){
-    const t=i/count,p=f.curve.getPoint(t);
-    const p0=f.curve.getPoint(Math.max(0,t-1/count));
-    const p1=f.curve.getPoint(Math.min(1,t+1/count));
+  for(let i=0;i<ts.length;i++){
+    const t=ts[i],p=f.curve.getPoint(t);
+    const prevT=i>0?ts[i-1]:Math.max(0,t-.01);
+    const nextT=i<ts.length-1?ts[i+1]:Math.min(1,t+.01);
+    const p0=f.curve.getPoint(prevT),p1=f.curve.getPoint(nextT);
 
     let tangent=p1.clone().sub(p0);
     if(tangent.lengthSq()<1e-10)tangent=f.B.clone().sub(f.A);
     tangent.normalize();
 
-    // Build width direction orthogonal to tangent from a transported reference.
-    let refNormal;
-    if(i===0)refNormal=startNormal.clone();
-    else refNormal=out[i-1].normal.clone();
+    let refNormal=i===0?startNormal.clone():out[i-1].normal.clone();
 
     let side=new THREE.Vector3().crossVectors(refNormal,tangent);
     if(side.lengthSq()<1e-10){
@@ -273,30 +310,27 @@ function splineFrameSamplesV346(s){
     }
     if(side.lengthSq()<1e-10)side=strapFrame(s).side.clone();
     side.normalize();
-
     if(prevSide&&side.dot(prevSide)<0)side.negate();
 
-    // Search normal is mathematically orthogonal to BOTH tangent and width.
     let normal=new THREE.Vector3().crossVectors(tangent,side);
     if(normal.lengthSq()<1e-10)normal=refNormal.clone();
     normal.normalize();
 
-    // Keep the transported frame from flipping.
     if(i>0&&normal.dot(out[i-1].normal)<0){
-      normal.negate();
-      side.negate();
+      normal.negate();side.negate();
     }
-
     prevSide=side.clone();
 
     out.push({
       t,center:p.clone(),tangent,normal,side,
+      complexity:bodyComplexityAtV351(p),
       nominalLeft:p.clone().addScaledVector(side,-halfW),
       nominalRight:p.clone().addScaledVector(side, halfW)
     });
   }
   return out;
 }
+
 function localZoneSurfaceHitV346(candidate,allowedZones,prevPoint,searchNormal){
   // V3.4.8: exactly ONE local search axis, orthogonal to the current
   // spline tangent + width direction. Search both signs only.
@@ -334,20 +368,107 @@ function localZoneSurfaceHitV346(candidate,allowedZones,prevPoint,searchNormal){
   }
   return best;
 }
-function projectedChordSamplesStrip(s,{lift=0}={}){
-  const frames=splineFrameSamplesV346(s);if(!frames.length)return [];
-  const allowedZones=allowedZonesForStrap(s),route=[];let prevL=null,prevR=null,misses=0;
+function solveProjectedFramesV351(s,frames,lift){
+  if(!frames.length)return [];
+  const allowedZones=allowedZonesForStrap(s),route=[];
+  let prevL=null,prevR=null,misses=0;
+
   for(const g of frames){
     const lh=localZoneSurfaceHitV346(g.nominalLeft,allowedZones,prevL,g.normal);
     const rh=localZoneSurfaceHitV346(g.nominalRight,allowedZones,prevR,g.normal);
     if(!lh||!rh){misses++;continue}
-    const left=lh.point.clone().addScaledVector(lh.normal,lift),right=rh.point.clone().addScaledVector(rh.normal,lift);
+
+    const left=lh.point.clone().addScaledVector(lh.normal,lift);
+    const right=rh.point.clone().addScaledVector(rh.normal,lift);
     prevL=left;prevR=right;
-    let normal=lh.normal.clone().lerp(rh.normal,.5);if(normal.lengthSq()<1e-10)normal=g.normal.clone();normal.normalize();
-    route.push({...g,leftHit:lh.point.clone(),rightHit:rh.point.clone(),leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),stripLeft:left,stripRight:right});
+
+    let normal=lh.normal.clone().lerp(rh.normal,.5);
+    if(normal.lengthSq()<1e-10)normal=g.normal.clone();
+    normal.normalize();
+
+    route.push({
+      ...g,
+      leftHit:lh.point.clone(),rightHit:rh.point.clone(),
+      leftNormal:lh.normal.clone(),rightNormal:rh.normal.clone(),
+      stripLeft:left,stripRight:right
+    });
   }
-  s.routingDebug={mode:'spline-nearest',zones:[...allowedZones],misses};return route;
+  s.routingDebug={mode:'spline-nearest',zones:[...allowedZones],misses,solverSamples:route.length};
+  return route;
 }
+function angleDegV351(a,b){
+  const d=THREE.MathUtils.clamp(a.clone().normalize().dot(b.clone().normalize()),-1,1);
+  return THREE.MathUtils.radToDeg(Math.acos(d));
+}
+function adaptiveRefineTsV351(route){
+  const ts=new Set(route.map(g=>g.t));
+  for(let i=0;i<route.length-1;i++){
+    const a=route[i],b=route[i+1];
+    const curveAngle=angleDegV351(a.tangent,b.tangent);
+    const surfAngle=angleDegV351(a.normal,b.normal);
+    const complexity=Math.max(a.complexity||0,b.complexity||0);
+    const corrA=(a.leftHit.distanceTo(a.nominalLeft)+a.rightHit.distanceTo(a.nominalRight))*.5;
+    const corrB=(b.leftHit.distanceTo(b.nominalLeft)+b.rightHit.distanceTo(b.nominalRight))*.5;
+    const correctionDelta=Math.abs(corrA-corrB);
+
+    if(
+      curveAngle>7 ||
+      surfAngle>11 ||
+      complexity>.38 ||
+      correctionDelta>.028
+    ){
+      ts.add((a.t+b.t)*.5);
+    }
+  }
+  return [...ts].sort((a,b)=>a-b);
+}
+function projectedChordSamplesStrip(s,{lift=0,quality=strapSolverQualityV351}={}){
+  const f=splineGuideFrameV346(s);if(!f)return [];
+  const baseTs=solverBaseTsV351(f,quality);
+  let frames=splineFrameSamplesV346(s,baseTs);
+  let route=solveProjectedFramesV351(s,frames,lift);
+
+  if(quality!=='adaptive'||route.length<2){
+    if(s.routingDebug)s.routingDebug.quality=quality;
+    return route;
+  }
+
+  // Adaptive pass 1: refine only segments that prove difficult.
+  let refinedTs=adaptiveRefineTsV351(route);
+  if(refinedTs.length>baseTs.length){
+    refinedTs=refinedTs.slice(0,34);
+    frames=splineFrameSamplesV346(s,refinedTs);
+    route=solveProjectedFramesV351(s,frames,lift);
+  }
+
+  // Adaptive pass 2 only for very complex remaining segments.
+  if(route.length>=2&&route.length<34){
+    const extra=new Set(route.map(g=>g.t));
+    let changed=false;
+    for(let i=0;i<route.length-1;i++){
+      const a=route[i],b=route[i+1];
+      const severe=
+        Math.max(a.complexity||0,b.complexity||0)>.72 ||
+        angleDegV351(a.tangent,b.tangent)>15 ||
+        angleDegV351(a.normal,b.normal)>20;
+      if(severe&&extra.size<34){
+        extra.add((a.t+b.t)*.5);changed=true;
+      }
+    }
+    if(changed){
+      frames=splineFrameSamplesV346(s,[...extra].sort((a,b)=>a-b));
+      route=solveProjectedFramesV351(s,frames,lift);
+    }
+  }
+
+  if(s.routingDebug){
+    s.routingDebug.quality='adaptive';
+    s.routingDebug.baseSamples=baseTs.length;
+    s.routingDebug.solverSamples=route.length;
+  }
+  return route;
+}
+
 function buildStripMethodRoute(s,samples,lift){
   if(!samples?.length)return [];
   const out=samples.map(g=>({...g,stripLeft:g.stripLeft.clone(),stripRight:g.stripRight.clone()}));
@@ -578,14 +699,51 @@ function closeStrapDebugMode(s=selected){
   if(s?.kind==='strap')updateControlHandles(s);
 }
 function strapRouteLooksPlausible(route){if(!route||route.length<2)return false;for(let i=1;i<route.length;i++){const a=route[i-1],b=route[i],sa=a.stripRight.clone().sub(a.stripLeft),sb=b.stripRight.clone().sub(b.stripLeft);if(a.stripLeft.distanceTo(b.stripLeft)>.34||a.stripRight.distanceTo(b.stripRight)>.34)return false;if(segmentCutsBody(a.stripLeft,b.stripLeft)||segmentCutsBody(a.stripRight,b.stripRight))return false;if(sa.lengthSq()>1e-10&&sb.lengthSq()>1e-10&&sa.dot(sb)<0)return false}return true}
-function rebuildAutoProjection(s){
-  if(!s)return;s.autoProject=true;s.autoMethod='spline-nearest';s.previewMode=false;
-  const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
-  const samples=projectedChordSamplesStrip(s,{lift});if(samples.length<2){updateStrapGeometry(s);return}
-  let route=buildStripMethodRoute(s,samples,lift);
-  const deleted=s.deletedStripTs||[];if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
-  s.methodRoute=route;s.controls=[];s.surfaceLevel=0;updateStrapGeometry(s);updateStrapMethodDebug(s,route);
+function scheduleAdaptiveRefineV351(s){
+  const token=(s._refineTokenV351||0)+1;
+  s._refineTokenV351=token;
+  const run=()=>{
+    if(!straps.has(s.id)||s._refineTokenV351!==token)return;
+    const master=pairOfStrap(s)?pairMasterStrap(s):s;
+    if(master!==s)return;
+    rebuildAutoProjection(master,{forceQuality:'adaptive',skipDeferred:true});
+    if(pairOfStrap(master))reconcileMirrorStrapPair(master);
+  };
+  if('requestIdleCallback' in window){
+    requestIdleCallback(run,{timeout:450});
+  }else{
+    setTimeout(run,180);
+  }
 }
+function rebuildAutoProjection(s,{forceQuality=null,skipDeferred=false}={}){
+  if(!s)return;
+  s.autoProject=true;s.autoMethod='spline-nearest';s.previewMode=false;
+  const lift=Math.max(waypointBaseLiftForStrap(s),surfaceOffsetMM*.001);
+  const requested=forceQuality||strapSolverQualityV351;
+
+  // Adaptive mode feels immediate: cheap solve now, refinement in an idle slot.
+  const immediateQuality=(requested==='adaptive'&&!skipDeferred)?'fast':requested;
+  const samples=projectedChordSamplesStrip(s,{lift,quality:immediateQuality});
+  if(samples.length<2){updateStrapGeometry(s);return}
+
+  let route=buildStripMethodRoute(s,samples,lift);
+  const deleted=s.deletedStripTs||[];
+  if(deleted.length)route=route.filter((g,i)=>i===0||i===route.length-1||!deleted.some(t=>Math.abs(g.t-t)<.018));
+
+  s.methodRoute=route;
+  s.controls=[];
+  s.surfaceLevel=0;
+  s.lastSolverQuality=immediateQuality;
+  s.lastSolverSamples=route.length;
+
+  updateStrapGeometry(s);
+  updateStrapMethodDebug(s,route);
+
+  if(requested==='adaptive'&&!skipDeferred){
+    scheduleAdaptiveRefineV351(s);
+  }
+}
+
 function projectChordPointToBody(s,t,lift=0){
   const aNode=nodes.get(s.a),bNode=nodes.get(s.b);
   if(!aNode||!bNode)return null;

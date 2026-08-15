@@ -138,6 +138,7 @@ function cylinder(r1,r2,h,x,y,z){
   m.position.set(x,y,z);return addBodyMesh(m);
 }
 function buildFallback(){
+  invalidateBodyAnalysisV351();
   modelRoot.clear();bodyMeshes=[];importedModel=null;
   ellipsoid(.25,.32,.23,0,1.51,.01);
   ellipsoid(.22,.105,.21,0,1.28,.02);
@@ -205,6 +206,7 @@ function applyIntegratedBodyMorphs(){
   const heightFactor=bodySystem.height/180;
   integratedBodyRoot.scale.setScalar(integratedBodyBaseScale*heightFactor);
   integratedBodyRoot.updateMatrixWorld(true);
+  invalidateBodyAnalysisV351();
 }
 function fitIntegratedBodyToHarnessScene(obj){
   // neutral 180 cm model -> existing mannequin working height 3.3 scene units
@@ -224,6 +226,7 @@ function fitIntegratedBodyToHarnessScene(obj){
   obj.updateMatrixWorld(true);
 }
 function collectIntegratedBodyMeshes(obj){
+  invalidateBodyAnalysisV351();
   bodyMeshes=[];
   obj.traverse(x=>{
     if(x.isMesh){
@@ -570,7 +573,38 @@ function ringTube(n){return Math.max(.001,(n.thicknessMM*.0037)*.5)}
 // ===== V3.4.4 BODY ZONES / HITBOXES =====
 const BODY_ZONE_COLORS={torso:0x32c7ff,head:0xff5fc8,armL:0xff9638,armR:0xffd84a,legL:0x75e06e,legR:0x31b85a};
 let bodyZoneDebug=false,bodyZoneDebugGroup=null;
-function getBodyBoundsV344(){const b=new THREE.Box3();for(const m of bodyMeshes)b.expandByObject(m);return b}
+// ============================================================
+// V3.5.1 · CACHED BODY ANALYSIS + COMPLEXITY LAYER
+// ============================================================
+let bodyBoundsCacheV351=null;
+let bodyComplexityMapV351=null;
+let bodyComplexityDebugV351=false;
+let bodyComplexityDebugGroupV351=null;
+
+function clearBodyComplexityDebugV351(){
+  if(!bodyComplexityDebugGroupV351)return;
+  helperRoot.remove(bodyComplexityDebugGroupV351);
+  bodyComplexityDebugGroupV351.traverse(o=>{
+    o.geometry?.dispose?.();
+    if(Array.isArray(o.material))o.material.forEach(m=>m.dispose?.());
+    else o.material?.dispose?.();
+  });
+  bodyComplexityDebugGroupV351=null;
+}
+function invalidateBodyAnalysisV351(){
+  bodyBoundsCacheV351=null;
+  bodyZoneLandmarksV348=null;
+  bodyComplexityMapV351=null;
+  clearBodyComplexityDebugV351();
+}
+function getBodyBoundsV344(){
+  if(bodyBoundsCacheV351)return bodyBoundsCacheV351.clone();
+  const b=new THREE.Box3();
+  for(const m of bodyMeshes)b.expandByObject(m);
+  bodyBoundsCacheV351=b.clone();
+  return b;
+}
+
 
 
 const BODY_ZONE_CAL_KEY_V350='HD_BODY_ZONE_CAL_V350';
@@ -579,7 +613,10 @@ try{Object.assign(bodyZoneCalibrationV350,JSON.parse(localStorage.getItem(BODY_Z
 function saveBodyZoneCalibrationV350(){
   try{localStorage.setItem(BODY_ZONE_CAL_KEY_V350,JSON.stringify(bodyZoneCalibrationV350))}catch{}
   bodyZoneLandmarksV348=null;
+  bodyComplexityMapV351=null;
+  clearBodyComplexityDebugV351();
   if(bodyZoneDebug)rebuildBodyZoneDebug();
+  if(bodyComplexityDebugV351)rebuildBodyComplexityDebugV351();
 }
 
 let bodyZoneLandmarksV348=null;
@@ -653,6 +690,126 @@ function computeBodyZoneLandmarksV348(){
     vDepth:.025+bodyZoneCalibrationV350.vDepth
   };
   return bodyZoneLandmarksV348;
+}
+
+function buildBodyComplexityMapV351(){
+  if(bodyComplexityMapV351)return bodyComplexityMapV351;
+  const box=getBodyBoundsV344();
+  const size=box.getSize(new THREE.Vector3());
+  const nx=14,ny=30,nz=10;
+  const cells=new Map();
+  const keyOf=(ix,iy,iz)=>`${ix}|${iy}|${iz}`;
+
+  let totalVerts=0;
+  for(const m of bodyMeshes)totalVerts+=m.geometry?.attributes?.position?.count||0;
+  const globalStep=Math.max(1,Math.ceil(totalVerts/18000));
+
+  let cursor=0;
+  for(const m of bodyMeshes){
+    const pos=m.geometry?.attributes?.position;
+    const nor=m.geometry?.attributes?.normal;
+    if(!pos||!nor)continue;
+    m.updateWorldMatrix(true,false);
+    const nm=new THREE.Matrix3().getNormalMatrix(m.matrixWorld);
+
+    for(let i=0;i<pos.count;i++,cursor++){
+      if(cursor%globalStep)continue;
+
+      const p=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld);
+      const n=new THREE.Vector3().fromBufferAttribute(nor,i).applyMatrix3(nm).normalize();
+
+      const ux=THREE.MathUtils.clamp((p.x-box.min.x)/(size.x||1),0,.999999);
+      const uy=THREE.MathUtils.clamp((p.y-box.min.y)/(size.y||1),0,.999999);
+      const uz=THREE.MathUtils.clamp((p.z-box.min.z)/(size.z||1),0,.999999);
+      const ix=Math.floor(ux*nx),iy=Math.floor(uy*ny),iz=Math.floor(uz*nz);
+      const key=keyOf(ix,iy,iz);
+      let c=cells.get(key);
+      if(!c){
+        c={ix,iy,iz,count:0,sumN:new THREE.Vector3(),sumP:new THREE.Vector3()};
+        cells.set(key,c);
+      }
+      c.count++;
+      c.sumN.add(n);
+      c.sumP.add(p);
+    }
+  }
+
+  for(const c of cells.values()){
+    c.center=c.sumP.clone().multiplyScalar(1/Math.max(1,c.count));
+    const meanLen=c.sumN.length()/Math.max(1,c.count);
+    // 0 = normals locally agree, 1 = highly varying normals / curvature.
+    c.curvature=THREE.MathUtils.clamp((1-meanLen)*2.2,0,1);
+  }
+
+  bodyComplexityMapV351={box,size,nx,ny,nz,cells,keyOf};
+  return bodyComplexityMapV351;
+}
+function bodyZoneBoundaryComplexityV351(p){
+  const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
+  const x=(p.x-c.x)/(sz.x||1),y=(p.y-c.y)/(sz.y||1),ax=Math.abs(x);
+  const lm=computeBodyZoneLandmarksV348();
+
+  const dNeck=Math.abs(y-lm.neckY);
+  const k=THREE.MathUtils.clamp((y-lm.armpitY)/(Math.max(.001,lm.shoulderY-lm.armpitY)),0,1);
+  const armBoundary=THREE.MathUtils.lerp(lm.armpitX,lm.shoulderX,k);
+  const dArm=Math.abs(ax-armBoundary);
+  const legCut=lm.groinY+THREE.MathUtils.clamp(ax/.30,0,1)*lm.vDepth;
+  const dLeg=Math.abs(y-legCut);
+
+  const near=(d,r)=>THREE.MathUtils.clamp(1-d/r,0,1);
+  return Math.max(
+    near(dNeck,.035),
+    (y>lm.armpitY-.06&&y<lm.shoulderY+.06)?near(dArm,.045):0,
+    near(dLeg,.045)
+  );
+}
+function bodyComplexityAtV351(p){
+  const map=buildBodyComplexityMapV351();
+  const {box,size,nx,ny,nz,cells,keyOf}=map;
+  const ux=THREE.MathUtils.clamp((p.x-box.min.x)/(size.x||1),0,.999999);
+  const uy=THREE.MathUtils.clamp((p.y-box.min.y)/(size.y||1),0,.999999);
+  const uz=THREE.MathUtils.clamp((p.z-box.min.z)/(size.z||1),0,.999999);
+  const ix=Math.floor(ux*nx),iy=Math.floor(uy*ny),iz=Math.floor(uz*nz);
+
+  let curvature=0;
+  // Small neighborhood keeps the map stable when a point lands near a cell edge.
+  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
+    const c=cells.get(keyOf(ix+dx,iy+dy,iz+dz));
+    if(c)curvature=Math.max(curvature,c.curvature);
+  }
+  const boundary=bodyZoneBoundaryComplexityV351(p);
+  return THREE.MathUtils.clamp(Math.max(curvature,boundary*.92),0,1);
+}
+function rebuildBodyComplexityDebugV351(){
+  clearBodyComplexityDebugV351();
+  if(!bodyComplexityDebugV351)return;
+  const map=buildBodyComplexityMapV351();
+  const pts=[],cols=[];
+  const color=new THREE.Color();
+
+  for(const c of map.cells.values()){
+    if(!c.center)continue;
+    const score=Math.max(c.curvature,bodyZoneBoundaryComplexityV351(c.center)*.92);
+    // blue -> green -> yellow -> red
+    if(score<.33)color.setHSL(.60-score*.45,.9,.55);
+    else if(score<.66)color.setHSL(.32-(score-.33)*.55,.95,.52);
+    else color.setHSL(.12-(score-.66)*.35,.95,.52);
+    pts.push(c.center.clone());
+    cols.push(color.r,color.g,color.b);
+  }
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
+  const m=new THREE.PointsMaterial({
+    size:.016,sizeAttenuation:true,vertexColors:true,
+    depthTest:false,depthWrite:false,transparent:true,opacity:.82
+  });
+  const cloud=new THREE.Points(g,m);cloud.renderOrder=124;
+  const group=new THREE.Group();group.add(cloud);
+  helperRoot.add(group);bodyComplexityDebugGroupV351=group;
+}
+function setBodyComplexityDebugV351(v){
+  bodyComplexityDebugV351=!!v;
+  rebuildBodyComplexityDebugV351();
 }
 function classifyBodyZoneWorldPoint(p){
   const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());

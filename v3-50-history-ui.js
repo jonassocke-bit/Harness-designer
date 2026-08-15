@@ -250,7 +250,45 @@ function syncParamUI(name,val){const p=PARAMS.get(name);if(p){p.slider.value=val
 setupParam('pointSize',pointSizeSlider,$('pointSizeTools'),v=>{if(selected?.kind==='node'){selected.sizeMM=v;dynTouchEntity(selected);rebuildNodeVisual(selected);syncNodeTransform(selected);syncPairedNodeProps(selected);refreshMaterials()}});
 setupParam('ringDiameter',ringDiameterSlider,$('ringDiameterTools'),v=>{if(selected?.kind==='node'){ringDefaults.diameterMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.diameterMM=v;dynTouchEntity(selected);rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
 setupParam('ringThickness',ringThicknessSlider,$('ringThicknessTools'),v=>{if(selected?.kind==='node'){ringDefaults.thicknessMM=v;localStorage.setItem('hd:ringDefaults',JSON.stringify(ringDefaults));selected.thicknessMM=v;dynTouchEntity(selected);rebuildNodeVisual(selected);syncNodeTransform(selected);updateAttachedStraps(selected.id);rebuildWrapsForNode(selected);syncPairedNodeProps(selected);refreshMaterials()}});
-setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{if(selected?.kind==='strap'){strapDefaults.widthMM=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));const s=selected,p=pairOfStrap(s);if(!s._widthPreviewBase&&s.methodRoute?.length)s._widthPreviewBase={width:s.widthMM,route:s.methodRoute.map(g=>({L:g.stripLeft.clone(),R:g.stripRight.clone()}))};s.widthMM=v;if(p)p.widthMM=v;if(s._widthPreviewBase){const ratio=v/Math.max(.001,s._widthPreviewBase.width);s.methodRoute.forEach((g,i)=>{const b=s._widthPreviewBase.route[i];if(!b)return;const m=b.L.clone().lerp(b.R,.5);g.stripLeft=m.clone().lerp(b.L,ratio);g.stripRight=m.clone().lerp(b.R,ratio)});updateStrapGeometry(s);if(p)reconcileMirrorStrapPair(s)}else updateStrapGeometry(s);dynTouchEntity(s);syncPairedStrapProps(s);refreshMaterials()}});
+setupParam('strapWidth',strapWidthSlider,$('strapWidthTools'),v=>{
+  if(selected?.kind!=='strap')return;
+  strapDefaults.widthMM=v;
+  localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));
+
+  const selectedStrap=selected;
+  const mate=pairOfStrap(selectedStrap);
+  const master=mate?pairMasterStrap(selectedStrap):selectedStrap;
+  const slave=mate?(master===selectedStrap?mate:selectedStrap):null;
+
+  if(!master._widthPreviewBase&&master.methodRoute?.length){
+    master._widthPreviewBase={
+      width:master.widthMM,
+      route:master.methodRoute.map(g=>({L:g.stripLeft.clone(),R:g.stripRight.clone()}))
+    };
+  }
+
+  master.widthMM=v;
+  if(slave)slave.widthMM=v;
+
+  if(master._widthPreviewBase){
+    const ratio=v/Math.max(.001,master._widthPreviewBase.width);
+    master.methodRoute.forEach((g,i)=>{
+      const b=master._widthPreviewBase.route[i];if(!b)return;
+      const m=b.L.clone().lerp(b.R,.5);
+      g.stripLeft=m.clone().lerp(b.L,ratio);
+      g.stripRight=m.clone().lerp(b.R,ratio);
+    });
+    updateStrapGeometry(master,{skipPairMirror:true});
+    if(slave)mirrorStrapMeshFromMaster(master,slave);
+  }else{
+    updateStrapGeometry(master,{skipPairMirror:!!slave});
+    if(slave)mirrorStrapMeshFromMaster(master,slave);
+  }
+
+  dynTouchEntity(master);
+  syncPairedStrapProps(master);
+  refreshMaterials();
+});
 setupParam('strapSlack',strapSlackSlider,$('strapSlackTools'),v=>{if(selected?.kind==='strap'){strapDefaults.slack=v;localStorage.setItem('hd:strapDefaults',JSON.stringify(strapDefaults));selected.slack=v;dynTouchEntity(selected);updateStrapGeometry(selected);syncPairedStrapProps(selected);refreshMaterials()}});
 setupParam('anchorPosition',anchorPositionSlider,$('anchorPositionTools'),v=>{
   if(selected?.kind==='node'&&selected.source==='strap'&&!selected.ringVisible){
@@ -457,7 +495,15 @@ document.getElementById('strapDebugAllBtn')?.addEventListener('click',()=>{
   selected.debugAll=!selected.debugAll;
   updateStrapMethodDebug(selected,selected.methodRoute||[]);refreshStrapDebugPanel(selected);
 });
-strapWidthSlider.addEventListener('change',()=>{if(selected?.kind==='strap'){const s=selected,p=pairOfStrap(s);s._widthPreviewBase=null;if(p){p.widthMM=s.widthMM;p._widthPreviewBase=null}const master=p?pairMasterStrap(s):s;rebuildAutoProjection(master);if(p)reconcileMirrorStrapPair(master)}});
+strapWidthSlider.addEventListener('change',()=>{
+  if(selected?.kind!=='strap')return;
+  const s=selected,p=pairOfStrap(s),master=p?pairMasterStrap(s):s;
+  master._widthPreviewBase=null;
+  master.widthMM=s.widthMM;
+  if(p){p.widthMM=s.widthMM;p._widthPreviewBase=null}
+  rebuildAutoProjection(master);
+  if(p)reconcileMirrorStrapPair(master);
+});
 undoBtn.addEventListener('click',undo);redoBtn.addEventListener('click',redo);
 
 

@@ -4,24 +4,33 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.5.0 STABILITY + REPORT',base:'V3.4.9 VISIBLE STRAPS'};
+  const RELEASE={build:'V3.5.1 ADAPTIVE PERFORMANCE',base:'V3.5.0 STABILITY + REPORT'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.5.0 STABILITY + REPORT stehen.',golden:'pass'},
-    dragFinalize:{title:'2 · Final-Solve nach Ringdrag',instruction:'Ring mehrfach schnell ziehen und sofort loslassen. Der Riemen muss jedes Mal auf der finalen Ringposition fertig berechnet sein – kein zweites Antippen nötig.',golden:'known'},
-    dragStress:{title:'3 · Drag-Stresstest',instruction:'10–20 kurze Ringbewegungen hintereinander. Prüfen, ob irgendein Riemen in einem Preview-Zustand hängen bleibt.',golden:'known'},
-    preview:{title:'4 · Live Preview',instruction:'Während Ringdrag beobachten: Die Vorschau soll den zuletzt gelösten Riemen weich mitverformen statt als einfache Linie durch das Mannequin zu clippen.',golden:'known'},
-    previewFinal:{title:'5 · Preview → Final',instruction:'Beim Loslassen muss die deformierte Preview sofort durch den echten Ortho-Solve ersetzt werden.',golden:'known'},
-    mirrorNormal:{title:'6 · Mirror normal',instruction:'Spiegelriemen bewegen und Breite ändern. Normalansicht beider Seiten gekoppelt.',golden:'known'},
-    mirrorDebug:{title:'7 · Mirror Debug',instruction:'Debug auf MASTER und anschließend auf gespiegeltem Riemen öffnen. Hilfslinien, Suchstrahlen und finale Kanten müssen tatsächlich gespiegelt auf der richtigen Seite erscheinen.',golden:'known'},
-    zones:{title:'8 · Zonen Kalibrierung',instruction:'Zonen einschalten und Toolbox → Zonen kalibrieren öffnen. Hals, Schulter/Achsel und Leiste live auf deine gewünschten Grenzen einstellen.',golden:'known'},
-    zonePersist:{title:'9 · Zonen speichern',instruction:'Zonenslider einstellen, Reload. Kalibrierung und rote Grenzen müssen erhalten bleiben.',golden:'known'},
-    zoneSolver:{title:'10 · Zonen im Solver',instruction:'Nach Kalibrierung Torso→Torso und Torso→Arm testen. Solver darf nur die sichtbaren erlaubten Zonen treffen.',golden:'known'},
-    reportAnytime:{title:'11 · REPORT jederzeit',instruction:'Von einer beliebigen Frage aus REPORT oben drücken. Summary muss sofort erscheinen – unabhängig von unbeantworteten Fragen.',golden:'known'},
-    topNav:{title:'12 · Navigation oben',instruction:'← / REPORT / → bleiben immer oben an derselben Position, auch bei langen Kommentaren und mehreren Screenshots.',golden:'known'},
-    richCopy:{title:'13 · Alles kopieren',instruction:'Report mit Kommentar + mehreren Screenshots öffnen und „Alles kopieren + Bilder“ drücken. In ChatGPT/Notizen einfügen und prüfen, ob Rich-Clipboard inklusive Bilder übernommen wird.',golden:'known'},
-    htmlExport:{title:'14 · HTML Export',instruction:'HTML Report + Bilder exportieren. Alle Texte und eingebetteten Screenshots müssen enthalten sein.',golden:'pass'},
-    finalPage:{title:'15 · Abschluss',instruction:'Mit → auf letzter Frage oder REPORT in die Abschlussansicht wechseln. Kein Status-Zwang.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.5.1 ADAPTIVE PERFORMANCE stehen. App, Mannequin und bestehende UI müssen normal starten.',golden:'pass'},
+
+    adaptiveStraight:{title:'2 · Adaptive · gerader Riemen',instruction:'Solver auf Adaptive. Einen einfachen, fast geraden Torso-Riemen bauen. Er soll sofort erscheinen und nach kurzer Ruhe höchstens unauffällig nachverfeinern. Form mit V3.5.0 vergleichen.',golden:'known'},
+    adaptiveShoulder:{title:'3 · Adaptive · Schulter',instruction:'Einen Riemen über Schulter/Achsel bauen. Prüfen, ob Adaptive dort sichtbar sauber bleibt und schwierige Bereiche nicht grob abkürzt.',golden:'known'},
+    adaptiveNetwork:{title:'4 · Adaptive · Riemenverbund',instruction:'Mindestens 6–10 verbundene Riemen bauen/verschieben. Kamera direkt danach bewegen und weiteren Ring setzen. Fühlt sich die App reaktionsfreudiger an als V3.5.0?',golden:'known'},
+    idleRefine:{title:'5 · Idle-Verfeinerung',instruction:'Nach einem Solve sofort Kamera bewegen. Adaptive-Verfeinerung darf die Bedienung nicht länger blockieren. Nach kurzer Ruhe muss die finale Route stabil sein.',golden:'known'},
+
+    fastMode:{title:'6 · Fast',instruction:'Solver auf Fast stellen. Mehrere Riemen bewegen. Deutlich schnellere Reaktion erwartet; gerade/einfache Riemen sollen trotzdem plausibel bleiben.',golden:'known'},
+    highMode:{title:'7 · High',instruction:'Denselben schwierigen Riemen auf High stellen. High entspricht ungefähr der bisherigen oberen Solverauflösung. Prüfen, ob Form gegenüber Adaptive nur dort sichtbar besser wird, wo es wirklich nötig ist.',golden:'known'},
+    modeSwitch:{title:'8 · Qualitätswechsel',instruction:'Fast → Adaptive → High → Adaptive wechseln. Bestehende Riemen müssen sauber neu berechnet werden; kein Freeze, kein verlorener Mirror-Status.',golden:'known'},
+
+    complexityMap:{title:'9 · Komplexitätskarte',instruction:'Toolbox → Komplexität einschalten. Blau/grün = einfach, gelb/rot = komplex. Schulter/Achsel/Zonengrenzen sollten tendenziell höher bewertet sein als flache Torsoflächen.',golden:'known'},
+    complexityZones:{title:'10 · Komplexität + Zonen',instruction:'Zonen und Komplexität gleichzeitig ansehen. Prüfen, ob Nähe zu Hals-, Schulter/Achsel- und Leisten-Grenzen als komplexer Korridor sichtbar wird.',golden:'known'},
+
+    mirrorWidthMaster:{title:'11 · Mirror-Breite · Master',instruction:'Gespiegeltes Riemenpaar auswählen und Breite am Master-Side-Slider live verändern. Beide Seiten müssen ohne Loslassen gleichzeitig skalieren.',golden:'known'},
+    mirrorWidthSlave:{title:'12 · Mirror-Breite · Slave',instruction:'Jetzt den gespiegelten Partner auswählen und Breite live ändern. Wieder müssen beide Seiten sofort identisch reagieren – besonders dieser Fall war in V3.5.0 kaputt.',golden:'known'},
+    mirrorCommit:{title:'13 · Mirror-Breite · Loslassen',instruction:'Nach dem Loslassen muss ein finaler Solve erfolgen, beide Seiten identisch bleiben und Debug auf beiden Seiten spiegelkorrekt sein.',golden:'known'},
+
+    zoneSheet:{title:'14 · Zonen-Bottom-Sheet',instruction:'„Zonen kalibrieren“ öffnen. Das Menü muss auf dem iPhone vollständig innerhalb des Displays liegen, vertikal scrollbar sein und kein Regler darf rechts abgeschnitten sein.',golden:'known'},
+    zoneLive:{title:'15 · Zonen live kalibrieren',instruction:'Hals, Schulter/Achsel und Leiste verschieben. Rote Grenzen müssen während des Schiebens live reagieren. Anschließend einen Riemen testen, der genau an einer Grenze liegt.',golden:'known'},
+    zonePersist:{title:'16 · Zonen speichern',instruction:'Kalibrierung ändern, Sheet schließen, Seite neu laden. Werte und rote Grenzen müssen erhalten bleiben.',golden:'known'},
+
+    share:{title:'17 · Report teilen + Bilder',instruction:'Mindestens zwei Screenshots + Kommentare aufnehmen. REPORT → „Report teilen + Bilder“. Der native iOS-Share-Dialog soll erscheinen und eine HTML-Datei mit eingebetteten Bildern teilen. Falls nicht unterstützt, muss automatisch der HTML-Speicherweg funktionieren.',golden:'known'},
+    reportFallback:{title:'18 · Report-Fallback + Abschluss',instruction:'„Text kopieren“ und „HTML speichern“ zusätzlich testen. Mit → auf der letzten Frage oder REPORT jederzeit in die Abschlussansicht wechseln. Keine Daten dürfen verloren gehen.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -182,7 +191,7 @@
     return await copyText(plain)?'text':false;
   }
 
-  async function exportReport(){
+  async function reportDocument(){
     let sections='';
     for(const id of QUEUE){
       const t=TESTS[id],r=run.results[id],shots=await listShots(id);
@@ -198,13 +207,39 @@
         ${images}
       </section>`;
     }
-    const doc=`<!doctype html><meta charset="utf-8"><title>${RELEASE.build}</title>
+    return `<!doctype html><meta charset="utf-8"><title>${RELEASE.build}</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
       <style>body{font:14px system-ui;max-width:900px;margin:auto;padding:24px}pre{white-space:pre-wrap;background:#f4f4f4;padding:12px}section{padding:16px 0;border-bottom:1px solid #ccc}img{display:block;max-width:100%;max-height:700px;margin-top:10px;border:1px solid #999}</style>
       <h1>${RELEASE.build}</h1><pre>${escapeHtml(logText())}</pre>${run.overallNote?`<section><h2>Gesamtkommentar</h2><p>${escapeHtml(run.overallNote).replace(/\n/g,'<br>')}</p></section>`:''}${sections}`;
+  }
+  function reportFilename(){
+    return 'Harness-Designer-'+RELEASE.build.replace(/[^a-z0-9._-]+/gi,'-')+'-report.html';
+  }
+  async function exportReport(){
+    const doc=await reportDocument();
     const blob=new Blob([doc],{type:'text/html'});
     const u=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=u;a.download='Harness-Designer-'+RELEASE.build.replace(/\s+/g,'-')+'-report.html';
+    a.href=u;a.download=reportFilename();
     a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
+  }
+  async function shareReport(){
+    const doc=await reportDocument();
+    const file=new File([doc],reportFilename(),{type:'text/html'});
+    try{
+      if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
+        await navigator.share({
+          title:RELEASE.build,
+          text:'Harness Designer Debug Report',
+          files:[file]
+        });
+        return 'shared';
+      }
+    }catch(e){
+      if(e?.name==='AbortError')return 'cancelled';
+      console.warn('Native report share failed',e);
+    }
+    await exportReport();
+    return 'exported';
   }
 
   const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -260,13 +295,14 @@
 
     async function showSummary(){
       g.style.display='none';run.complete=true;save();saveHistory();
-      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="copy">Alles kopieren + Bilder</button><button class="export">HTML Report + Bilder</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
+      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="copy">Text kopieren</button><button class="share">Report teilen + Bilder</button><button class="export">HTML speichern</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
       summary.querySelector('.log').textContent=logText();
       summary.querySelector('.overallNote').value=run.overallNote||'';
       summary.querySelector('.overallNote').oninput=e=>{run.overallNote=e.target.value;save();summary.querySelector('.log').textContent=logText()};
       summary.style.display='block';
-      summary.querySelector('.copy').onclick=async()=>{const mode=await copyRichReport();summary.querySelector('.copy').textContent=mode==='rich'?'✓ Text + Bilder kopiert':mode==='text'?'✓ Text kopiert (Bilder von iOS blockiert)':'Kopieren fehlgeschlagen'};
-      summary.querySelector('.export').onclick=async()=>{summary.querySelector('.export').textContent='Export…';try{await exportReport();summary.querySelector('.export').textContent='✓ Exportiert'}catch(e){summary.querySelector('.export').textContent='Export fehlgeschlagen'}};
+      summary.querySelector('.copy').onclick=async()=>{const ok=await copyText(logText()+(run.overallNote?'\n\nGesamtkommentar:\n'+run.overallNote:''));summary.querySelector('.copy').textContent=ok?'✓ Text kopiert':'Kopieren fehlgeschlagen'};
+      summary.querySelector('.share').onclick=async()=>{const b=summary.querySelector('.share');b.textContent='Teilen…';try{const r=await shareReport();b.textContent=r==='shared'?'✓ Geteilt':r==='cancelled'?'Teilen abgebrochen':'✓ HTML gespeichert'}catch(e){b.textContent='Teilen fehlgeschlagen'}};
+      summary.querySelector('.export').onclick=async()=>{summary.querySelector('.export').textContent='Speichern…';try{await exportReport();summary.querySelector('.export').textContent='✓ Gespeichert'}catch(e){summary.querySelector('.export').textContent='Speichern fehlgeschlagen'}};
       summary.querySelector('.back').onclick=()=>{index=QUEUE.length-1;render()};
       summary.querySelector('.closeSum').onclick=()=>summary.style.display='none';
     }
@@ -297,7 +333,7 @@
       saveIndex();render();
     };
 
-    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport,copyRichReport,showSummary};
+    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport,shareReport,showSummary};
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();

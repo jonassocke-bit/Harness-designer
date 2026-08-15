@@ -1,5 +1,48 @@
 # Patchnotes
 
+## V3.5.1 – Adaptive Performance
+- **Teure Solverauflösung von sichtbarer Mesh-Auflösung entkoppelt.**
+  - Der sichtbare Riemen bleibt über den bestehenden `STRAP_SAMPLES`-Renderpfad glatt.
+  - Die Anzahl der teuren Body-Raycasts wird separat gesteuert.
+- Neue Solverqualitäten:
+  - **Fast:** ca. 5–10 Surface-Samples je nach Riemenlänge.
+  - **Adaptive:** sofortiger Fast-Solve, danach Verfeinerung nur an schwierigen Segmenten.
+  - **High:** ungefähr die bisherige V3.5.0-Auflösung (`Länge / 0.022`, min. 10, max. 90) und damit bewusst obere Qualitätsgrenze.
+- Adaptive Verfeinerung berücksichtigt:
+  - Krümmung der Leit-Spline,
+  - Änderung der tatsächlichen Surface-Normalen,
+  - Änderung des Projektionsabstands,
+  - lokale Body-Komplexität.
+- Adaptive Refinements sind auf max. ca. 34 Solver-Samples begrenzt.
+- Adaptive läuft zweistufig:
+  - günstiger Solve sofort,
+  - Verfeinerung über `requestIdleCallback` (Fallback `setTimeout`) nachgelagert, damit Kamera/UI schneller wieder bedienbar sind.
+- Neue **Body-Komplexitätskarte**:
+  - wird einmal pro Bodyzustand aus einem groben 3D-Raster der Mesh-Normalen aufgebaut,
+  - Normalenstreuung dient als lokale Krümmungs-/Komplexitätsabschätzung,
+  - Nähe zu Hals-, Schulter/Achsel- und Leisten-Zonengrenzen erhöht die Routing-Komplexität zusätzlich,
+  - Toolbox-Toggle `Komplexität` visualisiert die Karte als blau→grün→gelb→rot.
+- **Body-Bounds und Body-Analyse werden gecacht** und nur bei Modell-/Morph-/Kalibrierungsänderungen invalidiert.
+  - Dadurch wird die Boundingbox nicht mehr bei zahllosen Zone-Hit-Prüfungen neu über das komplette Mannequin aufgebaut.
+- **Mirror-Breiten-Liveupdate repariert.**
+  - Breitenänderung arbeitet immer auf dem kanonischen Master-Riemen,
+  - der Master-Route wird live skaliert,
+  - der Slave wird sofort aus dem Master gespiegelt,
+  - funktioniert auch, wenn der Benutzer den Slave selbst ausgewählt hat.
+- **Zonenkalibrierung als eigenes iPhone-Bottom-Sheet.**
+  - volle Bildschirmbreite,
+  - vertikal scrollbar,
+  - Safe-Area berücksichtigt,
+  - Hals, Schulter X/Y, Achsel X/Y, Leiste und Leisten-V live einstellbar,
+  - Werte bleiben in `localStorage`.
+- **Report-Workflow für iOS geändert.**
+  - `Text kopieren` kopiert bewusst nur Text.
+  - `Report teilen + Bilder` erzeugt eine HTML-Datei mit eingebetteten Screenshots und verwendet `navigator.share({files})`, wenn iOS/WebKit File-Sharing unterstützt.
+  - Falls native Dateifreigabe nicht unterstützt wird, fällt die App automatisch auf den bewährten HTML-Speicherweg zurück.
+  - Separater Button `HTML speichern` bleibt als garantierter Fallback.
+- Neuer ausführlicher Guided-Test mit 18 Fragen zu Performance, Adaptive/High/Fast, Komplexitätskarte, Mirror-Breite, Zonen-Sheet und Report-Share.
+- Grundlegende Riemenmathematik **nicht neu erfunden**: Ring-zentrierte Spline + orthogonale Surface-Suche aus V3.4.8–V3.5.0 bleibt die Basis.
+
 ## V3.5.0 – Stability + Report
 - Ringdrag-Lifecycle an der Ursache repariert:
   - der letzte per `requestAnimationFrame` wartende Drag wird auf `pointerup` synchron geflusht,

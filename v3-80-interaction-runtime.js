@@ -721,6 +721,70 @@ try{
 }
 
 
+function ensureZoneCalibrationSheetV351(){
+  let sheet=document.getElementById('v351ZoneSheet');
+  if(sheet)return sheet;
+
+  sheet=document.createElement('div');
+  sheet.id='v351ZoneSheet';
+  sheet.innerHTML=`
+    <div class="v351ZoneSheetHeader">
+      <strong>Zonen kalibrieren</strong>
+      <button id="v351ZoneSheetClose" type="button">×</button>
+    </div>
+    <div class="v351ZoneSheetHint">
+      Zonen einschalten und die roten Grenzen live auf Halsbasis, Schulter/Achsel und Leiste legen.
+    </div>
+    <div id="v351ZoneControls"></div>
+    <div class="v351ZoneSheetActions">
+      <button id="v351ZoneReset" type="button">Reset</button>
+      <button id="v351ZoneDone" type="button">Fertig</button>
+    </div>`;
+  document.body.appendChild(sheet);
+
+  const controls=sheet.querySelector('#v351ZoneControls');
+  const defs=[
+    ['Hals Höhe','neck',-.12,.12,.005],
+    ['Schulter Höhe','shoulderY',-.12,.12,.005],
+    ['Schulter Breite','shoulderX',-.12,.12,.005],
+    ['Achsel Höhe','armpitY',-.12,.12,.005],
+    ['Achsel Breite','armpitX',-.12,.12,.005],
+    ['Leiste Höhe','groin',-.15,.15,.005],
+    ['Leisten-V','vDepth',-.05,.08,.005]
+  ];
+  for(const [label,key,min,max,step] of defs){
+    const row=document.createElement('label');row.className='v351ZoneRow';
+    const title=document.createElement('span');title.textContent=label;
+    const input=document.createElement('input');
+    input.type='range';input.min=min;input.max=max;input.step=step;
+    input.value=bodyZoneCalibrationV350[key]||0;
+    const value=document.createElement('output');value.textContent=Number(input.value).toFixed(3);
+    input.oninput=()=>{
+      bodyZoneCalibrationV350[key]=Number(input.value);
+      value.textContent=Number(input.value).toFixed(3);
+      saveBodyZoneCalibrationV350();
+      if(!bodyZoneDebug)setBodyZoneDebug(true);
+    };
+    row.append(title,input,value);controls.append(row);
+  }
+
+  const close=()=>sheet.classList.remove('open');
+  sheet.querySelector('#v351ZoneSheetClose').onclick=close;
+  sheet.querySelector('#v351ZoneDone').onclick=close;
+  sheet.querySelector('#v351ZoneReset').onclick=()=>{
+    for(const k of Object.keys(bodyZoneCalibrationV350))bodyZoneCalibrationV350[k]=0;
+    saveBodyZoneCalibrationV350();
+    sheet.remove();
+    openZoneCalibrationSheetV351();
+  };
+  return sheet;
+}
+function openZoneCalibrationSheetV351(){
+  const sheet=ensureZoneCalibrationSheetV351();
+  if(!bodyZoneDebug)setBodyZoneDebug(true);
+  sheet.classList.add('open');
+}
+
 function safeInitV344Tools(){
   try{
     initV344Tools();
@@ -735,7 +799,7 @@ function initV344Tools(){
   const el=document.createElement('div');el.id='v344Tools';
   el.innerHTML=`
     <div class="v344Header">
-      <div class="v344Title">V3.4.7 Tools</div>
+      <div class="v344Title">V3.5.1 Tools</div>
       <button class="v344Collapse" type="button" aria-label="Toolbox einklappen">−</button>
     </div>
     <div class="v344Body">
@@ -744,10 +808,15 @@ function initV344Tools(){
       <button id="v344Save">Save</button>
       <button id="v344Load">Load</button>
       <button id="v344Code">Design-Code</button>
-      <div class="v350ZoneCal">
-        <button id="v350ZoneCalToggle" type="button">Zonen kalibrieren</button>
-        <div id="v350ZoneCalBody" class="hidden"></div>
-      </div>
+      <button id="v351ZoneSheetOpen" type="button">Zonen kalibrieren</button>
+      <button id="v351Complexity" type="button">Komplexität</button>
+      <label class="v351QualityLabel">Solver
+        <select id="v351Quality">
+          <option value="fast">Fast</option>
+          <option value="adaptive">Adaptive</option>
+          <option value="high">High</option>
+        </select>
+      </label>
       <div class="v344Legend">
         <span style="color:#32c7ff">Torso</span> ·
         <span style="color:#ff5fc8">Kopf</span> ·
@@ -810,28 +879,21 @@ function initV344Tools(){
   z.onclick=()=>{setBodyZoneDebug(!bodyZoneDebug);z.classList.toggle('active',bodyZoneDebug)};
   h.onclick=()=>{setHitboxOverlayDebugV344(!hitboxOverlayDebugV344);h.classList.toggle('active',hitboxOverlayDebugV344)};
 
-  const calBody=el.querySelector('#v350ZoneCalBody');
-  const calToggle=el.querySelector('#v350ZoneCalToggle');
-  const defs=[
-    ['Hals Y','neck',-.12,.12,.005],
-    ['Schulter Y','shoulderY',-.12,.12,.005],
-    ['Schulter X','shoulderX',-.12,.12,.005],
-    ['Achsel Y','armpitY',-.12,.12,.005],
-    ['Achsel X','armpitX',-.12,.12,.005],
-    ['Leiste Y','groin',-.15,.15,.005],
-    ['V-Tiefe','vDepth',-.05,.08,.005]
-  ];
-  for(const [label,key,min,max,step] of defs){
-    const row=document.createElement('label');row.className='v350CalRow';
-    const val=document.createElement('span');
-    const input=document.createElement('input');input.type='range';input.min=min;input.max=max;input.step=step;input.value=bodyZoneCalibrationV350[key]||0;
-    val.textContent=Number(input.value).toFixed(3);
-    input.oninput=()=>{bodyZoneCalibrationV350[key]=Number(input.value);val.textContent=Number(input.value).toFixed(3);saveBodyZoneCalibrationV350()};
-    row.append(document.createTextNode(label),input,val);calBody.append(row);
-  }
-  const reset=document.createElement('button');reset.textContent='Zonen Reset';
-  reset.onclick=()=>{for(const k of Object.keys(bodyZoneCalibrationV350))bodyZoneCalibrationV350[k]=0;saveBodyZoneCalibrationV350();el.remove();initV344Tools()};
-  calBody.append(reset);
-  calToggle.onclick=()=>calBody.classList.toggle('hidden');
+  const complexityBtn=el.querySelector('#v351Complexity');
+  complexityBtn.classList.toggle('active',bodyComplexityDebugV351);
+  complexityBtn.onclick=()=>{
+    setBodyComplexityDebugV351(!bodyComplexityDebugV351);
+    complexityBtn.classList.toggle('active',bodyComplexityDebugV351);
+  };
+
+  const quality=el.querySelector('#v351Quality');
+  quality.value=strapSolverQualityV351;
+  quality.onchange=()=>{
+    setStrapSolverQualityV351(quality.value,{rebuild:true});
+    showToast(`Solver: ${quality.options[quality.selectedIndex].text}`);
+  };
+
+  el.querySelector('#v351ZoneSheetOpen').onclick=()=>openZoneCalibrationSheetV351();
+
 }
 setTimeout(safeInitV344Tools,0);

@@ -321,3 +321,38 @@ white-space:pre-wrap;display:none}
 #v3Guide .head .title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #v3Guide .head .prev,#v3Guide .head .next,#v3Guide .head .report,#v3Guide .head .close{position:static!important}
 #v3Guide .nav{display:flex;justify-content:flex-end!important}
+
+/* V3.5.1 solver + zone calibration */
+#v344Tools .v351QualityLabel{
+  grid-column:1/-1;display:grid;grid-template-columns:auto 1fr;gap:6px;align-items:center;
+  font-size:10px;opacity:.95
+}
+#v344Tools .v351QualityLabel select{
+  min-width:0;width:100%;background:#252a32;color:white;border:1px solid rgba(255,255,255,.18);
+  border-radius:7px;padding:5px;
+}
+#v351ZoneSheet{
+  position:fixed;z-index:2600;left:0;right:0;bottom:0;
+  max-height:min(72vh,620px);overflow:auto;
+  padding:max(10px,env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom));
+  background:rgba(17,19,24,.97);color:white;
+  border-radius:18px 18px 0 0;border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 -12px 40px rgba(0,0,0,.36);
+  transform:translateY(105%);transition:transform .2s ease;
+  -webkit-overflow-scrolling:touch;
+}
+#v351ZoneSheet.open{transform:translateY(0)}
+.v351ZoneSheetHeader{
+  position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;
+  background:rgba(17,19,24,.98);padding:4px 0 10px;font-size:15px
+}
+.v351ZoneSheetHeader button{width:36px;height:36px}
+.v351ZoneSheetHint{font-size:11px;opacity:.72;margin-bottom:10px}
+#v351ZoneControls{display:grid;gap:10px}
+.v351ZoneRow{
+  display:grid;grid-template-columns:105px minmax(0,1fr) 48px;gap:8px;align-items:center;font-size:11px
+}
+.v351ZoneRow input{width:100%;min-width:0}
+.v351ZoneRow output{text-align:right;font-variant-numeric:tabular-nums}
+.v351ZoneSheetActions{display:flex;gap:8px;position:sticky;bottom:0;padding-top:12px;background:rgba(17,19,24,.98)}
+.v351ZoneSheetActions button{flex:1;padding:10px}
