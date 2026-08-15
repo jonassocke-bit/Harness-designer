@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 window.THREE=THREE;
 window.GLTFLoader=GLTFLoader;
 
-const BUILD='V3.5.3 SURFACE CLEANUP + MIDPOINT RESET';
+const BUILD='V3.5.4 CLEAN ROUTING + UI DOCK';
 const FILES=[
   "v3-00-registry.js",
   "v3-01-module-map.js",
@@ -18,7 +18,8 @@ const FILES=[
   "v3-80-interaction-runtime.js",
   "v3-90-diagnostics.js",
   "v3-95-guided-test.js",
-  "v3-96-v353-patch.js"
+  "v3-96-v353-patch.js",
+    "v3-97-v354-patch.js"
 ];
 
 function bootError(message,detail=''){
@@ -40,7 +41,7 @@ function bootError(message,detail=''){
 async function loadAll(){
   const sources=[];
   for(const file of FILES){
-    const url='./'+file+'?build=353';
+    const url='./'+file+'?build=354';
     let response;
     try{response=await fetch(url,{cache:'no-store'})}
     catch(e){throw new Error('Modul konnte nicht geladen werden: '+file+'\n'+e)}

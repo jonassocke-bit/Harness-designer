@@ -1,5 +1,21 @@
 # Patchnotes
 
+## V3.5.4 – Clean Routing + UI Dock
+- V3.5.3 bleibt vollständig erhalten und wird nur durch einen nachgeladenen V3.5.4-Patch ergänzt.
+- Sichtbarer Riemen wird zwischen Solverpunkten über drei geglättete Kurven aufgebaut: linke Außenkante, Mittellinie und rechte Außenkante.
+- An beiden Enden wird der gesamte Riemenquerschnitt so verschoben, dass sein Mittelpunkt exakt im Ringzentrum endet. Die Breite bleibt erhalten; längliches Überstehen über den Ring wird verhindert.
+- V3.5.3-Mittellinien-Kollisionsschutz für Riemen >20 mm bleibt unangetastet.
+- Torso-Komplexität beruhigt; Brust erhält eine moderate Mindestkomplexität, Schulter/Achsel und Zonengrenzen bleiben höher priorisiert.
+- Adaptive darf in wirklich komplexen Bereichen etwas dichter werden, bleibt aber deutlich unter High.
+- Komplexitäts-Debug färbt die tatsächliche Mannequin-Oberfläche statt eine sparse Punktwolke.
+- Zonen bleiben als Oberflächen-Overlay; Armklassifikation nutzt einen breiteren, weich interpolierten Schulter→Achsel-Übergang, damit Kalibrierung nicht nur das letzte Segment bewegt.
+- Toolbox:
+  - eingeklappt nur 42×42 px Werkzeug-Icon,
+  - links/rechts andockbar,
+  - aufgeklappt viewport-begrenzt,
+  - keine abgeschnittene rechte Spalte.
+- Guided Test bewusst von 18 auf 8 Fragen gekürzt. Bereits mehrfach bestätigte Standardfunktionen werden nicht erneut abgefragt.
+
 ## V3.5.2 – Outside + Report Image
 - Surface-Suche nutzt die bekannte Ring-Außenseite als Halbraum: pro Kante nur noch Outside→Skin statt beide Richtungen.
 - Frame-Normale wird entlang des Splines gegen die interpolierten Ring-Außennormalen stabilisiert; unbeabsichtigter 180°-Flip wird verhindert.

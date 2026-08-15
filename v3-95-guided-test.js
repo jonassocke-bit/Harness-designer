@@ -4,27 +4,17 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.5.2 OUTSIDE + REPORT IMAGE',base:'V3.5.1a BOOT FIX'};
+  const RELEASE={build:'V3.5.4 CLEAN ROUTING + UI DOCK',base:'V3.5.3 SURFACE CLEANUP + MIDPOINT RESET'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.5.2 OUTSIDE + REPORT IMAGE stehen. App, Mannequin und bestehende UI müssen normal starten.',golden:'pass'},
-    outsideTorso:{title:'2 · Außenrichtung · Torso',instruction:'Mehrere einfache Torso-Riemen bauen. Die Surface-Suche darf nicht mehr auf die gegenüberliegende Körperseite springen.',golden:'known'},
-    outsideShoulder:{title:'3 · Außenrichtung · Schulter',instruction:'Riemen über Schulter/Achsel testen. Die vom Ring bekannte Außenseite muss die Suchrichtung bestimmen; keine Durchschüsse oder Seitensprünge.',golden:'known'},
-    outsideHead:{title:'4 · Außenrichtung · Kopf',instruction:'Den früher kritischen Kopf-/Halsfall testen. Hilfsstrahlen sollen geschlossen auf derselben Außenseite bleiben.',golden:'known'},
-    adaptiveStraight:{title:'5 · Adaptive · einfach',instruction:'Einfachen fast geraden Riemen auf Adaptive bauen. Er soll sehr günstig bleiben und schnell reagieren.',golden:'known'},
-    adaptiveComplex:{title:'6 · Adaptive · komplex',instruction:'Schulter/Achsel oder starke Krümmung testen. Adaptive darf dort deutlich dichter werden, aber High bleibt die obere Grenze.',golden:'known'},
-    adaptiveNetwork:{title:'7 · Performance · Verbund',instruction:'Mindestens 8–12 Riemen bauen/verschieben und sofort Kamera bedienen. Prüfen, ob die einseitige Surface-Suche und Adaptive spürbar helfen.',golden:'known'},
-    quality:{title:'8 · Fast / Adaptive / High',instruction:'Denselben schwierigen Riemen in allen drei Modi vergleichen. High darf nicht dichter als bisher werden; Adaptive soll sich nur bei Bedarf annähern.',golden:'known'},
-    zoneSurface:{title:'9 · Zonen als Oberfläche',instruction:'Zonen einschalten. Statt einer Punktwolke soll die Mannequin-Oberfläche klar nach Torso/Kopf/Armen/Beinen eingefärbt sein.',golden:'known'},
-    complexitySurface:{title:'10 · Komplexität als Oberfläche',instruction:'Komplexität einschalten. Die Oberfläche soll blau/grün bis gelb/rot eingefärbt sein; Schulter/Achsel und Grenzen sollten komplexer wirken.',golden:'known'},
-    toolbox:{title:'11 · Toolbox responsive',instruction:'Toolbox auf- und zuklappen und an linken/rechten Rand ziehen. Kein Button, Select oder Text darf abgeschnitten werden.',golden:'known'},
-    zones:{title:'12 · Zonen kalibrieren',instruction:'Zonenkalibrierung öffnen, Grenzen verändern und speichern. Sheet muss vollständig bedienbar bleiben und Overlay live reagieren.',golden:'known'},
-    mirror:{title:'13 · Mirror-Breite',instruction:'Master und danach Slave eines Spiegelriemenpaares auswählen und Breite live ändern. Beide Seiten müssen sofort identisch skalieren.',golden:'known'},
-    shot3d:{title:'14 · Screenshot 3D',instruction:'Im Report einen 3D-Screenshot aufnehmen. Er soll nur die gerenderte Szene enthalten und zuverlässig gespeichert werden.',golden:'known'},
-    shotUI:{title:'15 · Screenshot UI',instruction:'Einen UI-Fehler oder geöffnetes Menü sichtbar lassen und „Komplette UI“ aufnehmen. Der gespeicherte Screenshot soll Canvas plus sichtbare Bedienoberfläche zeigen.',golden:'known'},
-    reportImage:{title:'16 · Report als Bild kopieren',instruction:'Mehrere Kommentare und Screenshots sammeln. REPORT → „Reportbild kopieren“. Es soll EIN kompaktes Bild in der Zwischenablage landen, nicht ein extrem langes Monsterbild.',golden:'known'},
-    reportSize:{title:'17 · Reportbild Größe',instruction:'Mit mehreren Screenshots prüfen: Bilder werden als kleine Kacheln angeordnet und das Gesamtbild bleibt kompakt/lesbar.',golden:'known'},
-    fallback:{title:'18 · Export + Abschluss',instruction:'HTML speichern/teilen weiterhin testen. Navigation bis zur letzten Seite und REPORT jederzeit müssen funktionieren; keine Daten verlieren.',golden:'pass'}
+    ringStop:{title:'1 · Riemen endet am Ring',instruction:'Mehrere Riemenverbünde bauen. Der sichtbare Riemen darf längs an keinem Ende über den Ring hinauslaufen.',golden:'known'},
+    smoothBand:{title:'2 · Glättung über L/C/R',instruction:'Fast und Adaptive vergleichen. Zwischen wenigen Solverpunkten soll das Band weich über linke Außenkante, Mittellinie und rechte Außenkante laufen – keine grobe plane Fläche.',golden:'known'},
+    torsoComplexity:{title:'3 · Torso / Brust-Komplexität',instruction:'Komplexität einblenden. Torso insgesamt einfacher; Brust moderat dichter; Schulter/Achsel weiterhin klar komplex.',golden:'known'},
+    zoneSurface:{title:'4 · Zonen als Oberfläche',instruction:'Zonen einblenden. Mannequin-Oberfläche muss flächig nach Zonen eingefärbt sein. Arm-/Schulter- und Leistenübergänge prüfen.',golden:'known'},
+    armCalibration:{title:'5 · Arm-Zonengrenze',instruction:'Schulter/Achsel kalibrieren. Die gesamte relevante Armgrenze muss reagieren, nicht nur ein kurzes Endstück.',golden:'known'},
+    toolbox:{title:'6 · Toolbox klein + Dock',instruction:'Eingeklappt nur ein kleines Werkzeug-Icon. Aufklappen, verschieben und links/rechts andocken. Kein leerer Seitenstreifen und nichts abgeschnitten.',golden:'known'},
+    wideStrap:{title:'7 · Breiter Riemen',instruction:'30–40 mm Riemen über Brust/Schulter testen. V3.5.3-Mittellinien-Kollisionsschutz muss erhalten bleiben; kein Durchclippen.',golden:'known'},
+    report:{title:'8 · Reportbild',instruction:'Kompaktes Reportbild erzeugen. Lesbarkeit und Größe prüfen; Abschluss muss jederzeit erreichbar bleiben.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);
