@@ -4,33 +4,27 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.5.1a BOOT FIX',base:'V3.5.0 STABILITY + REPORT'};
+  const RELEASE={build:'V3.5.2 OUTSIDE + REPORT IMAGE',base:'V3.5.1a BOOT FIX'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.5.1a BOOT FIX stehen. App, Mannequin und bestehende UI müssen normal starten.',golden:'pass'},
-
-    adaptiveStraight:{title:'2 · Adaptive · gerader Riemen',instruction:'Solver auf Adaptive. Einen einfachen, fast geraden Torso-Riemen bauen. Er soll sofort erscheinen und nach kurzer Ruhe höchstens unauffällig nachverfeinern. Form mit V3.5.0 vergleichen.',golden:'known'},
-    adaptiveShoulder:{title:'3 · Adaptive · Schulter',instruction:'Einen Riemen über Schulter/Achsel bauen. Prüfen, ob Adaptive dort sichtbar sauber bleibt und schwierige Bereiche nicht grob abkürzt.',golden:'known'},
-    adaptiveNetwork:{title:'4 · Adaptive · Riemenverbund',instruction:'Mindestens 6–10 verbundene Riemen bauen/verschieben. Kamera direkt danach bewegen und weiteren Ring setzen. Fühlt sich die App reaktionsfreudiger an als V3.5.0?',golden:'known'},
-    idleRefine:{title:'5 · Idle-Verfeinerung',instruction:'Nach einem Solve sofort Kamera bewegen. Adaptive-Verfeinerung darf die Bedienung nicht länger blockieren. Nach kurzer Ruhe muss die finale Route stabil sein.',golden:'known'},
-
-    fastMode:{title:'6 · Fast',instruction:'Solver auf Fast stellen. Mehrere Riemen bewegen. Deutlich schnellere Reaktion erwartet; gerade/einfache Riemen sollen trotzdem plausibel bleiben.',golden:'known'},
-    highMode:{title:'7 · High',instruction:'Denselben schwierigen Riemen auf High stellen. High entspricht ungefähr der bisherigen oberen Solverauflösung. Prüfen, ob Form gegenüber Adaptive nur dort sichtbar besser wird, wo es wirklich nötig ist.',golden:'known'},
-    modeSwitch:{title:'8 · Qualitätswechsel',instruction:'Fast → Adaptive → High → Adaptive wechseln. Bestehende Riemen müssen sauber neu berechnet werden; kein Freeze, kein verlorener Mirror-Status.',golden:'known'},
-
-    complexityMap:{title:'9 · Komplexitätskarte',instruction:'Toolbox → Komplexität einschalten. Blau/grün = einfach, gelb/rot = komplex. Schulter/Achsel/Zonengrenzen sollten tendenziell höher bewertet sein als flache Torsoflächen.',golden:'known'},
-    complexityZones:{title:'10 · Komplexität + Zonen',instruction:'Zonen und Komplexität gleichzeitig ansehen. Prüfen, ob Nähe zu Hals-, Schulter/Achsel- und Leisten-Grenzen als komplexer Korridor sichtbar wird.',golden:'known'},
-
-    mirrorWidthMaster:{title:'11 · Mirror-Breite · Master',instruction:'Gespiegeltes Riemenpaar auswählen und Breite am Master-Side-Slider live verändern. Beide Seiten müssen ohne Loslassen gleichzeitig skalieren.',golden:'known'},
-    mirrorWidthSlave:{title:'12 · Mirror-Breite · Slave',instruction:'Jetzt den gespiegelten Partner auswählen und Breite live ändern. Wieder müssen beide Seiten sofort identisch reagieren – besonders dieser Fall war in V3.5.0 kaputt.',golden:'known'},
-    mirrorCommit:{title:'13 · Mirror-Breite · Loslassen',instruction:'Nach dem Loslassen muss ein finaler Solve erfolgen, beide Seiten identisch bleiben und Debug auf beiden Seiten spiegelkorrekt sein.',golden:'known'},
-
-    zoneSheet:{title:'14 · Zonen-Bottom-Sheet',instruction:'„Zonen kalibrieren“ öffnen. Das Menü muss auf dem iPhone vollständig innerhalb des Displays liegen, vertikal scrollbar sein und kein Regler darf rechts abgeschnitten sein.',golden:'known'},
-    zoneLive:{title:'15 · Zonen live kalibrieren',instruction:'Hals, Schulter/Achsel und Leiste verschieben. Rote Grenzen müssen während des Schiebens live reagieren. Anschließend einen Riemen testen, der genau an einer Grenze liegt.',golden:'known'},
-    zonePersist:{title:'16 · Zonen speichern',instruction:'Kalibrierung ändern, Sheet schließen, Seite neu laden. Werte und rote Grenzen müssen erhalten bleiben.',golden:'known'},
-
-    share:{title:'17 · Report teilen + Bilder',instruction:'Mindestens zwei Screenshots + Kommentare aufnehmen. REPORT → „Report teilen + Bilder“. Der native iOS-Share-Dialog soll erscheinen und eine HTML-Datei mit eingebetteten Bildern teilen. Falls nicht unterstützt, muss automatisch der HTML-Speicherweg funktionieren.',golden:'known'},
-    reportFallback:{title:'18 · Report-Fallback + Abschluss',instruction:'„Text kopieren“ und „HTML speichern“ zusätzlich testen. Mit → auf der letzten Frage oder REPORT jederzeit in die Abschlussansicht wechseln. Keine Daten dürfen verloren gehen.',golden:'pass'}
+    build:{title:'1 · Build',instruction:'Unten muss V3.5.2 OUTSIDE + REPORT IMAGE stehen. App, Mannequin und bestehende UI müssen normal starten.',golden:'pass'},
+    outsideTorso:{title:'2 · Außenrichtung · Torso',instruction:'Mehrere einfache Torso-Riemen bauen. Die Surface-Suche darf nicht mehr auf die gegenüberliegende Körperseite springen.',golden:'known'},
+    outsideShoulder:{title:'3 · Außenrichtung · Schulter',instruction:'Riemen über Schulter/Achsel testen. Die vom Ring bekannte Außenseite muss die Suchrichtung bestimmen; keine Durchschüsse oder Seitensprünge.',golden:'known'},
+    outsideHead:{title:'4 · Außenrichtung · Kopf',instruction:'Den früher kritischen Kopf-/Halsfall testen. Hilfsstrahlen sollen geschlossen auf derselben Außenseite bleiben.',golden:'known'},
+    adaptiveStraight:{title:'5 · Adaptive · einfach',instruction:'Einfachen fast geraden Riemen auf Adaptive bauen. Er soll sehr günstig bleiben und schnell reagieren.',golden:'known'},
+    adaptiveComplex:{title:'6 · Adaptive · komplex',instruction:'Schulter/Achsel oder starke Krümmung testen. Adaptive darf dort deutlich dichter werden, aber High bleibt die obere Grenze.',golden:'known'},
+    adaptiveNetwork:{title:'7 · Performance · Verbund',instruction:'Mindestens 8–12 Riemen bauen/verschieben und sofort Kamera bedienen. Prüfen, ob die einseitige Surface-Suche und Adaptive spürbar helfen.',golden:'known'},
+    quality:{title:'8 · Fast / Adaptive / High',instruction:'Denselben schwierigen Riemen in allen drei Modi vergleichen. High darf nicht dichter als bisher werden; Adaptive soll sich nur bei Bedarf annähern.',golden:'known'},
+    zoneSurface:{title:'9 · Zonen als Oberfläche',instruction:'Zonen einschalten. Statt einer Punktwolke soll die Mannequin-Oberfläche klar nach Torso/Kopf/Armen/Beinen eingefärbt sein.',golden:'known'},
+    complexitySurface:{title:'10 · Komplexität als Oberfläche',instruction:'Komplexität einschalten. Die Oberfläche soll blau/grün bis gelb/rot eingefärbt sein; Schulter/Achsel und Grenzen sollten komplexer wirken.',golden:'known'},
+    toolbox:{title:'11 · Toolbox responsive',instruction:'Toolbox auf- und zuklappen und an linken/rechten Rand ziehen. Kein Button, Select oder Text darf abgeschnitten werden.',golden:'known'},
+    zones:{title:'12 · Zonen kalibrieren',instruction:'Zonenkalibrierung öffnen, Grenzen verändern und speichern. Sheet muss vollständig bedienbar bleiben und Overlay live reagieren.',golden:'known'},
+    mirror:{title:'13 · Mirror-Breite',instruction:'Master und danach Slave eines Spiegelriemenpaares auswählen und Breite live ändern. Beide Seiten müssen sofort identisch skalieren.',golden:'known'},
+    shot3d:{title:'14 · Screenshot 3D',instruction:'Im Report einen 3D-Screenshot aufnehmen. Er soll nur die gerenderte Szene enthalten und zuverlässig gespeichert werden.',golden:'known'},
+    shotUI:{title:'15 · Screenshot UI',instruction:'Einen UI-Fehler oder geöffnetes Menü sichtbar lassen und „Komplette UI“ aufnehmen. Der gespeicherte Screenshot soll Canvas plus sichtbare Bedienoberfläche zeigen.',golden:'known'},
+    reportImage:{title:'16 · Report als Bild kopieren',instruction:'Mehrere Kommentare und Screenshots sammeln. REPORT → „Reportbild kopieren“. Es soll EIN kompaktes Bild in der Zwischenablage landen, nicht ein extrem langes Monsterbild.',golden:'known'},
+    reportSize:{title:'17 · Reportbild Größe',instruction:'Mit mehreren Screenshots prüfen: Bilder werden als kleine Kacheln angeordnet und das Gesamtbild bleibt kompakt/lesbar.',golden:'known'},
+    fallback:{title:'18 · Export + Abschluss',instruction:'HTML speichern/teilen weiterhin testen. Navigation bis zur letzten Seite und REPORT jederzeit müssen funktionieren; keine Daten verlieren.',golden:'pass'}
   };
 
   const QUEUE=Object.keys(TESTS);
@@ -107,7 +101,7 @@
   }
   const dataUrl=blob=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob)});
 
-  async function capture(id){
+  async function capture3D(id){
     const canvas=document.querySelector('canvas');
     if(!canvas)throw new Error('Kein Canvas');
 
@@ -160,6 +154,64 @@
 
     await putShot(id,blob);
     return blob;
+  }
+
+
+  function inlineComputedStylesV352(src,dst){
+    const props=['position','left','right','top','bottom','width','height','display','grid-template-columns','grid-template-rows','gap','padding','margin','border','border-radius','background','background-color','color','font','font-size','font-weight','line-height','text-align','opacity','transform','transform-origin','overflow','white-space','box-sizing','z-index','align-items','justify-content'];
+    const a=[src,...src.querySelectorAll('*')],b=[dst,...dst.querySelectorAll('*')];
+    for(let i=0;i<Math.min(a.length,b.length);i++){
+      const cs=getComputedStyle(a[i]);for(const k of props)b[i].style.setProperty(k,cs.getPropertyValue(k));
+      if(a[i] instanceof HTMLInputElement||a[i] instanceof HTMLTextAreaElement)b[i].setAttribute('value',a[i].value||'');
+    }
+  }
+  async function captureFullUI(id){
+    const canvas=document.querySelector('canvas');if(!canvas)throw new Error('Kein Canvas');
+    try{renderer?.render?.(scene,camera)}catch(e){}
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const clone=document.body.cloneNode(true);inlineComputedStylesV352(document.body,clone);
+    const originalCanvases=[...document.body.querySelectorAll('canvas')],cloneCanvases=[...clone.querySelectorAll('canvas')];
+    for(let i=0;i<cloneCanvases.length;i++){
+      const img=document.createElement('img');try{img.src=originalCanvases[i].toDataURL('image/jpeg',.88)}catch(e){}
+      const cs=getComputedStyle(originalCanvases[i]);img.style.cssText=cloneCanvases[i].style.cssText;img.style.width=cs.width;img.style.height=cs.height;img.style.objectFit='fill';cloneCanvases[i].replaceWith(img);
+    }
+    clone.querySelectorAll('script').forEach(x=>x.remove());
+    const ser=new XMLSerializer().serializeToString(clone);
+    const w=Math.max(320,window.innerWidth),h=Math.max(320,window.innerHeight);
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${w}px;height:${h}px;overflow:hidden;background:#090a0d">${ser}</div></foreignObject></svg>`;
+    const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
+    try{
+      const img=await new Promise((resolve,reject)=>{const x=new Image();x.onload=()=>resolve(x);x.onerror=reject;x.src=url});
+      const out=document.createElement('canvas'),scale=Math.min(1.5,1400/w);out.width=Math.round(w*scale);out.height=Math.round(h*scale);
+      out.getContext('2d').drawImage(img,0,0,out.width,out.height);
+      const blob=await new Promise((resolve,reject)=>out.toBlob(b=>b?resolve(b):reject(new Error('UI Screenshot leer')),'image/jpeg',.86));
+      await putShot(id,blob);return blob;
+    }finally{URL.revokeObjectURL(url)}
+  }
+  async function compactReportImageV352(){
+    const W=1400,pad=44,colGap=20,thumbW=(W-pad*2-colGap)/2,thumbH=thumbW*.62;
+    const rows=[];
+    for(const id of QUEUE){const r=run.results[id],shots=await listShots(id);if(r?.status||r?.note||shots.length)rows.push({id,t:TESTS[id],r,shots})}
+    const maxShots=12;let shotCount=0;for(const row of rows){row.shots=row.shots.slice(0,Math.max(0,maxShots-shotCount));shotCount+=row.shots.length}
+    const lineH=31,sectionBase=92;
+    let H=150+(run.overallNote?100:0);
+    for(const row of rows)H+=sectionBase+(row.r?.note?Math.min(4,Math.ceil(row.r.note.length/72))*lineH:0)+Math.ceil(row.shots.length/2)*(thumbH+18);
+    const scale=Math.min(1,5600/H);H=Math.min(5600,H);
+    const c=document.createElement('canvas');c.width=Math.round(W*scale);c.height=Math.round(H*scale);const ctx=c.getContext('2d');ctx.scale(scale,scale);
+    ctx.fillStyle='#101218';ctx.fillRect(0,0,W,H/scale);ctx.fillStyle='#fff';ctx.font='700 42px system-ui';ctx.fillText(RELEASE.build,pad,62);ctx.font='24px system-ui';ctx.fillStyle='#aeb5c2';ctx.fillText('Kompakter Harness Designer Debug-Report',pad,103);
+    let y=140;
+    const wrap=(text,x,y0,maxW,maxLines=4)=>{const words=String(text||'').split(/\s+/);let line='',yy=y0,n=0;for(const word of words){const test=line?line+' '+word:word;if(ctx.measureText(test).width>maxW&&line){ctx.fillText(line,x,yy);yy+=lineH;n++;line=word;if(n>=maxLines)return yy}else line=test}if(line&&n<maxLines){ctx.fillText(line,x,yy);yy+=lineH}return yy};
+    if(run.overallNote){ctx.fillStyle='#dce2ea';ctx.font='24px system-ui';y=wrap('Gesamt: '+run.overallNote,pad,y,W-pad*2,3)+18}
+    for(const row of rows){ctx.fillStyle='#20242d';ctx.fillRect(pad,y-26,W-pad*2,52);ctx.font='700 24px system-ui';ctx.fillStyle=row.r?.status==='pass'?'#7ee2a8':row.r?.status==='fail'?'#ff8f8f':'#ffd77a';ctx.fillText((row.r?.status==='pass'?'✓ ':row.r?.status==='fail'?'✕ ':'→ ')+row.t.title,pad+16,y+8);y+=48;
+      if(row.r?.note){ctx.fillStyle='#e5e8ed';ctx.font='23px system-ui';y=wrap(row.r.note,pad+8,y,W-pad*2-16,4)+8}
+      for(let i=0;i<row.shots.length;i+=2){for(let j=0;j<2&&i+j<row.shots.length;j++){const sh=row.shots[i+j],url=URL.createObjectURL(sh.blob);try{const im=await new Promise((res,rej)=>{const z=new Image();z.onload=()=>res(z);z.onerror=rej;z.src=url});const x=pad+j*(thumbW+colGap),ratio=Math.min(thumbW/im.width,thumbH/im.height);const dw=im.width*ratio,dh=im.height*ratio;ctx.fillStyle='#090a0d';ctx.fillRect(x,y,thumbW,thumbH);ctx.drawImage(im,x+(thumbW-dw)/2,y+(thumbH-dh)/2,dw,dh)}finally{URL.revokeObjectURL(url)}}y+=thumbH+18}y+=18;
+    }
+    return await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('Reportbild leer')),'image/png'));
+  }
+  async function copyReportImageV352(){
+    const blob=await compactReportImageV352();
+    if(navigator.clipboard?.write&&window.ClipboardItem){await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);return true}
+    throw new Error('Bild-Zwischenablage wird hier nicht unterstützt');
   }
 
 
@@ -247,7 +299,7 @@
   function mount(){
     const btn=document.createElement('button');btn.id='v3TestBtn';btn.textContent='TEST';
     const g=document.createElement('div');g.id='v3Guide';
-    g.innerHTML='<div class="head"><button class="prev">←</button><span class="count"></span><span class="title"></span><button class="report">REPORT</button><button class="next">→</button><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><textarea class="note" rows="4" placeholder="Kommentar / Fehlerbeschreibung…"></textarea><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="shot">📷 Screenshot</button></div>';
+    g.innerHTML='<div class="head"><button class="prev">←</button><span class="count"></span><span class="title"></span><button class="report">REPORT</button><button class="next">→</button><button class="close">×</button></div><div class="instruction"></div><div class="known"></div><div class="actions"><button class="pass">✓ Funktioniert</button><button class="fail">✕ Fehler</button><button class="skip">Skip</button></div><textarea class="note" rows="4" placeholder="Kommentar / Fehlerbeschreibung…"></textarea><div id="v3ShotWrap"><div class="shotGallery"></div><div id="v3ShotMeta"><span>📷 Screenshots gespeichert</span></div></div><div class="nav"><button class="shot">📷 Screenshot</button></div><div class="captureChoice" hidden><button class="shot3d">3D-Ansicht</button><button class="shotui">Komplette UI</button></div>';
     const summary=document.createElement('div');summary.id='v3GuideSummary';
     document.body.append(btn,g,summary);
     const $=q=>g.querySelector(q);
@@ -295,11 +347,12 @@
 
     async function showSummary(){
       g.style.display='none';run.complete=true;save();saveHistory();
-      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="copy">Text kopieren</button><button class="share">Report teilen + Bilder</button><button class="export">HTML speichern</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
+      summary.innerHTML='<div class="log"></div><textarea class="overallNote" rows="7" placeholder="Gesamtkommentar / Fazit zum Test…"></textarea><div class="summaryActions"><button class="imageCopy">Reportbild kopieren</button><button class="copy">Text kopieren</button><button class="share">Report teilen + Bilder</button><button class="export">HTML speichern</button><button class="back">← Letzte Frage</button><button class="closeSum">Schließen</button></div>';
       summary.querySelector('.log').textContent=logText();
       summary.querySelector('.overallNote').value=run.overallNote||'';
       summary.querySelector('.overallNote').oninput=e=>{run.overallNote=e.target.value;save();summary.querySelector('.log').textContent=logText()};
       summary.style.display='block';
+      summary.querySelector('.imageCopy').onclick=async()=>{const b=summary.querySelector('.imageCopy');b.textContent='Bild wird gebaut…';try{await copyReportImageV352();b.textContent='✓ Reportbild kopiert'}catch(e){console.warn(e);b.textContent='Bildkopie fehlgeschlagen'}};
       summary.querySelector('.copy').onclick=async()=>{const ok=await copyText(logText()+(run.overallNote?'\n\nGesamtkommentar:\n'+run.overallNote:''));summary.querySelector('.copy').textContent=ok?'✓ Text kopiert':'Kopieren fehlgeschlagen'};
       summary.querySelector('.share').onclick=async()=>{const b=summary.querySelector('.share');b.textContent='Teilen…';try{const r=await shareReport();b.textContent=r==='shared'?'✓ Geteilt':r==='cancelled'?'Teilen abgebrochen':'✓ HTML gespeichert'}catch(e){b.textContent='Teilen fehlgeschlagen'}};
       summary.querySelector('.export').onclick=async()=>{summary.querySelector('.export').textContent='Speichern…';try{await exportReport();summary.querySelector('.export').textContent='✓ Gespeichert'}catch(e){summary.querySelector('.export').textContent='Speichern fehlgeschlagen'}};
@@ -316,15 +369,9 @@
       const id=QUEUE[index],r=run.results[id]||{};
       run.results[id]={...r,note:$('.note').value.trim()};save();saveIndex();g.style.display='none';
     };
-    $('.shot').onclick=async()=>{
-      const id=QUEUE[index];
-      const existing=run.results[id]||{};
-      run.results[id]={...existing,note:$('.note').value.trim()};
-      save();
-      $('.shot').textContent='Aufnahme…';
-      try{await capture(id);await render()}
-      catch(e){$('.shot').textContent='Screenshot fehlgeschlagen'}
-    };
+    $('.shot').onclick=()=>{const c=$('.captureChoice');c.hidden=!c.hidden};
+    $('.shot3d').onclick=async()=>{const id=QUEUE[index],existing=run.results[id]||{};run.results[id]={...existing,note:$('.note').value.trim()};save();$('.shot3d').textContent='Aufnahme…';try{await capture3D(id);$('.captureChoice').hidden=true;await render()}catch(e){console.warn(e);$('.shot3d').textContent='3D fehlgeschlagen'}};
+    $('.shotui').onclick=async()=>{const id=QUEUE[index],existing=run.results[id]||{};run.results[id]={...existing,note:$('.note').value.trim()};save();$('.shotui').textContent='Aufnahme…';try{await captureFullUI(id);$('.captureChoice').hidden=true;await render()}catch(e){console.warn(e);$('.shotui').textContent='UI fehlgeschlagen'}};
 
     btn.onclick=()=>{
       summary.style.display='none';
@@ -333,7 +380,7 @@
       saveIndex();render();
     };
 
-    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport,shareReport,showSummary};
+    window.HDV3GuidedTest={RELEASE,TESTS,getRun:()=>JSON.parse(JSON.stringify(run)),getLog:logText,exportReport,shareReport,copyReportImage:copyReportImageV352,showSummary};
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();

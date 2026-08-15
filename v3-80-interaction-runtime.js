@@ -799,7 +799,7 @@ function initV344Tools(){
   const el=document.createElement('div');el.id='v344Tools';
   el.innerHTML=`
     <div class="v344Header">
-      <div class="v344Title">V3.5.1 Tools</div>
+      <div class="v344Title">V3.5.2 Tools</div>
       <button class="v344Collapse" type="button" aria-label="Toolbox einklappen">−</button>
     </div>
     <div class="v344Body">

@@ -290,6 +290,7 @@ function splineFrameSamplesV346(s,ts=null){
 
   let prevSide=null;
   const startNormal=nodeWorldNormal(nodes.get(s.a)).clone().normalize();
+  const endNormal=nodeWorldNormal(nodes.get(s.b)).clone().normalize();
 
   for(let i=0;i<ts.length;i++){
     const t=ts[i],p=f.curve.getPoint(t);
@@ -319,6 +320,13 @@ function splineFrameSamplesV346(s,ts=null){
     if(i>0&&normal.dot(out[i-1].normal)<0){
       normal.negate();side.negate();
     }
+
+    // V3.5.2: the ring normals tell us which side is OUTSIDE the skin.
+    // Transport may rotate the frame, but it may never silently flip it inward.
+    let outward=startNormal.clone().lerp(endNormal,t);
+    if(outward.lengthSq()<1e-10)outward=refNormal.clone();
+    outward.normalize();
+    if(normal.dot(outward)<0){normal.negate();side.negate()}
     prevSide=side.clone();
 
     out.push({
@@ -338,33 +346,25 @@ function localZoneSurfaceHitV346(candidate,allowedZones,prevPoint,searchNormal){
   if(n.lengthSq()<1e-10)return null;
   n.normalize();
 
-  const dirs=[n.clone(),n.clone().negate()];
+  // V3.5.2: search only from the known OUTSIDE toward the skin.
+  // Previously both signs were raycast and the shorter hit could jump to the
+  // opposite body side. Ring normals already provide the missing half-space.
+  const d=n.clone();
+  const origin=candidate.clone().addScaledVector(d,1.8);
+  raycaster.set(origin,d.clone().negate());
   let best=null,bestScore=Infinity;
-
-  for(const d of dirs){
-    const origin=candidate.clone().addScaledVector(d,1.8);
-    raycaster.set(origin,d.clone().negate());
-
-    for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,12)){
-      if(allowedZones&&!allowedZones.has(classifyBodyZoneWorldPoint(h.point)))continue;
-
-      const surfN=worldNormal(h).clone().normalize();
-      const dist=h.point.distanceTo(candidate);
-
-      // Primary criterion: shortest orthogonal correction from the spline.
-      // Continuity only rejects absurd jumps.
-      let score=dist;
-      if(prevPoint){
-        const step=h.point.distanceTo(prevPoint);
-        if(step>.34)score+=3.0;
-        else score+=step*.08;
-      }
-
-      if(score<bestScore){
-        bestScore=score;
-        best={point:h.point.clone(),normal:surfN,distance:dist,dir:d.clone()};
-      }
+  for(const h of raycaster.intersectObjects(bodyMeshes,true).slice(0,12)){
+    if(allowedZones&&!allowedZones.has(classifyBodyZoneWorldPoint(h.point)))continue;
+    const surfN=worldNormal(h).clone().normalize();
+    // A hit whose surface normal points opposite our outside vector is a back-side hit.
+    if(surfN.dot(d)<-.18)continue;
+    const dist=h.point.distanceTo(candidate);
+    let score=dist+(1-Math.max(0,surfN.dot(d)))*.035;
+    if(prevPoint){
+      const step=h.point.distanceTo(prevPoint);
+      if(step>.34)score+=3.0; else score+=step*.08;
     }
+    if(score<bestScore){bestScore=score;best={point:h.point.clone(),normal:surfN,distance:dist,dir:d.clone()}}
   }
   return best;
 }
@@ -414,7 +414,7 @@ function adaptiveRefineTsV351(route){
     if(
       curveAngle>7 ||
       surfAngle>11 ||
-      complexity>.38 ||
+      complexity>.30 ||
       correctionDelta>.028
     ){
       ts.add((a.t+b.t)*.5);
@@ -436,22 +436,22 @@ function projectedChordSamplesStrip(s,{lift=0,quality=strapSolverQualityV351}={}
   // Adaptive pass 1: refine only segments that prove difficult.
   let refinedTs=adaptiveRefineTsV351(route);
   if(refinedTs.length>baseTs.length){
-    refinedTs=refinedTs.slice(0,34);
+    refinedTs=refinedTs.slice(0,40);
     frames=splineFrameSamplesV346(s,refinedTs);
     route=solveProjectedFramesV351(s,frames,lift);
   }
 
   // Adaptive pass 2 only for very complex remaining segments.
-  if(route.length>=2&&route.length<34){
+  if(route.length>=2&&route.length<40){
     const extra=new Set(route.map(g=>g.t));
     let changed=false;
     for(let i=0;i<route.length-1;i++){
       const a=route[i],b=route[i+1];
       const severe=
-        Math.max(a.complexity||0,b.complexity||0)>.72 ||
+        Math.max(a.complexity||0,b.complexity||0)>.58 ||
         angleDegV351(a.tangent,b.tangent)>15 ||
         angleDegV351(a.normal,b.normal)>20;
-      if(severe&&extra.size<34){
+      if(severe&&extra.size<40){
         extra.add((a.t+b.t)*.5);changed=true;
       }
     }

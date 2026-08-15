@@ -1,5 +1,16 @@
 # Patchnotes
 
+## V3.5.2 – Outside + Report Image
+- Surface-Suche nutzt die bekannte Ring-Außenseite als Halbraum: pro Kante nur noch Outside→Skin statt beide Richtungen.
+- Frame-Normale wird entlang des Splines gegen die interpolierten Ring-Außennormalen stabilisiert; unbeabsichtigter 180°-Flip wird verhindert.
+- Adaptive verfeinert komplexe Bereiche früher/stärker, High bleibt unverändert die obere Qualitätsgrenze.
+- Zonen und Komplexität werden im Debug als eingefärbte Mannequin-Oberfläche statt konkurrierender Punktwolken dargestellt.
+- Toolbox responsive verbreitert/umbricht Inhalte und bleibt innerhalb des Viewports.
+- Screenshot-Workflow: 3D-Ansicht oder komplette sichtbare UI.
+- Neuer „Reportbild kopieren“-Export: genau ein kompaktes PNG mit Status, Kommentaren und Screenshot-Kacheln; Höhe auf ca. 5600 px begrenzt, max. 12 Screenshots im Kompaktbild.
+- HTML-/Share-Report bleibt als vollständiger Fallback erhalten.
+- Guided-Test auf 18 V3.5.2-spezifische Prüfungen aktualisiert.
+
 ## V3.5.1a – Boot Fix
 - Startfehler von V3.5.1 behoben.
 - Ursache: `buildFallback()` ruft beim Top-Level-Start `invalidateBodyAnalysisV351()` auf, während die neuen `let`-Caches/Complexity-Zustände weiter unten noch in der Temporal Dead Zone lagen.

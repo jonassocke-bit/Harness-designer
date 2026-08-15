@@ -783,32 +783,35 @@ function bodyComplexityAtV351(p){
   const boundary=bodyZoneBoundaryComplexityV351(p);
   return THREE.MathUtils.clamp(Math.max(curvature,boundary*.92),0,1);
 }
+function makeBodySurfaceOverlayV352(colorForPoint,opacity=.42){
+  const group=new THREE.Group();group.renderOrder=121;
+  for(const src of bodyMeshes){
+    const pos=src.geometry?.attributes?.position;if(!pos)continue;
+    const geom=src.geometry.clone();
+    const colors=new Float32Array(pos.count*3),c=new THREE.Color();
+    src.updateWorldMatrix(true,false);
+    for(let i=0;i<pos.count;i++){
+      const wp=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);
+      c.set(colorForPoint(wp));colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b;
+    }
+    geom.setAttribute('color',new THREE.BufferAttribute(colors,3));
+    const mat=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity,depthTest:false,depthWrite:false,side:THREE.DoubleSide});
+    const mesh=new THREE.Mesh(geom,mat);mesh.matrixAutoUpdate=false;mesh.matrix.copy(src.matrixWorld);mesh.renderOrder=121;group.add(mesh);
+  }
+  return group;
+}
+function complexityColorV352(score){
+  const c=new THREE.Color();
+  if(score<.33)c.setHSL(.60-score*.45,.9,.55);
+  else if(score<.66)c.setHSL(.32-(score-.33)*.55,.95,.52);
+  else c.setHSL(.12-(score-.66)*.35,.95,.52);
+  return c;
+}
 function rebuildBodyComplexityDebugV351(){
   clearBodyComplexityDebugV351();
   if(!bodyComplexityDebugV351)return;
-  const map=buildBodyComplexityMapV351();
-  const pts=[],cols=[];
-  const color=new THREE.Color();
-
-  for(const c of map.cells.values()){
-    if(!c.center)continue;
-    const score=Math.max(c.curvature,bodyZoneBoundaryComplexityV351(c.center)*.92);
-    // blue -> green -> yellow -> red
-    if(score<.33)color.setHSL(.60-score*.45,.9,.55);
-    else if(score<.66)color.setHSL(.32-(score-.33)*.55,.95,.52);
-    else color.setHSL(.12-(score-.66)*.35,.95,.52);
-    pts.push(c.center.clone());
-    cols.push(color.r,color.g,color.b);
-  }
-  const g=new THREE.BufferGeometry().setFromPoints(pts);
-  g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
-  const m=new THREE.PointsMaterial({
-    size:.016,sizeAttenuation:true,vertexColors:true,
-    depthTest:false,depthWrite:false,transparent:true,opacity:.82
-  });
-  const cloud=new THREE.Points(g,m);cloud.renderOrder=124;
-  const group=new THREE.Group();group.add(cloud);
-  helperRoot.add(group);bodyComplexityDebugGroupV351=group;
+  bodyComplexityDebugGroupV351=makeBodySurfaceOverlayV352(p=>complexityColorV352(bodyComplexityAtV351(p)),.46);
+  helperRoot.add(bodyComplexityDebugGroupV351);
 }
 function setBodyComplexityDebugV351(v){
   bodyComplexityDebugV351=!!v;
@@ -849,51 +852,15 @@ function clearBodyZoneDebug(){
 function rebuildBodyZoneDebug(){
   bodyZoneLandmarksV348=null;
   clearBodyZoneDebug();if(!bodyZoneDebug)return;
-  const group=new THREE.Group();group.renderOrder=120;
-  for(const m of bodyMeshes){
-    const pos=m.geometry?.attributes?.position;if(!pos)continue;
-    const buckets={torso:[],head:[],armL:[],armR:[],legL:[],legR:[]};
-    const step=Math.max(1,Math.floor(pos.count/18000));
-    for(let i=0;i<pos.count;i+=step){
-      const p=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld);
-      buckets[classifyBodyZoneWorldPoint(p)].push(p);
-    }
-    for(const [zone,pts] of Object.entries(buckets)){
-      if(!pts.length)continue;
-      const g=new THREE.BufferGeometry().setFromPoints(pts);
-      const mat=new THREE.PointsMaterial({color:BODY_ZONE_COLORS[zone],size:.012,sizeAttenuation:true,transparent:true,opacity:.82,depthTest:false,depthWrite:false});
-      const cloud=new THREE.Points(g,mat);cloud.renderOrder=120;group.add(cloud);
-    }
-  }
+  const group=makeBodySurfaceOverlayV352(p=>BODY_ZONE_COLORS[classifyBodyZoneWorldPoint(p)],.38);
   const box=getBodyBoundsV344(),c=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3());
   const X=n=>c.x+n*sz.x,Y=n=>c.y+n*sz.y,Z=n=>c.z+n*sz.z;
-  const mkBoundary=pts=>{
-    const g=new THREE.BufferGeometry().setFromPoints(pts);
-    const l=new THREE.Line(
-      g,
-      new THREE.LineBasicMaterial({color:0xff3344,depthTest:false,transparent:true,opacity:.98})
-    );
-    l.renderOrder=122;group.add(l);
-  };
+  const mkBoundary=pts=>{const g=new THREE.BufferGeometry().setFromPoints(pts);const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xff3344,depthTest:false,transparent:true,opacity:.98}));l.renderOrder=123;group.add(l)};
   const lm=computeBodyZoneLandmarksV348();
-  // Red boundaries from the SAME live landmark values as the classifier.
-  mkBoundary([
-    new THREE.Vector3(X(-.16),Y(lm.neckY),Z(.31)),
-    new THREE.Vector3(X(.16),Y(lm.neckY),Z(.31))
-  ]);
-  mkBoundary([
-    new THREE.Vector3(X(-lm.shoulderX),Y(lm.shoulderY),Z(.31)),
-    new THREE.Vector3(X(-lm.armpitX),Y(lm.armpitY),Z(.31))
-  ]);
-  mkBoundary([
-    new THREE.Vector3(X(lm.shoulderX),Y(lm.shoulderY),Z(.31)),
-    new THREE.Vector3(X(lm.armpitX),Y(lm.armpitY),Z(.31))
-  ]);
-  mkBoundary([
-    new THREE.Vector3(X(-.30),Y(lm.groinY+lm.vDepth),Z(.31)),
-    new THREE.Vector3(X(0),Y(lm.groinY),Z(.31)),
-    new THREE.Vector3(X(.30),Y(lm.groinY+lm.vDepth),Z(.31))
-  ]);
+  mkBoundary([new THREE.Vector3(X(-.16),Y(lm.neckY),Z(.31)),new THREE.Vector3(X(.16),Y(lm.neckY),Z(.31))]);
+  mkBoundary([new THREE.Vector3(X(-lm.shoulderX),Y(lm.shoulderY),Z(.31)),new THREE.Vector3(X(-lm.armpitX),Y(lm.armpitY),Z(.31))]);
+  mkBoundary([new THREE.Vector3(X(lm.shoulderX),Y(lm.shoulderY),Z(.31)),new THREE.Vector3(X(lm.armpitX),Y(lm.armpitY),Z(.31))]);
+  mkBoundary([new THREE.Vector3(X(-.30),Y(lm.groinY+lm.vDepth),Z(.31)),new THREE.Vector3(X(0),Y(lm.groinY),Z(.31)),new THREE.Vector3(X(.30),Y(lm.groinY+lm.vDepth),Z(.31))]);
   helperRoot.add(group);bodyZoneDebugGroup=group;
 }
 function setBodyZoneDebug(v){bodyZoneDebug=!!v;rebuildBodyZoneDebug()}
