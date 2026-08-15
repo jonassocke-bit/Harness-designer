@@ -4,10 +4,10 @@
 // ============================================================================
 (function(){
   'use strict';
-  const RELEASE={build:'V3.5.1 ADAPTIVE PERFORMANCE',base:'V3.5.0 STABILITY + REPORT'};
+  const RELEASE={build:'V3.5.1a BOOT FIX',base:'V3.5.0 STABILITY + REPORT'};
 
   const TESTS={
-    build:{title:'1 · Build',instruction:'Unten muss V3.5.1 ADAPTIVE PERFORMANCE stehen. App, Mannequin und bestehende UI müssen normal starten.',golden:'pass'},
+    build:{title:'1 · Build',instruction:'Unten muss V3.5.1a BOOT FIX stehen. App, Mannequin und bestehende UI müssen normal starten.',golden:'pass'},
 
     adaptiveStraight:{title:'2 · Adaptive · gerader Riemen',instruction:'Solver auf Adaptive. Einen einfachen, fast geraden Torso-Riemen bauen. Er soll sofort erscheinen und nach kurzer Ruhe höchstens unauffällig nachverfeinern. Form mit V3.5.0 vergleichen.',golden:'known'},
     adaptiveShoulder:{title:'3 · Adaptive · Schulter',instruction:'Einen Riemen über Schulter/Achsel bauen. Prüfen, ob Adaptive dort sichtbar sauber bleibt und schwierige Bereiche nicht grob abkürzt.',golden:'known'},

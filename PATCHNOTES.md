@@ -1,5 +1,12 @@
 # Patchnotes
 
+## V3.5.1a – Boot Fix
+- Startfehler von V3.5.1 behoben.
+- Ursache: `buildFallback()` ruft beim Top-Level-Start `invalidateBodyAnalysisV351()` auf, während die neuen `let`-Caches/Complexity-Zustände weiter unten noch in der Temporal Dead Zone lagen.
+- Cache-, Complexity- und Zone-Landmark-State wird jetzt vor dem ersten Body-Aufbau initialisiert.
+- Keine Änderungen am Adaptive Solver, Mirror Width, Zonen-Sheet oder Report-Share gegenüber V3.5.1.
+- Build-Cache-Key auf `351a` erhöht.
+
 ## V3.5.1 – Adaptive Performance
 - **Teure Solverauflösung von sichtbarer Mesh-Auflösung entkoppelt.**
   - Der sichtbare Riemen bleibt über den bestehenden `STRAP_SAMPLES`-Renderpfad glatt.

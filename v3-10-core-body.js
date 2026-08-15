@@ -124,6 +124,14 @@ function updateCamera(){
 }
 addEventListener('resize',resize);
 
+// V3.5.1a BOOT FIX: cache/debug state must exist before buildFallback() calls
+// invalidateBodyAnalysisV351() during top-level startup.
+let bodyBoundsCacheV351=null;
+let bodyComplexityMapV351=null;
+let bodyComplexityDebugV351=false;
+let bodyComplexityDebugGroupV351=null;
+let bodyZoneLandmarksV348=null;
+
 function addBodyMesh(mesh){
   mesh.material=BODY_MAT.clone();
   mesh.receiveShadow=false;mesh.castShadow=false;
@@ -576,10 +584,6 @@ let bodyZoneDebug=false,bodyZoneDebugGroup=null;
 // ============================================================
 // V3.5.1 · CACHED BODY ANALYSIS + COMPLEXITY LAYER
 // ============================================================
-let bodyBoundsCacheV351=null;
-let bodyComplexityMapV351=null;
-let bodyComplexityDebugV351=false;
-let bodyComplexityDebugGroupV351=null;
 
 function clearBodyComplexityDebugV351(){
   if(!bodyComplexityDebugGroupV351)return;
@@ -619,7 +623,6 @@ function saveBodyZoneCalibrationV350(){
   if(bodyComplexityDebugV351)rebuildBodyComplexityDebugV351();
 }
 
-let bodyZoneLandmarksV348=null;
 function computeBodyZoneLandmarksV348(){
   if(bodyZoneLandmarksV348)return bodyZoneLandmarksV348;
 
