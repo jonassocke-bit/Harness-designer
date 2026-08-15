@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 window.THREE=THREE;
 window.GLTFLoader=GLTFLoader;
 
-const BUILD='V3.5.2 OUTSIDE + REPORT IMAGE';
+const BUILD='V3.5.3 SURFACE CLEANUP + MIDPOINT RESET';
 const FILES=[
   "v3-00-registry.js",
   "v3-01-module-map.js",
@@ -17,11 +17,12 @@ const FILES=[
   "v3-70-topology-symmetry.js",
   "v3-80-interaction-runtime.js",
   "v3-90-diagnostics.js",
-  "v3-95-guided-test.js"
+  "v3-95-guided-test.js",
+  "v3-96-v353-patch.js"
 ];
 
 function bootError(message,detail=''){
-  console.error('[V3.1]',message,detail);
+  console.error('[V3.5.3]',message,detail);
   let box=document.getElementById('v3ModularBootError');
   if(!box){
     box=document.createElement('div');
@@ -39,7 +40,7 @@ function bootError(message,detail=''){
 async function loadAll(){
   const sources=[];
   for(const file of FILES){
-    const url='./'+file+'?build=352';
+    const url='./'+file+'?build=353';
     let response;
     try{response=await fetch(url,{cache:'no-store'})}
     catch(e){throw new Error('Modul konnte nicht geladen werden: '+file+'\n'+e)}
@@ -55,7 +56,7 @@ try{
   script.dataset.v3Bundle=BUILD;
   script.textContent=sources.join('\n');
   document.body.appendChild(script);
-  console.info('[V3.1] all modules loaded',FILES);
+  console.info('[V3.5.3] all modules loaded',FILES);
 }catch(e){
   bootError('MODULAR BOOT FAILED',String(e?.stack||e));
 }
